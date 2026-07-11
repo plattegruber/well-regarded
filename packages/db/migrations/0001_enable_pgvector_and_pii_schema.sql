@@ -6,5 +6,3 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 --> statement-breakpoint
 CREATE SCHEMA IF NOT EXISTS pii;
-
--- THROWAWAY edit for #55 negative test (b); reverted
