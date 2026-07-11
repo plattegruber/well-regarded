@@ -2,6 +2,7 @@
 // dimension union from this package alongside the row type; the source of
 // truth stays in @wellregarded/core.
 export type { DerivationDimension } from "@wellregarded/core";
+export { type AuditEntry, audit, type Tx } from "./audit.js";
 export { createDb, type Db, type Sql } from "./client.js";
 export {
   type Consent,
@@ -16,4 +17,17 @@ export {
   getCurrentDerivations,
   getCurrentDerivationsForSignals,
 } from "./queries/derivations.js";
+export {
+  type HybridSearchParams,
+  type HybridSearchResult,
+  hybridSearch,
+  type ProofExcerpt,
+} from "./queries/hybridSearch.js";
+export {
+  type ContactPoint,
+  findContactPoint,
+  type Patient,
+  type UpsertContactPointInput,
+  upsertContactPoint,
+} from "./queries/patients.js";
 export * as schema from "./schema/index.js";

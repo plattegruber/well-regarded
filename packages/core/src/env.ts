@@ -47,12 +47,30 @@ const clerkEnvSchema = z.object({
   CLERK_PUBLISHABLE_KEY: z.string().min(1).optional(),
 });
 
+/**
+ * PII field-encryption keyring secrets (issue #47), for the workers that
+ * read or write `pii.contact_points`. String-presence validation only —
+ * structural validation (JSON shape, base64 32-byte keys) is owned by
+ * `keyringFromEnv` in `./crypto/fieldEncryption.ts`, which is how these two
+ * vars become a `Keyring`.
+ */
+const piiKeyringEnvSchema = z.object({
+  // TODO(#19/#20): make required when the contact write/read paths land in
+  // the workers that carry this fragment.
+  PII_ENCRYPTION_KEYS: z.string().min(1).optional(),
+  PII_HASH_KEY: z.string().min(1).optional(),
+});
+
 // One schema per worker. Compose from the shared fragments above rather than
 // repeating fields. Workers that bind Hyperdrive validate nothing DB-related:
 // the connection arrives through the binding (typed by `Env`, see header).
-export const apiEnvSchema = baseEnvSchema.extend(clerkEnvSchema.shape);
-export const pipelineEnvSchema = baseEnvSchema.extend({});
-export const jobsEnvSchema = baseEnvSchema.extend({});
+export const apiEnvSchema = baseEnvSchema
+  .extend(clerkEnvSchema.shape)
+  .extend(piiKeyringEnvSchema.shape);
+export const pipelineEnvSchema = baseEnvSchema.extend(
+  piiKeyringEnvSchema.shape,
+);
+export const jobsEnvSchema = baseEnvSchema.extend(piiKeyringEnvSchema.shape);
 export const dashboardEnvSchema = baseEnvSchema.extend(clerkEnvSchema.shape);
 export const patientEnvSchema = baseEnvSchema.extend({});
 
