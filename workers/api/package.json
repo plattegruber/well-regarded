@@ -1,0 +1,19 @@
+{
+  "name": "@wellregarded/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "echo \"lint: no linter configured yet (Biome is a separate issue)\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@wellregarded/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
