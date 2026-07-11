@@ -19,7 +19,8 @@ TBD, live in [`infra/environments.md`](../infra/environments.md).
 | `ROUTE_DLQ`      | queue producer  | pipeline                   | Dead-letter forward path for the route stage (`wr-route-dlq`)                                   |
 | `PROOF_CACHE`    | KV namespace    | api                        | Cache of rendered social-proof payloads served by the API                                       |
 | `RAW_IMPORTS`    | R2 bucket       | api                        | Raw uploaded/imported source files (`wr-raw-imports-<env>`)                                     |
-| `HYPERDRIVE`     | Hyperdrive      | api, jobs, dashboard       | Pooled connection to the Postgres database (pgvector)                                           |
+| `RAW_ARTIFACTS`  | R2 bucket       | pipeline                   | Immutable content-addressed raw source artifacts (#100), read by the normalize stage (`wr-raw-artifacts-<env>`) |
+| `HYPERDRIVE`     | Hyperdrive      | api, jobs, dashboard, pipeline | Pooled connection to the Postgres database (pgvector)                                       |
 | `SYNC_LOCK`      | Durable Object  | jobs                       | Per-practice lock serializing Open Dental sync runs (class `SyncLock`, SQLite-backed; stub until Epic #20) |
 
 Queue **consumers** (not bindings, but part of the same contract) all live in
