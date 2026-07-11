@@ -7,3 +7,10 @@ ENVIRONMENT=local
 
 # No Hyperdrive binding here: patient pages stay minimal-dependency by design,
 # so this worker needs no local Postgres connection string.
+
+# Patient link-token signing secret (issue #70): base64 of >= 32 random bytes.
+# Generate a real value with `openssl rand -base64 32`. The value below is a
+# deliberately non-random dev placeholder (base64 of an ASCII sentence) —
+# never use it outside local dev. Optional until the apps/patient link routes
+# land (TODO(#21) in packages/core/src/env.ts).
+PATIENT_TOKEN_SECRET=d2VsbHJlZ2FyZGVkLWxvY2FsLWRldi1vbmx5LXBhdGllbnQtdG9rZW4tc2VjcmV0

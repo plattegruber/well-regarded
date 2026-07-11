@@ -46,6 +46,7 @@ files contain placeholder values only, and secrets never go in `vars` in
 | `CLERK_PUBLISHABLE_KEY` | No (publishable) | api, dashboard | `workers/api/.dev.vars`, `apps/dashboard/.dev.vars` | `vars` in `wrangler.jsonc` |
 | `PII_ENCRYPTION_KEYS` | **Yes** | api, pipeline, jobs | each worker's `.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put PII_ENCRYPTION_KEYS --env preview\|prod` |
 | `PII_HASH_KEY` | **Yes** | api, pipeline, jobs | each worker's `.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put PII_HASH_KEY --env preview\|prod` |
+| `PATIENT_TOKEN_SECRET` | **Yes** | patient (verify); workers that mint links add it when those paths land | `apps/patient/.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put PATIENT_TOKEN_SECRET --env preview\|prod` |
 
 `CLERK_SECRET_KEY` / `CLERK_PUBLISHABLE_KEY` are **optional until Epic #4**
 lands Clerk; the schemas in `packages/core/src/env.ts` flip them to required
@@ -60,6 +61,14 @@ remain encrypted with them. `PII_HASH_KEY` is a separate base64 32-byte
 HMAC key — never rotate it casually; rotating orphans every stored
 `value_hash`. Both are parsed into a `Keyring` by `keyringFromEnv` in
 `packages/core/src/crypto/fieldEncryption.ts`.
+
+`PATIENT_TOKEN_SECRET` signs the patient link tokens (issue #70) — the only
+authentication `apps/patient` will ever have. Generate with `openssl rand
+-base64 32` (base64 of at least 32 random bytes). **Optional until the
+apps/patient link routes land** (`TODO(#21)` in the schema); structural
+validation (base64, length) is owned by the key import in
+`packages/core/src/patientTokens.ts`. Every worker that mints or verifies
+patient tokens must share the same value.
 
 Nothing DB-related appears here by design: workers reach Postgres through the
 Hyperdrive **binding**, so there is no `DATABASE_URL` string var to validate.
