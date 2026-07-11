@@ -27,10 +27,11 @@
  * embedding backfill is Epic #9's job, and the seed must not fake vectors
  * the hybrid-search code would then treat as meaningful.
  *
- * `import_runs`: the table lands with Epic #6. `signals.import_run_id` is
- * stamped with the deterministic `DEMO_IMPORT_RUN_KEY` id on every
- * `csv_import` signal so provenance is exercised now; Epic #6 adds the run
- * row and FK.
+ * `import_runs`: the seed creates the legacy CSV import's run row (a
+ * completed manual run, issue #111) and stamps its deterministic id on
+ * every `csv_import` signal — the FK from `signals.import_run_id` is real
+ * as of migration 0011. Seeded signals are display-ready, so every one
+ * carries the terminal `pipeline_status` of `processed`.
  */
 
 import { faker } from "@faker-js/faker";
@@ -43,6 +44,7 @@ import { grantConsent, revokeConsent } from "../queries/consents.js";
 import { upsertContactPoint } from "../queries/patients.js";
 import { consents } from "../schema/consents.js";
 import { derivations } from "../schema/derivations.js";
+import { importRuns } from "../schema/importRuns.js";
 import { contactPoints, patients } from "../schema/pii.js";
 import { proofExcerpts } from "../schema/proofExcerpts.js";
 import { signals } from "../schema/signals.js";
@@ -54,6 +56,7 @@ import {
 } from "../schema/tenancy.js";
 import {
   DEMO_IMPORT_ARTIFACT_KEY,
+  DEMO_IMPORT_DAYS_AGO,
   DEMO_IMPORT_RUN_KEY,
   DEMO_PRACTICE_CLERK_ORG_ID,
   DEMO_PRACTICE_SLUG,
@@ -85,6 +88,7 @@ export interface SeedSummary {
   derivations: number;
   consents: number;
   proofExcerpts: number;
+  importRuns: number;
 }
 
 export interface RunSeedOptions {
@@ -120,6 +124,7 @@ export async function runSeed(
       practiceId,
       keyring,
     );
+    const importRunCount = await insertImportRuns(tx, practiceId);
     const signalIds = await insertSignals(
       tx,
       practiceId,
@@ -147,6 +152,7 @@ export async function runSeed(
       derivations: derivationCount,
       consents: consentCount,
       proofExcerpts: excerptCount,
+      importRuns: importRunCount,
     };
   });
 }
@@ -189,6 +195,7 @@ async function upsertPractice(tx: Tx): Promise<string> {
   await tx.delete(derivations).where(eq(derivations.practiceId, practiceId));
   await tx.delete(consents).where(eq(consents.practiceId, practiceId));
   await tx.delete(signals).where(eq(signals.practiceId, practiceId));
+  await tx.delete(importRuns).where(eq(importRuns.practiceId, practiceId));
   await tx.delete(providers).where(eq(providers.practiceId, practiceId));
   await tx.delete(staffMembers).where(eq(staffMembers.practiceId, practiceId));
   // pii.contact_points cascades from its patient.
@@ -326,9 +333,8 @@ function occurredAt(fixture: SignalFixture): Date {
 /** Signals are ingested shortly after they occur (CSV rows at import time). */
 function ingestedAt(fixture: SignalFixture): Date {
   if (fixture.sourceKind === "csv_import") {
-    // The legacy export was imported on 2025-11-03 — 249 days before the
-    // anchor (see DEMO_IMPORT_ARTIFACT_KEY).
-    return daysBeforeAnchor(249);
+    // At import time — the day the legacy run ran (see insertImportRuns).
+    return daysBeforeAnchor(DEMO_IMPORT_DAYS_AGO);
   }
   return new Date(occurredAt(fixture).getTime() + 6 * 3600_000);
 }
@@ -379,6 +385,37 @@ function provenance(fixture: SignalFixture): {
   }
 }
 
+/**
+ * The legacy CSV import's `import_runs` row (issue #111): a completed
+ * manual run that created the 12 `csv_import` signals, finished the day it
+ * ran, with the raw export's R2 key on record. Inserted before signals —
+ * `signals.import_run_id` FKs it.
+ */
+async function insertImportRuns(tx: Tx, practiceId: string): Promise<number> {
+  const started = daysBeforeAnchor(DEMO_IMPORT_DAYS_AGO);
+  const csvCount = SIGNAL_FIXTURES.filter(
+    (fixture) => fixture.sourceKind === "csv_import",
+  ).length;
+  await tx.insert(importRuns).values({
+    id: DEMO_IMPORT_RUN_ID,
+    practiceId,
+    sourceKind: "csv_import",
+    trigger: "manual",
+    status: "completed",
+    startedAt: started,
+    // The legacy import took a couple of minutes, deterministically.
+    finishedAt: new Date(started.getTime() + 2 * 60_000),
+    created: csvCount,
+    merged: 0,
+    skipped: 0,
+    failed: 0,
+    stats: {},
+    errorSamples: [],
+    rawArtifactKeys: [DEMO_IMPORT_ARTIFACT_KEY],
+  });
+  return 1;
+}
+
 async function insertSignals(
   tx: Tx,
   practiceId: string,
@@ -404,6 +441,8 @@ async function insertSignals(
         originalText: fixture.text,
         originalRating: fixture.rating ?? null,
         visibility: fixture.visibility,
+        // Seeded signals are display-ready — the terminal pipeline state.
+        pipelineStatus: "processed" as const,
         availability: fixture.deletedAtSource
           ? ("deleted_at_source" as const)
           : ("available" as const),

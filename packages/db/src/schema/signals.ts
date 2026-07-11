@@ -24,14 +24,16 @@
  */
 
 import {
+  type DerivationBasis,
   RETENTION_STATES,
   SIGNAL_AVAILABILITIES,
+  SIGNAL_PIPELINE_STATUSES,
   SIGNAL_VISIBILITIES,
-  SOURCE_KINDS,
 } from "@wellregarded/core";
 import { sql } from "drizzle-orm";
 import {
   index,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -41,12 +43,29 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { importRuns } from "./importRuns.js";
 import { patients } from "./pii.js";
+import { sourceKindEnum } from "./sourceKind.js";
 import { locations, practices, providers } from "./tenancy.js";
 
+/**
+ * A provider/location hint the normalize stage (#104) could not confidently
+ * resolve to an FK: the source's text plus how we know it (`basis` from the
+ * shared `DERIVATION_BASES` vocabulary — `inferred_text` for text-derived
+ * hints, `source_metadata` for structured ones, `manual` for staff-entered).
+ * Mirrors `EntityHint` in `@wellregarded/sources` without importing it (that
+ * package depends on this one for its drift guard).
+ */
+export interface SignalEntityHint {
+  text: string;
+  basis: DerivationBasis;
+}
+
 // Enum values sourced from @wellregarded/core (one source of truth; the
-// source adapters in Epic #8 consume the same constants).
-export const sourceKindEnum = pgEnum("source_kind", SOURCE_KINDS);
+// source adapters in Epic #8 consume the same constants). `sourceKindEnum`
+// lives in ./sourceKind.ts (shared with importRuns.ts without a cycle) and
+// is re-exported here so import sites are unaffected.
+export { sourceKindEnum } from "./sourceKind.js";
 export const signalVisibilityEnum = pgEnum(
   "signal_visibility",
   SIGNAL_VISIBILITIES,
@@ -56,6 +75,10 @@ export const signalAvailabilityEnum = pgEnum(
   SIGNAL_AVAILABILITIES,
 );
 export const retentionStateEnum = pgEnum("retention_state", RETENTION_STATES);
+export const signalPipelineStatusEnum = pgEnum(
+  "signal_pipeline_status",
+  SIGNAL_PIPELINE_STATUSES,
+);
 
 export const signals = pgTable(
   "signals",
@@ -87,8 +110,15 @@ export const signals = pgTable(
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
     /** R2 key of the raw payload. */
     rawArtifactKey: text("raw_artifact_key"),
-    /** No FK yet — `import_runs` lands in Epic #6; add the constraint there. */
-    importRunId: uuid("import_run_id"),
+    /** The `import_runs` row (#111) whose ingestion produced this signal. */
+    importRunId: uuid("import_run_id").references(() => importRuns.id),
+
+    // Unresolved entity hints from normalization (#104). A confident match
+    // (exact case/whitespace-insensitive name, or a source-metadata ID
+    // mapping) sets `provider_id`/`location_id` instead; anything fuzzier
+    // stays here as text + basis — never a guessed FK.
+    providerHint: jsonb("provider_hint").$type<SignalEntityHint>(),
+    locationHint: jsonb("location_hint").$type<SignalEntityHint>(),
 
     // Original content — immutable; see signals_protect_original (module doc).
     originalText: text("original_text"),
@@ -100,6 +130,16 @@ export const signals = pgTable(
     originalRating: numeric("original_rating", { precision: 2, scale: 1 }),
 
     // State.
+    /**
+     * Position in the pipeline spine (Epic #6): normalize (#104) inserts
+     * `pending_dedupe`; dedupe/classify/route advance it to `processed`.
+     * Rows created outside the pipeline (manual entry, seed) are inserted
+     * as `processed` directly. NOT a derived judgment — the module doc's
+     * "no derived status" rule still holds; those live in `derivations`.
+     */
+    pipelineStatus: signalPipelineStatusEnum("pipeline_status")
+      .notNull()
+      .default("pending_dedupe"),
     visibility: signalVisibilityEnum("visibility").notNull(),
     availability: signalAvailabilityEnum("availability")
       .notNull()
@@ -133,5 +173,10 @@ export const signals = pgTable(
       table.visibility,
       table.occurredAt.desc(),
     ),
+    // Reverse lookup for the import report UI's drill-down (#111): all
+    // signals produced by one run. Partial — most signals carry no run.
+    index("signals_import_run_id_idx")
+      .on(table.importRunId)
+      .where(sql`${table.importRunId} IS NOT NULL`),
   ],
 );

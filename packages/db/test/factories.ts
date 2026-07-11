@@ -35,6 +35,7 @@ import {
 } from "../src/queries/patients.js";
 import { apiKeys } from "../src/schema/apiKeys.js";
 import { derivations } from "../src/schema/derivations.js";
+import { importRuns } from "../src/schema/importRuns.js";
 import { patients } from "../src/schema/pii.js";
 import { proofExcerpts } from "../src/schema/proofExcerpts.js";
 import { signals } from "../src/schema/signals.js";
@@ -72,6 +73,7 @@ function must<T>(row: T | undefined, what: string): T {
 }
 
 type ApiKeyInsert = typeof apiKeys.$inferInsert;
+type ImportRunInsert = typeof importRuns.$inferInsert;
 type PracticeInsert = typeof practices.$inferInsert;
 type LocationInsert = typeof locations.$inferInsert;
 type StaffMemberInsert = typeof staffMembers.$inferInsert;
@@ -124,6 +126,23 @@ export async function apiKey(
     })
     .returning();
   return { ...must(row, "api key"), key: generated.key };
+}
+
+export async function importRun(
+  db: Db,
+  overrides: Partial<ImportRunInsert> = {},
+): Promise<typeof importRuns.$inferSelect> {
+  const practiceId = overrides.practiceId ?? (await practice(db)).id;
+  const [row] = await db
+    .insert(importRuns)
+    .values({
+      sourceKind: "csv_import",
+      trigger: "manual",
+      ...overrides,
+      practiceId,
+    })
+    .returning();
+  return must(row, "import run");
 }
 
 export async function location(

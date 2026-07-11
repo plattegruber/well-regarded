@@ -59,6 +59,71 @@ export async function findContactPoint(
   return row?.contactPoint;
 }
 
+/**
+ * A patient contact hint carried by a `NormalizedSignal` (issue #104) —
+ * mirrors `PatientHint` in `@wellregarded/sources` without importing it. At
+ * least one of the fields is present (the source contract enforces that).
+ */
+export interface PatientContactHint {
+  name?: string | undefined;
+  email?: string | undefined;
+  /** Mapped to contact kind `sms` (the phone-shaped `CONTACT_KINDS` value). */
+  phone?: string | undefined;
+}
+
+/**
+ * The pipeline's PII seam (issue #104 requirement 4): resolve a signal's
+ * `patientHint` to a `pii.patients` row id, create-or-match by contact
+ * point within the practice.
+ *
+ * Match: hash-equality lookup on email first, then phone — never a name
+ * match (names are not identities). Miss: insert a patient (displayName
+ * from the hint) and its contact points through `upsertContactPoint`, the
+ * one sanctioned encrypt+hash write path. Callers link the returned id into
+ * `signals.patient_id` inside the same transaction.
+ */
+export async function matchOrCreatePatientByContact(
+  db: Db | Tx,
+  input: {
+    practiceId: string;
+    hint: PatientContactHint;
+    keyring: Keyring;
+  },
+): Promise<string> {
+  const { practiceId, hint, keyring } = input;
+  const contacts: Array<{ kind: ContactKind; rawValue: string }> = [];
+  if (hint.email) contacts.push({ kind: "email", rawValue: hint.email });
+  if (hint.phone) contacts.push({ kind: "sms", rawValue: hint.phone });
+
+  for (const contact of contacts) {
+    const existing = await findContactPoint(
+      db,
+      practiceId,
+      contact.kind,
+      contact.rawValue,
+      keyring,
+    );
+    if (existing) return existing.patientId;
+  }
+
+  const [patient] = await db
+    .insert(patients)
+    .values({ practiceId, displayName: hint.name ?? null })
+    .returning({ id: patients.id });
+  if (!patient) {
+    throw new Error("matchOrCreatePatientByContact: insert returned no row");
+  }
+  for (const contact of contacts) {
+    await upsertContactPoint(db, {
+      patientId: patient.id,
+      kind: contact.kind,
+      rawValue: contact.rawValue,
+      keyring,
+    });
+  }
+  return patient.id;
+}
+
 export interface UpsertContactPointInput {
   patientId: string;
   kind: ContactKind;
