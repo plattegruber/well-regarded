@@ -61,6 +61,18 @@ const piiKeyringEnvSchema = z.object({
   PII_HASH_KEY: z.string().min(1).optional(),
 });
 
+/**
+ * Patient link-token signing secret (issue #70): base64 of >= 32 random
+ * bytes (`openssl rand -base64 32`). String-presence validation only —
+ * structural validation (base64, length) is owned by the key import in
+ * `./patientTokens.ts`. Needed by the patient worker (verify) and by any
+ * worker that mints links.
+ */
+const patientTokenEnvSchema = z.object({
+  // TODO(#21): make required when the apps/patient link routes land.
+  PATIENT_TOKEN_SECRET: z.string().min(1).optional(),
+});
+
 // One schema per worker. Compose from the shared fragments above rather than
 // repeating fields. Workers that bind Hyperdrive validate nothing DB-related:
 // the connection arrives through the binding (typed by `Env`, see header).
@@ -72,7 +84,9 @@ export const pipelineEnvSchema = baseEnvSchema.extend(
 );
 export const jobsEnvSchema = baseEnvSchema.extend(piiKeyringEnvSchema.shape);
 export const dashboardEnvSchema = baseEnvSchema.extend(clerkEnvSchema.shape);
-export const patientEnvSchema = baseEnvSchema.extend({});
+export const patientEnvSchema = baseEnvSchema.extend(
+  patientTokenEnvSchema.shape,
+);
 
 export type BaseEnv = z.infer<typeof baseEnvSchema>;
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
