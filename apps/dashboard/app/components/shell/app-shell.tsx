@@ -3,17 +3,16 @@
 // wordmark (no logo mark, by design), mode chip, the eight surfaces plus
 // Settings, and a practice footer — beside a 1120px-max content column.
 // There is no global top bar; each screen opens with its own PageHeader.
-import { NavLink } from "react-router";
+import { NavLink, useFetchers } from "react-router";
 
 import { RatingStars } from "~/components/ui/rating-stars";
 import { cn } from "~/lib/utils";
 import { NAV_ITEMS, type NavItem, SETTINGS_ITEM } from "./nav";
 
-// PLACEHOLDER until data wiring: the designer's demo practice. The nav
-// badge counts below are the same fixture (Reviews awaiting reply, open
-// urgent Recovery items).
+// PLACEHOLDER until data wiring: the designer's demo practice (name now
+// comes from the shell loader). The nav badge counts below are the same
+// fixture (Reviews awaiting reply, open urgent Recovery items).
 const PRACTICE = {
-  name: "Cedar Ridge Dental",
   rating: 4.8,
   meta: "214 reviews · 2 locations",
   mode: "Full Trust Loop",
@@ -52,7 +51,43 @@ function SidebarNavLink({ item }: { item: NavItem }) {
   );
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+/**
+ * The optimistic-update reference (#141) — this is the copy-paste source.
+ *
+ * The practice-profile form (/settings/practice) submits with a fetcher.
+ * While that submission is in flight, `useFetchers` exposes its pending
+ * `formData` anywhere in the app, so the sidebar footer can show the new
+ * name immediately instead of waiting for the round trip:
+ *
+ * 1. Submit → the fetcher's formData appears here → the footer renders
+ *    the submitted name (optimistic).
+ * 2. Action succeeds → loaders revalidate → the shell loader returns the
+ *    saved name → same value, no visible change (reconciled).
+ * 3. Action fails (validation or otherwise) → the fetcher settles without
+ *    a mutation → revalidation returns the old name → the footer snaps
+ *    back (rolled back). No manual cleanup — the fetcher's lifecycle is
+ *    the state machine.
+ */
+function useOptimisticPracticeName(practiceName: string): string {
+  const fetchers = useFetchers();
+  const pending = fetchers.find(
+    (fetcher) =>
+      fetcher.formAction === "/settings/practice" &&
+      fetcher.formData?.has("name"),
+  );
+  const submitted = pending?.formData?.get("name");
+  const optimistic = typeof submitted === "string" ? submitted.trim() : "";
+  return optimistic || practiceName;
+}
+
+export interface AppShellProps {
+  /** The practice display name from the shell loader. */
+  practiceName: string;
+  children: React.ReactNode;
+}
+
+export function AppShell({ practiceName, children }: AppShellProps) {
+  const displayName = useOptimisticPracticeName(practiceName);
   return (
     <div className="flex min-h-screen bg-surface-page font-sans text-ink-900">
       <aside
@@ -81,7 +116,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="mx-2.5 mt-3.5 flex flex-col gap-2 border-t border-hairline pt-3.5">
           <span className="text-small font-semibold leading-snug text-ink-900">
-            {PRACTICE.name}
+            {displayName}
           </span>
           <RatingStars rating={PRACTICE.rating} size={12} showValue />
           <span className="font-mono text-label font-medium text-gray-500">

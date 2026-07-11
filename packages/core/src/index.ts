@@ -12,5 +12,6 @@ export * from "./env.js";
 export * from "./patients.js";
 export * from "./patientTokens.js";
 export * from "./permissions/index.js";
+export * from "./practiceProfile.js";
 export * from "./signals.js";
 export * from "./staff.js";

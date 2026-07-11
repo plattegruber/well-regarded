@@ -1,17 +1,23 @@
 import { renderToString } from "react-dom/server";
-import { MemoryRouter } from "react-router";
+import { createRoutesStub } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { AppShell } from "./app-shell";
 
+// A routes stub (not MemoryRouter): AppShell reads useFetchers for the
+// optimistic practice name, which needs a data router.
 function render(path = "/") {
-  return renderToString(
-    <MemoryRouter initialEntries={[path]}>
-      <AppShell>
-        <p>Content</p>
-      </AppShell>
-    </MemoryRouter>,
-  );
+  const Stub = createRoutesStub([
+    {
+      path: "*",
+      Component: () => (
+        <AppShell practiceName="Cedar Ridge Dental">
+          <p>Content</p>
+        </AppShell>
+      ),
+    },
+  ]);
+  return renderToString(<Stub initialEntries={[path]} />);
 }
 
 describe("AppShell", () => {

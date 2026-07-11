@@ -50,6 +50,7 @@ files contain placeholder values only, and secrets never go in `vars` in
 | `PII_ENCRYPTION_KEYS` | **Yes** | api, pipeline, jobs | each worker's `.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put PII_ENCRYPTION_KEYS --env preview\|prod` |
 | `PII_HASH_KEY` | **Yes** | api, pipeline, jobs | each worker's `.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put PII_HASH_KEY --env preview\|prod` |
 | `PATIENT_TOKEN_SECRET` | **Yes** | patient (verify); workers that mint links add it when those paths land | `apps/patient/.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put PATIENT_TOKEN_SECRET --env preview\|prod` |
+| `SESSION_SECRET` | **Yes** | dashboard (flash-message cookie session, #141) | `apps/dashboard/.dev.vars` (dev-only value in `.dev.vars.example`; the app falls back to an insecure dev secret when unset locally) | `wrangler secret put SESSION_SECRET --env preview\|prod` |
 
 Every `CLERK_*` var is **optional in the schemas until the real Clerk
 application exists** — see the next section for the exact flip.

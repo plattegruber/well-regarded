@@ -1,17 +1,6 @@
-// Placeholder index route inside the app shell. The nine product surfaces
-// (#132) replace this with real routes and intentional empty states.
-import { PageHeader } from "~/components/shell/page-header";
+// The index route redirects to /today (#132): the queue is the front door.
+import { redirect } from "react-router";
 
-export function meta() {
-  return [{ title: "Well Regarded" }];
-}
-
-export default function Home() {
-  return (
-    <PageHeader
-      overline="Dashboard"
-      title="Well Regarded"
-      description="The shell is running. The product surfaces arrive with the route skeletons."
-    />
-  );
+export function loader() {
+  return redirect("/today");
 }

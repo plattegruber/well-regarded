@@ -108,6 +108,17 @@ const patientTokenEnvSchema = z.object({
   PATIENT_TOKEN_SECRET: z.string().min(1).optional(),
 });
 
+/**
+ * Cookie-session signing secret for the dashboard (flash messages, #141):
+ * any long random string (`openssl rand -base64 32`).
+ */
+const sessionEnvSchema = z.object({
+  // Optional in local dev (the flash helper falls back to an insecure
+  // dev-only secret); deployed environments must set it — the helper
+  // throws otherwise.
+  SESSION_SECRET: z.string().min(1).optional(),
+});
+
 // One schema per worker. Compose from the shared fragments above rather than
 // repeating fields. Workers that bind Hyperdrive validate nothing DB-related:
 // the connection arrives through the binding (typed by `Env`, see header).
@@ -120,7 +131,9 @@ export const pipelineEnvSchema = baseEnvSchema.extend(
   piiKeyringEnvSchema.shape,
 );
 export const jobsEnvSchema = baseEnvSchema.extend(piiKeyringEnvSchema.shape);
-export const dashboardEnvSchema = baseEnvSchema.extend(clerkEnvSchema.shape);
+export const dashboardEnvSchema = baseEnvSchema
+  .extend(clerkEnvSchema.shape)
+  .extend(sessionEnvSchema.shape);
 export const patientEnvSchema = baseEnvSchema.extend(
   patientTokenEnvSchema.shape,
 );
