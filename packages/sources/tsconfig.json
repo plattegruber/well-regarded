@@ -1,11 +1,9 @@
 {
   "extends": "@wellregarded/tsconfig/base.json",
-  "compilerOptions": {
-    "noEmit": false,
-    "declaration": true,
-    "rootDir": "src",
-    "outDir": "dist"
-  },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
+  // Typecheck (`tsc --noEmit`) covers test files too — the drift guard in
+  // src/contract/signalsTableDrift.test.ts and the R2Bucket assignability
+  // check in src/rawArtifacts.test.ts are compile-time assertions and must
+  // be part of the checked program. Build output is produced by
+  // tsconfig.build.json, which excludes tests.
+  "include": ["src"]
 }
