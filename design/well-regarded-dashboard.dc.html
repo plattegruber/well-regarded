@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="design-system/tokens/fonts.css">
+  <link rel="stylesheet" href="design-system/tokens/colors.css">
+  <link rel="stylesheet" href="design-system/tokens/typography.css">
+  <link rel="stylesheet" href="design-system/tokens/spacing.css">
+  <link rel="stylesheet" href="design-system/tokens/effects.css">
+  <link rel="stylesheet" href="design-system/tokens/base.css">
+  <link rel="stylesheet" href="design-system/styles.css">
+  <script src="design-system/_ds_bundle.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--surface-page); }
+    a { color: var(--accent-700); text-decoration: none; }
+    a:hover { color: var(--accent-800); }
+    ::selection { background: var(--accent-100); }
+    textarea:focus, input:focus { outline: none; box-shadow: var(--focus-ring); border-color: var(--ink-900); }
+  </style>
+</helmet>
+
+<div style="display:flex; min-height:100vh; background:var(--surface-page); font-family:var(--font-sans); color:var(--ink-900)">
+
+  <aside style="width:236px; flex-shrink:0; background:var(--surface-card); border-right:1px solid var(--border-default); display:flex; flex-direction:column; padding:22px 12px; position:sticky; top:0; height:100vh; box-sizing:border-box">
+    <div style="padding:0 10px 4px">
+      <div style="font:500 20px/1 var(--font-display); letter-spacing:-0.03em; color:var(--ink-900)">Well Regarded</div>
+    </div>
+    <div style="padding:12px 10px 18px; margin-bottom:6px; border-bottom:1px solid var(--border-default)">
+      <span style="display:inline-flex; align-items:center; gap:6px; font:500 10px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--accent-700); background:var(--accent-50); padding:5px 8px">
+        <span style="width:6px; height:6px; border-radius:50%; background:var(--accent-600)"></span>{{ modeLabel }}
+      </span>
+    </div>
+    <nav style="display:flex; flex-direction:column; gap:2px">
+      <sc-for list="{{ nav }}" as="item" hint-placeholder-count="8">
+        <button type="button" onClick="{{ item.onClick }}" style="{{ item.style }}" style-hover="{ background: 'var(--gray-50)' }">
+          {{ item.icon }}<span>{{ item.label }}</span>
+          <sc-if value="{{ item.badge }}" hint-placeholder-val="{{ false }}"><span style="margin-left:auto; font:500 10px/1 var(--font-mono); color:var(--red-700); background:var(--red-100); padding:3px 6px">{{ item.badge }}</span></sc-if>
+        </button>
+      </sc-for>
+    </nav>
+    <div style="margin-top:auto; padding:14px 10px 2px; border-top:1px solid var(--border-default); display:flex; flex-direction:column; gap:8px">
+      <span style="font:600 13px/1.4 var(--font-sans); color:var(--ink-900)">{{ practiceName }}</span>
+      <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.RatingStars" rating="{{ rating }}" size="12" show-value="{{ true }}" hint-size="auto,16px"></x-import>
+      <span style="font:500 11px/1.5 var(--font-mono); color:var(--gray-500)">{{ reviewMeta }}</span>
+    </div>
+  </aside>
+
+  <main style="flex:1; min-width:0; padding:30px 42px 72px; box-sizing:border-box">
+    <div style="max-width:1120px; margin:0 auto">
+
+      <!-- ============ TODAY ============ -->
+      <sc-if value="{{ isToday }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="Today">
+        <header style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:26px">
+          <div>
+            <div style="font:500 11px/1.4 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--gray-500); margin-bottom:10px">{{ today }}</div>
+            <h1 style="margin:0; font:500 32px/1.1 var(--font-display); letter-spacing:-0.03em">Good morning</h1>
+            <p style="margin:8px 0 0; font:400 15px/1.55 var(--font-sans); color:var(--gray-600)">Your practice is already well regarded. Here is what needs you, and what does not.</p>
+          </div>
+          <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.Button" onClick="{{ sendRequest }}" hint-size="auto,42px">Send request</x-import>
+        </header>
+
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:26px">
+          <sc-for list="{{ statsStrip }}" as="s" hint-placeholder-count="4">
+            <div style="background:var(--surface-card); border:1px solid var(--border-default); padding:16px 18px">
+              <div style="font:500 11px/1.4 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--gray-500)">{{ s.label }}</div>
+              <div style="font:500 30px/1.1 var(--font-display); font-feature-settings:'tnum' 1; margin:10px 0 4px">{{ s.value }}</div>
+              <div style="font:500 11px/1.5 var(--font-mono); color:var(--gray-500)">{{ s.sub }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start">
+
+          <section style="background:var(--surface-card); border:1px solid var(--border-default); padding:22px">
+            <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:16px">
+              <h2 style="margin:0; font:600 16px/1.35 var(--font-sans)">Needs your attention</h2>
+              <span style="font:500 11px/1 var(--font-mono); color:var(--gray-500)">{{ attentionCount }} items</span>
+            </div>
+            <div style="display:flex; flex-direction:column">
+              <sc-for list="{{ attention }}" as="a" hint-placeholder-count="5">
+                <button type="button" onClick="{{ a.onClick }}" style="display:flex; gap:14px; align-items:flex-start; text-align:left; width:100%; background:transparent; border:none; border-top:1px solid var(--border-default); padding:15px 0; cursor:pointer" style-hover="{ background: 'var(--gray-50)' }">
+                  <span style="width:7px; height:7px; margin-top:6px; flex-shrink:0; border-radius:50%; background:{{ a.dot }}"></span>
+                  <span style="flex:1; min-width:0">
+                    <span style="display:flex; align-items:center; gap:8px; margin-bottom:5px">
+                      <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.Badge" tone="{{ a.tone }}" hint-size="auto,18px">{{ a.tag }}</x-import>
+                    </span>
+                    <span style="display:block; font:500 14.5px/1.4 var(--font-sans); color:var(--ink-900)">{{ a.title }}</span>
+                    <span style="display:block; font:500 11.5px/1.5 var(--font-mono); color:var(--gray-500); margin-top:4px">{{ a.meta }}</span>
+                  </span>
+                  <span style="font:600 11px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.06em; color:var(--accent-700); white-space:nowrap; margin-top:2px">{{ a.cta }} →</span>
+                </button>
+              </sc-for>
+            </div>
+          </section>
+
+          <section style="background:var(--ink-900); color:var(--text-on-dark); padding:24px">
+            <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px">
+              <span style="font:500 11px/1.4 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--accent-500)">Weekly trust brief</span>
+              <span style="font:500 11px/1 var(--font-mono); color:var(--gray-400)">{{ briefWeek }}</span>
+            </div>
+            <p style="margin:0 0 18px; font:500 20px/1.3 var(--font-display); letter-spacing:-0.02em; color:var(--text-on-dark)">What happened, and what deserves a look.</p>
+            <div style="display:flex; flex-direction:column; gap:16px">
+              <sc-for list="{{ brief }}" as="b" hint-placeholder-count="6">
+                <div style="display:grid; grid-template-columns:130px 1fr; gap:16px; padding-top:16px; border-top:1px solid var(--ink-700)">
+                  <span style="font:500 11px/1.5 var(--font-mono); text-transform:uppercase; letter-spacing:0.06em; color:{{ b.color }}">{{ b.label }}</span>
+                  <span style="font:400 13.5px/1.6 var(--font-sans); color:#D8DEDB">{{ b.body }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ SIGNALS ============ -->
+      <sc-if value="{{ isSignals }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Signals">
+        <header style="margin-bottom:24px">
+          <div style="font:500 11px/1.4 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--gray-500); margin-bottom:10px">Trust signals · unified inbox</div>
+          <h1 style="margin:0; font:500 32px/1.1 var(--font-display); letter-spacing:-0.03em">Signals</h1>
+          <p style="margin:8px 0 0; font:400 15px/1.55 var(--font-sans); color:var(--gray-600)">Every legitimate piece of patient evidence, public or private, with its source and rights preserved.</p>
+        </header>
+        <div style="display:flex; flex-direction:column">
+          <div style="display:grid; grid-template-columns:96px 1fr 150px; gap:16px; padding:0 0 10px; font:500 10.5px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--gray-500)">
+            <span>Source</span><span>Signal</span><span>Rights</span>
+          </div>
+          <sc-for list="{{ signals }}" as="g" hint-placeholder-count="6">
+            <div style="display:grid; grid-template-columns:96px 1fr 150px; gap:16px; padding:16px 0; border-top:1px solid var(--border-default); align-items:start">
+              <div>
+                <div style="font:500 11px/1.4 var(--font-mono); color:var(--ink-800)">{{ g.source }}</div>
+                <div style="margin-top:6px; display:inline-flex; align-items:center; gap:5px; font:500 10px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.06em; color:{{ g.visColor }}; border:1px solid {{ g.visColor }}; padding:3px 6px">{{ g.visibility }}</div>
+              </div>
+              <div>
+                <p style="margin:0 0 8px; font:400 14px/1.65 var(--font-mono); color:var(--ink-800)">{{ g.text }}</p>
+                <div style="display:flex; flex-wrap:wrap; gap:6px">
+                  <sc-for list="{{ g.chips }}" as="c" hint-placeholder-count="2">
+                    <span style="font:500 11px/1 var(--font-mono); padding:5px 8px; color:{{ c.fg }}; background:{{ c.bg }}; border:1px dashed {{ c.border }}">{{ c.text }}</span>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-start">
+                <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.Badge" tone="{{ g.sentimentTone }}" hint-size="auto,18px">{{ g.sentiment }}</x-import>
+                <span style="font:500 11px/1.5 var(--font-mono); color:{{ g.consentColor }}">{{ g.consent }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ REVIEWS ============ -->
+      <sc-if value="{{ isReviews }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Public Reviews">
+        <header style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:20px">
+          <div>
+            <div style="font:500 11px/1.4 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--gray-500); margin-bottom:10px">Public reviews · response workspace</div>
+            <h1 style="margin:0; font:500 32px/1.1 var(--font-display); letter-spacing:-0.03em">Reviews</h1>
+            <p style="margin:8px 0 0; font:400 15px/1.55 var(--font-sans); color:var(--gray-600)">Respond safely and promptly. Public replies need your approval by default.</p>
+          </div>
+        </header>
+        <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.Tabs" tabs="{{ reviewTabs }}" value="{{ reviewTab }}" onChange="{{ setReviewTab }}" hint-size="100%,46px"></x-import>
+        <div style="display:flex; gap:8px; margin:18px 0 6px; flex-wrap:wrap">
+          <sc-for list="{{ sourceChips }}" as="c" hint-placeholder-count="3">
+            <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.Tag" selected="{{ c.selected }}" onClick="{{ c.onClick }}" hint-size="auto,32px">{{ c.label }}</x-import>
+          </sc-for>
+        </div>
+        <div style="display:flex; flex-direction:column">
+          <sc-for list="{{ filteredReviews }}" as="r" hint-placeholder-count="4">
+            <div style="padding:20px 0; border-top:1px solid var(--border-default); display:flex; flex-direction:column; gap:10px">
+              <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+                <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.RatingStars" rating="{{ r.rating }}" size="14" hint-size="auto,16px"></x-import>
+                <span style="font:600 14.5px/1 var(--font-sans)">{{ r.author }}</span>
+                <span style="font:500 11.5px/1 var(--font-mono); color:var(--gray-500)">{{ r.meta }}</span>
+                <span style="margin-left:auto; display:flex; align-items:center; gap:8px">
+                  <sc-if value="{{ r.highRisk }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex; align-items:center; gap:5px; font:500 10px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.06em; color:var(--red-700); border:1px solid var(--red-700); padding:4px 7px">Response risk</span></sc-if>
+                  <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.Badge" tone="{{ r.statusTone }}" hint-size="auto,18px">{{ r.statusLabel }}</x-import>
+                </span>
+              </div>
+              <p style="margin:0; font:400 15px/1.7 var(--font-mono); color:var(--ink-800)">“{{ r.text }}”</p>
+              <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+                <div style="display:flex; gap:6px; flex-wrap:wrap">
+                  <sc-for list="{{ r.themes }}" as="t" hint-placeholder-count="2">
+                    <span style="font:500 11px/1 var(--font-mono); padding:5px 8px; color:var(--gray-600); background:var(--gray-100)">{{ t }}</span>
+                  </sc-for>
+                </div>
+                <span style="font:500 11px/1.5 var(--font-mono); color:var(--gray-500)">{{ r.assoc }}</span>
+                <span style="margin-left:auto">
+                  <sc-if value="{{ r.canReply }}" hint-placeholder-val="{{ true }}">
+                    <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.Button" variant="secondary" size="sm" onClick="{{ r.onReply }}" hint-size="auto,34px">Review reply</x-import>
+                  </sc-if>
+                  <sc-if value="{{ r.replied }}" hint-placeholder-val="{{ false }}">
+                    <span style="font:500 11px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.06em; color:var(--accent-700)">✓ Replied</span>
+                  </sc-if>
+                </span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ RECOVERY ============ -->
+      <sc-if value="{{ isRecovery }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Recovery">
+        <header style="margin-bottom:24px">
+          <div style="font:500 11px/1.4 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--gray-500); margin-bottom:10px">Service recovery · operational queue</div>
+          <h1 style="margin:0; font:500 32px/1.1 var(--font-display); letter-spacing:-0.03em">Recovery</h1>
+          <p style="margin:8px 0 0; font:400 15px/1.55 var(--font-sans); color:var(--gray-600)">Concerns become work, not just reputational risk. Items stay open until resolved.</p>
+        </header>
+        <div style="display:flex; flex-direction:column">
+          <sc-for list="{{ recovery }}" as="r" hint-placeholder-count="4">
+            <div style="padding:20px 0; border-top:1px solid var(--border-default); display:grid; grid-template-columns:1fr 220px; gap:20px; align-items:start">
+              <div>
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px">
+                  <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.Badge" tone="{{ r.priorityTone }}" hint-size="auto,18px">{{ r.priority }}</x-import>
+                  <span style="font:500 11px/1.5 var(--font-mono); color:var(--gray-500)">{{ r.location }}</span>
+                  <sc-if value="{{ r.recurrence }}" hint-placeholder-val="{{ false }}"><span style="font:500 11px/1.5 var(--font-mono); color:var(--amber-700)">↻ {{ r.recurrence }}</span></sc-if>
+                </div>
+                <p style="margin:0; font:400 14.5px/1.6 var(--font-sans); color:var(--ink-900)">{{ r.text }}</p>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:9px; padding-left:20px; border-left:1px solid var(--border-default)">
+                <div style="display:flex; justify-content:space-between; gap:8px"><span style="font:500 10.5px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.06em; color:var(--gray-500)">Owner</span><span style="font:500 11.5px/1 var(--font-mono); color:var(--ink-800); text-align:right">{{ r.owner }}</span></div>
+                <div style="display:flex; justify-content:space-between; gap:8px"><span style="font:500 10.5px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.06em; color:var(--gray-500)">Due</span><span style="font:500 11.5px/1 var(--font-mono); color:{{ r.dueColor }}; text-align:right">{{ r.due }}</span></div>
+                <div style="display:flex; justify-content:space-between; gap:8px"><span style="font:500 10.5px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.06em; color:var(--gray-500)">Contact</span><span style="font:500 11.5px/1 var(--font-mono); color:var(--ink-800); text-align:right">{{ r.contact }}</span></div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ PATIENT PROOF ============ -->
+      <sc-if value="{{ isProof }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Patient Proof">
+        <header style="margin-bottom:24px">
+          <div style="font:500 11px/1.4 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--gray-500); margin-bottom:10px">Patient proof · governed library</div>
+          <h1 style="margin:0; font:500 32px/1.1 var(--font-display); letter-spacing:-0.03em">Patient proof</h1>
+          <p style="margin:8px 0 0; font:400 15px/1.55 var(--font-sans); color:var(--gray-600)">Authentic evidence with provenance and consent tracked. Nothing is published until rights are explicit.</p>
+        </header>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px">
+          <sc-for list="{{ proof }}" as="p" hint-placeholder-count="4">
+            <div style="background:var(--surface-card); border:1px solid var(--border-default); padding:20px; display:flex; flex-direction:column; gap:14px">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:10px">
+                <span style="font:500 10.5px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.06em; color:var(--gray-500)">{{ p.type }}</span>
+                <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.Badge" tone="{{ p.statusTone }}" hint-size="auto,18px">{{ p.status }}</x-import>
+              </div>
+              <p style="margin:0; font:400 14.5px/1.7 var(--font-mono); color:var(--ink-800)">“{{ p.quote }}”</p>
+              <div style="font:500 11.5px/1.5 var(--font-mono); color:var(--gray-600)">{{ p.attribution }}</div>
+              <div style="margin-top:2px; padding-top:14px; border-top:1px solid var(--border-default); display:flex; flex-direction:column; gap:7px">
+                <div style="display:flex; gap:8px"><span style="font:500 10.5px/1.4 var(--font-mono); text-transform:uppercase; letter-spacing:0.06em; color:var(--gray-500); width:74px; flex-shrink:0">Consent</span><span style="font:500 11.5px/1.4 var(--font-mono); color:{{ p.consentColor }}">{{ p.consent }}</span></div>
+                <div style="display:flex; gap:8px"><span style="font:500 10.5px/1.4 var(--font-mono); text-transform:uppercase; letter-spacing:0.06em; color:var(--gray-500); width:74px; flex-shrink:0">Placement</span><span style="font:500 11.5px/1.4 var(--font-mono); color:var(--ink-800)">{{ p.placement }}</span></div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ TRUST COVERAGE ============ -->
+      <sc-if value="{{ isCoverage }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Trust Coverage">
+        <header style="margin-bottom:22px">
+          <div style="font:500 11px/1.4 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--gray-500); margin-bottom:10px">Trust coverage · where confidence is missing</div>
+          <h1 style="margin:0; font:500 32px/1.1 var(--font-display); letter-spacing:-0.03em">Trust coverage</h1>
+          <p style="margin:8px 0 0; font:400 15px/1.55 var(--font-sans); color:var(--gray-600)">A 4.8 rating can still hide gaps. This is whether future patients have credible, current evidence for the decisions they make.</p>
+        </header>
+
+        <div style="background:var(--ink-900); color:var(--text-on-dark); padding:22px 24px; margin-bottom:22px; display:flex; gap:18px; align-items:flex-start">
+          <span style="font:500 11px/1.4 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--accent-500); flex-shrink:0; padding-top:2px">Recommendation</span>
+          <p style="margin:0; font:400 15px/1.6 var(--font-sans); color:#E4E9E7">Review volume is healthy, but the practice has little recent proof for <span style="color:var(--accent-500)">Invisalign</span> and no provider-specific evidence for <span style="color:var(--accent-500)">Dr. Shah</span>. The North location also responds more slowly than Main Street.</p>
+        </div>
+
+        <div style="display:flex; gap:16px; margin-bottom:20px; flex-wrap:wrap">
+          <sc-for list="{{ covLegend }}" as="l" hint-placeholder-count="3">
+            <span style="display:inline-flex; align-items:center; gap:7px; font:500 11px/1 var(--font-mono); color:var(--gray-600)"><span style="width:10px; height:10px; background:{{ l.color }}"></span>{{ l.label }}</span>
+          </sc-for>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start">
+          <section style="background:var(--surface-card); border:1px solid var(--border-default); padding:22px; grid-column:1 / -1">
+            <h2 style="margin:0 0 4px; font:600 16px/1.35 var(--font-sans)">Patient-concern coverage</h2>
+            <p style="margin:0 0 16px; font:400 13px/1.5 var(--font-sans); color:var(--gray-600)">Does the practice visibly answer the questions prospective patients are actually asking?</p>
+            <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:1px; background:var(--border-default); border:1px solid var(--border-default)">
+              <sc-for list="{{ concernCov }}" as="c" hint-placeholder-count="8">
+                <div style="background:var(--surface-card); padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px">
+                  <span style="font:400 14px/1.4 var(--font-sans); color:var(--ink-900)">{{ c.q }}</span>
+                  <span style="display:inline-flex; align-items:center; gap:7px; flex-shrink:0"><span style="width:9px; height:9px; background:{{ c.color }}"></span><span style="font:500 10.5px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.05em; color:{{ c.color }}">{{ c.stateLabel }}</span></span>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+
+          <section style="background:var(--surface-card); border:1px solid var(--border-default); padding:22px">
+            <h2 style="margin:0 0 16px; font:600 16px/1.35 var(--font-sans)">By service</h2>
+            <div style="display:flex; flex-direction:column">
+              <sc-for list="{{ serviceCov }}" as="s" hint-placeholder-count="6">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 0; border-top:1px solid var(--border-default)">
+                  <span style="font:400 14px/1.4 var(--font-sans)">{{ s.name }}</span>
+                  <span style="display:inline-flex; align-items:center; gap:7px"><span style="width:9px; height:9px; background:{{ s.color }}"></span><span style="font:500 11px/1.5 var(--font-mono); color:var(--gray-500)">{{ s.note }}</span></span>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+
+          <section style="background:var(--surface-card); border:1px solid var(--border-default); padding:22px">
+            <h2 style="margin:0 0 16px; font:600 16px/1.35 var(--font-sans)">By provider &amp; location</h2>
+            <div style="display:flex; flex-direction:column">
+              <sc-for list="{{ providerCov }}" as="s" hint-placeholder-count="6">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 0; border-top:1px solid var(--border-default)">
+                  <span style="font:400 14px/1.4 var(--font-sans)">{{ s.name }}</span>
+                  <span style="display:inline-flex; align-items:center; gap:7px"><span style="width:9px; height:9px; background:{{ s.color }}"></span><span style="font:500 11px/1.5 var(--font-mono); color:var(--gray-500)">{{ s.note }}</span></span>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ INSIGHTS ============ -->
+      <sc-if value="{{ isInsights }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Insights">
+        <header style="margin-bottom:24px">
+          <div style="font:500 11px/1.4 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--gray-500); margin-bottom:10px">Practice intelligence</div>
+          <h1 style="margin:0; font:500 32px/1.1 var(--font-display); letter-spacing:-0.03em">Insights</h1>
+          <p style="margin:8px 0 0; font:400 15px/1.55 var(--font-sans); color:var(--gray-600)">What patients consistently value, what is shifting, and where it is concentrated.</p>
+        </header>
+        <div style="display:grid; grid-template-columns:1.3fr 1fr; gap:20px; align-items:start">
+          <section style="background:var(--surface-card); border:1px solid var(--border-default); padding:22px">
+            <h2 style="margin:0 0 16px; font:600 16px/1.35 var(--font-sans)">Experience themes</h2>
+            <div style="display:flex; flex-direction:column">
+              <sc-for list="{{ themes }}" as="t" hint-placeholder-count="6">
+                <div style="display:flex; align-items:center; gap:14px; padding:13px 0; border-top:1px solid var(--border-default)">
+                  <span style="font:600 13px/1 var(--font-mono); color:{{ t.dirColor }}; width:16px">{{ t.arrow }}</span>
+                  <span style="flex:1; font:400 14px/1.4 var(--font-sans)">{{ t.theme }}</span>
+                  <span style="font:500 11px/1.5 var(--font-mono); color:var(--gray-500)">{{ t.note }}</span>
+                  <span style="font:500 13px/1 var(--font-mono); font-feature-settings:'tnum' 1; color:var(--ink-800); width:36px; text-align:right">{{ t.count }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+          <div style="display:flex; flex-direction:column; gap:20px">
+            <section style="background:var(--surface-card); border:1px solid var(--border-default); padding:22px">
+              <h2 style="margin:0 0 16px; font:600 16px/1.35 var(--font-sans)">Review velocity</h2>
+              <div style="display:flex; align-items:flex-end; gap:10px; height:88px">
+                <sc-for list="{{ velocity }}" as="w" hint-placeholder-count="6">
+                  <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:8px; justify-content:flex-end; height:100%">
+                    <div style="width:100%; background:var(--accent-600); {{ w.h }}"></div>
+                    <span style="font:500 10px/1 var(--font-mono); color:var(--gray-500)">{{ w.label }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <p style="margin:14px 0 0; font:500 11.5px/1.5 var(--font-mono); color:var(--gray-500)">New reviews per week · last six weeks</p>
+            </section>
+            <section style="background:var(--surface-card); border:1px solid var(--border-default); padding:22px">
+              <h2 style="margin:0 0 14px; font:600 16px/1.35 var(--font-sans)">By location</h2>
+              <div style="display:grid; grid-template-columns:1fr auto auto auto; gap:10px 14px; font:500 10.5px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.05em; color:var(--gray-500)">
+                <span></span><span style="text-align:right">Rating</span><span style="text-align:right">Response</span><span style="text-align:right">Open</span>
+                <sc-for list="{{ locationCompare }}" as="l" hint-placeholder-count="2">
+                  <span style="font:400 13.5px/1.3 var(--font-sans); text-transform:none; letter-spacing:0; color:var(--ink-900)">{{ l.name }}</span>
+                  <span style="font:500 13px/1.3 var(--font-mono); font-feature-settings:'tnum' 1; text-align:right; color:var(--ink-800)">{{ l.rating }}</span>
+                  <span style="font:500 12px/1.3 var(--font-mono); text-align:right; color:{{ l.respColor }}">{{ l.response }}</span>
+                  <span style="font:500 13px/1.3 var(--font-mono); text-align:right; color:var(--ink-800)">{{ l.open }}</span>
+                </sc-for>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ PRESENCE ============ -->
+      <sc-if value="{{ isPresence }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Presence">
+        <header style="margin-bottom:24px">
+          <div style="font:500 11px/1.4 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--gray-500); margin-bottom:10px">Public-presence health</div>
+          <h1 style="margin:0; font:500 32px/1.1 var(--font-display); letter-spacing:-0.03em">Presence</h1>
+          <p style="margin:8px 0 0; font:400 15px/1.55 var(--font-sans); color:var(--gray-600)">Reputation weakens when public information is inaccurate or stale. These are the surfaces that affect patient action.</p>
+        </header>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start">
+          <sc-for list="{{ presence }}" as="loc" hint-placeholder-count="2">
+            <section style="background:var(--surface-card); border:1px solid var(--border-default); padding:22px">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px">
+                <h2 style="margin:0; font:600 16px/1.35 var(--font-sans)">{{ loc.location }}</h2>
+                <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.Badge" tone="{{ loc.tone }}" hint-size="auto,18px">{{ loc.summary }}</x-import>
+              </div>
+              <div style="display:flex; flex-direction:column">
+                <sc-for list="{{ loc.items }}" as="it" hint-placeholder-count="6">
+                  <div style="display:flex; align-items:flex-start; gap:12px; padding:12px 0; border-top:1px solid var(--border-default)">
+                    <span style="width:8px; height:8px; margin-top:5px; flex-shrink:0; background:{{ it.color }}"></span>
+                    <span style="flex:1; font:400 14px/1.45 var(--font-sans); color:var(--ink-900)">{{ it.label }}</span>
+                    <span style="font:500 11px/1.5 var(--font-mono); color:{{ it.color }}; text-align:right">{{ it.note }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </section>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+    </div>
+  </main>
+</div>
+
+<!-- reply dialog -->
+<x-import component-from-global-scope="WellRegardedDesignSystem_71432a.Dialog" open="{{ replyOpen }}" title="Review reply" onClose="{{ closeReply }}" width="580" hint-size="580px,auto">
+  <div style="display:flex; flex-direction:column; gap:18px">
+    <div style="background:var(--surface-sunken); border:1px solid var(--border-default); padding:16px">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px">
+        <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.RatingStars" rating="{{ replyRating }}" size="13" hint-size="auto,16px"></x-import>
+        <span style="font:600 13.5px/1 var(--font-sans)">{{ replyAuthor }}</span>
+        <span style="font:500 11px/1 var(--font-mono); color:var(--gray-500)">{{ replyMeta }}</span>
+      </div>
+      <p style="margin:0; font:400 13.5px/1.65 var(--font-mono); color:var(--ink-800)">“{{ replyBody }}”</p>
+    </div>
+
+    <sc-if value="{{ hasReplyFlags }}" hint-placeholder-val="{{ false }}">
+      <div style="border:1px solid var(--red-700); background:var(--red-100); padding:14px 16px">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--red-700)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+          <span style="font:500 10.5px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--red-700)">Privacy-safe check</span>
+        </div>
+        <ul style="margin:0; padding-left:18px; display:flex; flex-direction:column; gap:5px">
+          <sc-for list="{{ replyFlags }}" as="f" hint-placeholder-count="2">
+            <li style="font:400 12.5px/1.5 var(--font-sans); color:var(--red-700)">{{ f }}</li>
+          </sc-for>
+        </ul>
+      </div>
+    </sc-if>
+
+    <div>
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px">
+        <span style="font:500 10.5px/1 var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--gray-500)">Suggested reply · you can edit</span>
+        <span style="font:500 10.5px/1 var(--font-mono); color:var(--gray-400)">Draft · not published</span>
+      </div>
+      <textarea value="{{ replyText }}" onInput="{{ onReplyInput }}" rows="5" style="width:100%; resize:vertical; font:400 13.5px/1.6 var(--font-sans); color:var(--ink-900); background:var(--surface-card); border:1px solid var(--ink-900); border-radius:0; padding:12px 14px; box-sizing:border-box"></textarea>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px">
+      <span style="font:500 11px/1.5 var(--font-mono); color:var(--gray-500)">Publishes to {{ replySource }} after approval.</span>
+      <div style="display:flex; gap:10px">
+        <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.Button" variant="ghost" onClick="{{ closeReply }}" hint-size="auto,42px">Cancel</x-import>
+        <x-import component-from-global-scope="WellRegardedDesignSystem_71432a.Button" onClick="{{ approveReply }}" hint-size="auto,42px">Approve and publish</x-import>
+      </div>
+    </div>
+  </div>
+</x-import>
+
+<!-- toast -->
+<sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:200; background:var(--ink-900); color:var(--text-on-dark); padding:14px 20px; display:flex; align-items:center; gap:10px; box-shadow:var(--shadow-overlay)">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-500)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+    <span style="font:500 13px/1.4 var(--font-sans)">{{ toast }}</span>
+  </div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1280, &quot;height&quot;: 860}, &quot;practiceName&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;Cedar Ridge Dental&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Practice&quot;}, &quot;mode&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;Full Trust Loop&quot;, &quot;options&quot;: [&quot;Full Trust Loop&quot;, &quot;Activate Existing Signals&quot;], &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Practice&quot;}}">
+class Component extends DCLogic {
+  reviewsSeed = [
+    { id: 1, author: "Maria G.", source: "Google", rating: 5, when: "Yesterday", status: "awaiting",
+      themes: ["Dental anxiety", "Treatment explanation"], assoc: "Dr. Aldana · inferred", risk: "normal",
+      text: "Dr. Aldana took the time to explain everything. I have never felt this at ease at a dentist.",
+      suggested: "Thank you so much for sharing this. Putting patients at ease is something the whole team cares about, and we are glad it came through. We look forward to seeing you again.",
+      flags: [] },
+    { id: 2, author: "Tom H.", source: "Google", rating: 4, when: "2 days ago", status: "awaiting",
+      themes: ["Staff warmth", "Wait time"], assoc: "Main Street · confirmed", risk: "normal",
+      text: "Friendly staff and easy scheduling. The waiting room ran a little behind, but the care was excellent.",
+      suggested: "Thank you for the kind words, and for the honest note about the wait. We are reviewing our Tuesday scheduling to keep things running on time. We appreciate you.",
+      flags: [] },
+    { id: 3, author: "R. Delgado", source: "Google", rating: 2, when: "3 days ago", status: "attention",
+      themes: ["Financial communication"], assoc: "Billing · inferred", risk: "high",
+      text: "I was charged for something my insurance was supposed to cover and no one could explain the statement. Still waiting on a call back about my crown from June.",
+      suggested: "Thank you for taking the time to share this. We take billing concerns seriously and would like to understand what happened. Please reach us at the office at your convenience so we can help directly.",
+      flags: [
+        "Do not confirm a specific treatment. The draft should not mention the crown.",
+        "Keep insurance and billing details out of the public reply.",
+        "Do not reference the June appointment or that the practice tried to contact the reviewer." ] },
+    { id: 4, author: "Priya S.", source: "Google", rating: 5, when: "Last week", status: "replied",
+      themes: ["Children's experience", "Staff warmth"], assoc: "Pediatric · inferred", risk: "normal",
+      text: "The hygienist was gentle and thorough. My kids actually look forward to their visits now.",
+      suggested: "", flags: [] },
+    { id: 5, author: "Anonymous", source: "Healthgrades", rating: 3, when: "Last week", status: "awaiting",
+      themes: ["Cleanliness", "Scheduling"], assoc: "North · inferred", risk: "normal",
+      text: "Clean office and a polite front desk, but it took three calls to reschedule an appointment.",
+      suggested: "Thank you for the feedback. Making scheduling easier is on our list, and notes like this help us get there. We hope your next visit is smoother.",
+      flags: [] },
+    { id: 6, author: "Daniel R.", source: "Google", rating: 5, when: "2 weeks ago", status: "replied",
+      themes: ["Trust in provider"], assoc: "Dr. Patel · confirmed", risk: "normal",
+      text: "Been coming here for years. Consistently careful, honest work.", suggested: "", flags: [] },
+    { id: 7, author: "J. Okafor", source: "Google", rating: 5, when: "3 weeks ago", status: "replied",
+      themes: ["Comfort", "Implants"], assoc: "Implants · Dr. Patel · inferred", risk: "normal",
+      text: "Was nervous about my implant, but Dr. Patel walked me through each step. Much easier than I expected.",
+      suggested: "", flags: [] },
+  ];
+
+  state = { screen: "today", reviewTab: "awaiting", source: "all", replyReview: null, replyText: "", toast: null, reviews: this.reviewsSeed };
+
+  nav = (k) => this.setState({ screen: k, replyReview: null });
+  setReviewTab = (v) => this.setState({ reviewTab: v });
+  setSource = (v) => this.setState({ source: v });
+  openReply = (r) => this.setState({ replyReview: r, replyText: r.suggested || "" });
+  closeReply = () => this.setState({ replyReview: null });
+  onReplyInput = (e) => this.setState({ replyText: e.target.value });
+  flash = (msg) => { this.setState({ toast: msg }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ toast: null }), 2800); };
+  sendRequest = () => this.flash("Feedback request queued for eligible visits.");
+  approveReply = () => {
+    const cur = this.state.replyReview; if (!cur) return;
+    this.setState((s) => ({ reviews: s.reviews.map((r) => r.id === cur.id ? { ...r, status: "replied" } : r), replyReview: null }));
+    this.flash("Reply published to " + cur.source + ".");
+  };
+
+  icon(paths) {
+    return React.createElement("svg", { width: 17, height: 17, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.75, strokeLinecap: "round", strokeLinejoin: "round", style: { flexShrink: 0 }, dangerouslySetInnerHTML: { __html: paths } });
+  }
+
+  renderVals() {
+    const { screen, reviewTab, source } = this.state;
+    const reviews = this.state.reviews;
+    const cv = {
+      strong: { color: "var(--accent-600)", label: "Well covered" },
+      thin: { color: "var(--amber-700)", label: "Thin" },
+      gap: { color: "var(--red-700)", label: "Gap" },
+    };
+    const st = {
+      awaiting: { label: "Awaiting reply", tone: "caution" },
+      attention: { label: "Needs attention", tone: "negative" },
+      replied: { label: "Replied", tone: "positive" },
+    };
+
+    // nav
+    const navBase = { display: "flex", alignItems: "center", gap: 11, textAlign: "left", width: "100%", fontFamily: "var(--font-sans)", fontSize: 13.5, fontWeight: 500, color: "var(--gray-600)", background: "transparent", border: "none", borderRadius: 0, padding: "9px 10px", cursor: "pointer", transition: "background var(--duration-fast) var(--ease-out)" };
+    const navOn = { color: "var(--accent-700)", background: "var(--accent-50)", fontWeight: 600 };
+    const defs = [
+      ["today", "Today", '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>', null],
+      ["signals", "Signals", '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>', null],
+      ["reviews", "Reviews", '<path d="M12 2l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.1 6 20.4l1.3-6.7-5-4.7 6.8-.8z"/>', "2"],
+      ["recovery", "Recovery", '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>', "1"],
+      ["proof", "Patient proof", '<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h7"/>', null],
+      ["coverage", "Trust coverage", '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>', null],
+      ["insights", "Insights", '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>', null],
+      ["presence", "Presence", '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 0 20 15.3 15.3 0 0 1 0-20z"/>', null],
+    ];
+    const nav = defs.map(([key, label, paths, badge]) => ({
+      key, label, badge,
+      icon: this.icon(paths),
+      onClick: () => this.nav(key),
+      style: screen === key ? { ...navBase, ...navOn } : navBase,
+    }));
+
+    // reviews derived
+    let list = reviews.slice();
+    if (reviewTab !== "all") list = list.filter((r) => r.status === reviewTab);
+    if (source !== "all") list = list.filter((r) => r.source === source);
+    const filteredReviews = list.map((r) => ({
+      ...r,
+      meta: r.source + " · " + r.when,
+      statusLabel: st[r.status].label,
+      statusTone: st[r.status].tone,
+      highRisk: r.risk === "high",
+      canReply: r.status !== "replied",
+      replied: r.status === "replied",
+      onReply: () => this.openReply(r),
+    }));
+    const cnt = (s) => reviews.filter((r) => r.status === s).length;
+    const reviewTabs = [
+      { value: "all", label: "All", count: reviews.length },
+      { value: "awaiting", label: "Awaiting reply", count: cnt("awaiting") },
+      { value: "attention", label: "Needs attention", count: cnt("attention") },
+      { value: "replied", label: "Replied", count: cnt("replied") },
+    ];
+    const srcs = ["all", ...Array.from(new Set(reviews.map((r) => r.source)))];
+    const sourceChips = srcs.map((s) => ({ value: s, label: s === "all" ? "All sources" : s, selected: source === s, onClick: () => this.setSource(s) }));
+
+    // today
+    const attnDot = { negative: "var(--red-700)", caution: "var(--amber-700)", positive: "var(--accent-600)" };
+    const attnDefs = [
+      { tag: "Urgent", tone: "negative", title: "Increased pain reported after an extraction", meta: "North · private feedback · flagged for Dr. Shah", cta: "Recovery", screen: "recovery" },
+      { tag: "Recovery due", tone: "caution", title: "A billing concern is still open, due Monday", meta: "Main Street · assigned to the office manager", cta: "Recovery", screen: "recovery" },
+      { tag: "Awaiting approval", tone: "caution", title: "A drafted reply is ready for one Google review", meta: "2-star · financial communication · privacy-flagged", cta: "Reviews", screen: "reviews" },
+      { tag: "Profile", tone: "caution", title: "Holiday hours are not set on the North Google profile", meta: "North · public profile", cta: "Presence", screen: "presence" },
+      { tag: "Proof", tone: "positive", title: "Three permissioned comments are ready for the Invisalign page", meta: "Awaiting your approval", cta: "Proof", screen: "proof" },
+    ];
+    const attention = attnDefs.map((a) => ({ ...a, dot: attnDot[a.tone], onClick: () => this.nav(a.screen) }));
+
+    const brief = [
+      { label: "Patients appreciated", color: "var(--accent-500)", body: "Clear treatment explanations, gentle hygienists, and the new online check-in were mentioned repeatedly this week." },
+      { label: "Worth looking at", color: "#D8DEDB", body: "Four patients mentioned longer waits on Tuesday afternoons. The comments span multiple providers, which points to scheduling rather than any one person." },
+      { label: "Needs follow-up", color: "#F0C36B", body: "One billing concern is still open. It is assigned to the office manager and due Monday." },
+      { label: "Public reputation", color: "#D8DEDB", body: "Seven new Google reviews arrived. Six have responses; one is awaiting your approval." },
+      { label: "Trust opportunity", color: "var(--accent-500)", body: "The Invisalign page gets steady traffic but has no recent patient proof. Three permissioned comments may be a good fit." },
+      { label: "Profile health", color: "#F0C36B", body: "Holiday hours have not been set on the North office's Google profile." },
+    ];
+    const statsStrip = [
+      { label: "Average rating", value: "4.8", sub: "up from 4.6 this quarter" },
+      { label: "New reviews · week", value: "7", sub: "6 responded" },
+      { label: "Awaiting reply", value: String(cnt("awaiting")), sub: "oldest is 2 days old" },
+      { label: "Open recovery", value: "3", sub: "1 urgent" },
+    ];
+
+    // signals
+    const chip = (text, inferred) => inferred
+      ? { text: text + " · inferred", fg: "var(--gray-600)", bg: "var(--surface-card)", border: "var(--gray-300)" }
+      : { text, fg: "var(--ink-800)", bg: "var(--gray-50)", border: "var(--gray-200)" };
+    const senTone = { Positive: "positive", Negative: "negative", Mixed: "caution" };
+    const consentColorMap = (c) => /granted|eligible/i.test(c) ? "var(--accent-700)" : /missing/i.test(c) ? "var(--red-700)" : /pending/i.test(c) ? "var(--amber-700)" : "var(--gray-500)";
+    const sigDefs = [
+      { source: "Google", visibility: "Public", text: "Dr. Aldana took the time to explain everything. I have never felt this at ease at a dentist.", chips: [["Dr. Aldana", true], ["Dental anxiety", false]], sentiment: "Positive", consent: "Display eligible" },
+      { source: "Post-visit", visibility: "Private", text: "The wait on Tuesday afternoon was long and checkout felt rushed.", chips: [["North", false], ["Wait time", false], ["Returning patient", false]], sentiment: "Negative", consent: "Not for publication" },
+      { source: "Survey import", visibility: "Private", text: "Loved how clearly the costs were explained before we started.", chips: [["Financial clarity", false]], sentiment: "Positive", consent: "Consent missing" },
+      { source: "Healthgrades", visibility: "Public", text: "Clean office and a polite front desk, but it took three calls to reschedule.", chips: [["North", true], ["Scheduling", false]], sentiment: "Mixed", consent: "Display eligible" },
+      { source: "Post-visit", visibility: "Private", text: "I was terrified going in, but the implant was much easier than I expected.", chips: [["Implants", true], ["Dr. Patel", true], ["Dental anxiety", false]], sentiment: "Positive", consent: "Website permission granted" },
+      { source: "Manual entry", visibility: "Private", text: "The front desk went out of their way to fit me in same day.", chips: [["Emergency", true], ["Main Street", false]], sentiment: "Positive", consent: "Pending permission" },
+    ];
+    const signals = sigDefs.map((g) => ({
+      ...g,
+      visColor: g.visibility === "Public" ? "var(--accent-700)" : "var(--gray-500)",
+      chips: g.chips.map(([t, inf]) => chip(t, inf)),
+      sentimentTone: senTone[g.sentiment],
+      consentColor: consentColorMap(g.consent),
+    }));
+
+    // recovery
+    const priTone = { Urgent: "negative", High: "negative", Medium: "caution", Low: "neutral" };
+    const recDefs = [
+      { priority: "Urgent", location: "North", text: "A patient reports increasing pain two days after an extraction. Escalated for clinical review; not resolved by the platform.", owner: "Dr. Shah", due: "Today", contact: "Called · awaiting reply", recurrence: "", urgent: true },
+      { priority: "High", location: "Main Street", text: "Charged for a service the patient believed insurance covered, with no callback on a June crown.", owner: "Office manager", due: "Due Monday", contact: "Not yet contacted", recurrence: "2 similar this quarter" },
+      { priority: "Medium", location: "North", text: "Long wait and a rushed checkout on a Tuesday afternoon.", owner: "Front desk", due: "Due Thursday", contact: "Left a voicemail", recurrence: "4 similar · Tue afternoons" },
+      { priority: "Low", location: "Main Street", text: "Confused about financing options for Invisalign after the consult.", owner: "Treatment coordinator", due: "Due Friday", contact: "Emailed", recurrence: "" },
+    ];
+    const recovery = recDefs.map((r) => ({ ...r, priorityTone: priTone[r.priority], dueColor: r.urgent ? "var(--red-700)" : "var(--ink-800)" }));
+
+    // proof
+    const proofTone = { Ready: "positive", "Needs permission": "negative", "Awaiting patient": "caution" };
+    const proofDefs = [
+      { type: "Testimonial", quote: "I was terrified going into this, but Dr. Patel explained every step and it was much easier than I expected.", attribution: "Jordan M. · first name, with consent", consent: "Website · until revoked", placement: "Implants page · Dr. Patel · Anxious patients", status: "Ready" },
+      { type: "Public review", quote: "The hygienist was gentle and my kids actually look forward to their visits now.", attribution: "Priya S. · Google", consent: "Display under Google terms", placement: "Family & pediatric page", status: "Ready" },
+      { type: "Imported testimonial", quote: "Best cosmetic result I could have hoped for. Completely natural.", attribution: "Name withheld · legacy import", consent: "Consent not documented", placement: "Restricted to internal analysis", status: "Needs permission" },
+      { type: "Video testimonial", quote: "A 45-second story about overcoming years of dental anxiety.", attribution: "Marcus W. · with consent", consent: "Website + social · 12 months", placement: "Comfort & sedation page", status: "Ready" },
+      { type: "Post-visit comment", quote: "Finally a dentist who explained the cost before starting anything.", attribution: "Elena P. · first name", consent: "Permission request pending", placement: "Would fit the financing page", status: "Awaiting patient" },
+      { type: "Public review", quote: "They saw me the same day for a broken tooth. I can't thank them enough.", attribution: "S. Reyes · Google", consent: "Display under Google terms", placement: "Emergency care page", status: "Ready" },
+    ];
+    const proof = proofDefs.map((p) => ({ ...p, statusTone: proofTone[p.status], consentColor: consentColorMap(p.consent) }));
+
+    // coverage
+    const covLegend = [
+      { color: cv.strong.color, label: "Well covered" },
+      { color: cv.thin.color, label: "Thin — some, but dated or sparse" },
+      { color: cv.gap.color, label: "Gap — little credible proof" },
+    ];
+    const concernDefs = [
+      ["Will this hurt?", "strong"], ["Will I feel judged?", "thin"],
+      ["Will the dentist explain my options?", "strong"], ["Is the office good with children?", "strong"],
+      ["Will I understand the cost?", "gap"], ["Can they help with anxiety?", "thin"],
+      ["Will the result look natural?", "gap"], ["Can they see me quickly?", "strong"],
+    ];
+    const concernCov = concernDefs.map(([q, s]) => ({ q, color: cv[s].color, stateLabel: cv[s].label }));
+    const svc = (name, s, note) => ({ name, color: cv[s].color, note });
+    const serviceCov = [
+      svc("Cleanings & checkups", "strong", "42 recent"), svc("Pediatric", "strong", "18 recent"),
+      svc("Implants", "thin", "3 · dated"), svc("Emergency", "thin", "5 recent"),
+      svc("Root canal", "thin", "4 recent"), svc("Invisalign", "gap", "0 recent"),
+      svc("Cosmetic", "gap", "1 · dated"),
+    ];
+    const providerCov = [
+      svc("Dr. Aldana", "strong", "current"), svc("Dr. Patel", "strong", "current"),
+      svc("Dr. Shah — new", "gap", "no public proof"), svc("Hygiene team", "strong", "current"),
+      svc("Main Street", "strong", "4h response"), svc("North", "thin", "19h response"),
+    ];
+
+    // insights
+    const themeDefs = [
+      ["Treatment explanation", 38, "up", "praised more"], ["Staff warmth", 31, "up", "steady rise"],
+      ["Wait time", 12, "down", "rising concern"], ["Children's experience", 16, "up", "praised more"],
+      ["Financial clarity", 9, "down", "watch North"], ["Scheduling", 11, "flat", "no change"],
+    ];
+    const arrowMap = { up: { arrow: "▲", color: "var(--accent-600)" }, down: { arrow: "▼", color: "var(--red-700)" }, flat: { arrow: "—", color: "var(--gray-400)" } };
+    const themes = themeDefs.map(([theme, count, dir, note]) => ({ theme, count, note, arrow: arrowMap[dir].arrow, dirColor: arrowMap[dir].color }));
+    const velRaw = [4, 6, 5, 8, 6, 7];
+    const vmax = Math.max(...velRaw);
+    const velocity = velRaw.map((n, i) => ({ label: "W" + (i + 1), h: "height:" + Math.round((n / vmax) * 100) + "%" }));
+    const locationCompare = [
+      { name: "Main Street", rating: "4.9", response: "4h", respColor: "var(--accent-700)", open: "1" },
+      { name: "North", rating: "4.6", response: "19h", respColor: "var(--amber-700)", open: "2" },
+    ];
+
+    // presence
+    const pc = { ok: "var(--accent-600)", warn: "var(--amber-700)", issue: "var(--red-700)" };
+    const presence = [
+      { location: "Main Street", tone: "positive", summary: "Healthy", items: [
+        { label: "Name, address, phone consistent", state: "ok", note: "Verified" },
+        { label: "Office hours current", state: "ok", note: "Verified" },
+        { label: "Appointment & website links", state: "ok", note: "Working" },
+        { label: "Photos", state: "ok", note: "Updated May" },
+        { label: "Unanswered profile questions", state: "warn", note: "1 open" },
+      ] },
+      { location: "North", tone: "caution", summary: "4 to fix", items: [
+        { label: "Holiday hours not set", state: "issue", note: "Google" },
+        { label: "Broken appointment link", state: "issue", note: "404" },
+        { label: "Duplicate profile detected", state: "issue", note: "Bing" },
+        { label: "Photos are outdated", state: "warn", note: "2023" },
+        { label: "Unanswered profile questions", state: "issue", note: "2 open" },
+      ] },
+    ].map((loc) => ({ ...loc, items: loc.items.map((it) => ({ ...it, color: pc[it.state] })) }));
+
+    // dialog
+    const rr = this.state.replyReview;
+
+    return {
+      practiceName: this.props.practiceName ?? "Cedar Ridge Dental",
+      modeLabel: this.props.mode ?? "Full Trust Loop",
+      rating: 4.8, reviewMeta: "214 reviews · 2 locations",
+      today: "Thursday, July 10",
+      nav,
+      isToday: screen === "today", isSignals: screen === "signals", isReviews: screen === "reviews",
+      isRecovery: screen === "recovery", isProof: screen === "proof", isCoverage: screen === "coverage",
+      isInsights: screen === "insights", isPresence: screen === "presence",
+      sendRequest: this.sendRequest,
+      statsStrip, attention, attentionCount: attention.length,
+      brief, briefWeek: "Week of Jul 7",
+      signals,
+      reviewTabs, reviewTab, setReviewTab: this.setReviewTab, sourceChips, filteredReviews,
+      recovery, proof,
+      covLegend, concernCov, serviceCov, providerCov,
+      themes, velocity, locationCompare,
+      presence,
+      replyOpen: !!rr, closeReply: this.closeReply, approveReply: this.approveReply,
+      onReplyInput: this.onReplyInput, replyText: this.state.replyText,
+      replyRating: rr ? rr.rating : 0, replyAuthor: rr ? rr.author : "", replyMeta: rr ? rr.source + " · " + rr.when : "",
+      replyBody: rr ? rr.text : "", replySource: rr ? rr.source : "",
+      replyFlags: rr ? rr.flags : [], hasReplyFlags: !!(rr && rr.flags.length),
+      toast: this.state.toast,
+    };
+  }
+}
+</script>
+</body>
+</html>
