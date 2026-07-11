@@ -6,26 +6,34 @@
 // in full inside `env.preview` and `env.prod`. If you add, rename, or remove
 // a binding, update the top-level (local) block AND both env blocks.
 //
-// React Router v7 wiring (`@cloudflare/vite-plugin` consumes this file) lands
-// in Epic #5 — it will replace `main` with the RR7 server entry.
+// React Router v7 wiring (#97): `@cloudflare/vite-plugin` consumes this file.
+// `react-router build` resolves it (honoring $CLOUDFLARE_ENV for env
+// selection), writes the deployable config to build/server/wrangler.json, and
+// drops a redirect in .wrangler/deploy/config.json so a plain
+// `wrangler deploy` (or `--dry-run`) uses the built artifact. Always build
+// before deploying; pass the environment as e.g. `CLOUDFLARE_ENV=preview`
+// at build time instead of `--env preview` at deploy time.
 //
 // Environment matrix: see infra/environments.md. Binding names are API surface
 // and are documented in docs/architecture-bindings.md.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
 
-  // Top-level config is the LOCAL default (`wrangler dev` with Miniflare
-  // simulators). Local runs never deploy; the name still follows the
+  // Top-level config is the LOCAL default (`pnpm dev` runs workerd via the
+  // Vite plugin). Local runs never deploy; the name still follows the
   // `wr-<name>-<env>` convention so logs stay consistent.
   "name": "wr-dashboard-local",
-  // Worker entrypoint. Kept separate from src/index.ts: workerd only allows
-  // handler/DO exports on the entry module, and unit tests import src/index.ts
-  // under Node.
-  "main": "src/worker.ts",
+  // React Router server entry: exports the fetch handler that delegates to
+  // the framework request handler (virtual:react-router/server-build).
+  "main": "./workers/app.ts",
   "compatibility_date": "2026-07-01",
+  // nodejs_compat: Clerk's SDK needs it once Epic #4 lands.
   "compatibility_flags": ["nodejs_compat"],
 
-  // Fixed ports so `pnpm dev` can run every worker side by side.
+  // Fixed ports so `pnpm dev` can run every worker side by side (see
+  // infra/environments.md). The dashboard dev server is Vite, so the port is
+  // ALSO pinned in vite.config.ts (`server.port: 8791`) — this block only
+  // covers a raw `wrangler dev`. Keep the two in sync.
   "dev": {
     "port": 8791,
     "inspector_port": 9233

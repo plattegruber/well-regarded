@@ -1,4 +1,23 @@
 {
   "extends": "@wellregarded/tsconfig/react.json",
-  "include": ["src"]
+  "compilerOptions": {
+    // `import.meta.env` (used by workers/app.ts and root.tsx in dev).
+    "types": ["vite/client"],
+    // Lets route modules import their generated types as a sibling
+    // (`./+types/<route>`) — react-router typegen writes them under
+    // .react-router/types, and rootDirs overlays that tree onto app/.
+    "rootDirs": [".", "./.react-router/types"],
+    "paths": {
+      "~/*": ["./app/*"]
+    }
+  },
+  "include": [
+    ".react-router/types/**/*",
+    "app/**/*",
+    "workers/**/*",
+    "worker-configuration.d.ts",
+    "react-router.config.ts",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
 }

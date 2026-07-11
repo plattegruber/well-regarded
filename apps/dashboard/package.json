@@ -4,16 +4,28 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit",
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "build": "react-router build",
+    "dev": "pnpm run typegen && react-router dev",
+    "deploy": "pnpm run build && wrangler deploy",
+    "typegen": "wrangler types worker-configuration.d.ts --env-file=.env.example && react-router typegen",
     "test": "vitest run",
     "lint": "biome check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "pnpm run typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "isbot": "^5.1.31",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router": "7.18.1"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.44.0",
+    "@react-router/dev": "7.18.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@wellregarded/tsconfig": "workspace:*",
     "typescript": "^5.9.2",
+    "vite": "^7.1.7",
     "vitest": "^3.2.4",
     "wrangler": "^4.110.0"
   }
