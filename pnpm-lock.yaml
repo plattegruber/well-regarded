@@ -94,6 +94,9 @@ importers:
       '@wellregarded/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig
+      tsx:
+        specifier: ^4.23.0
+        version: 4.23.0
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
