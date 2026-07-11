@@ -33,7 +33,14 @@ export default defineConfig({
       {
         test: {
           name: "integration",
-          include: ["src/**/*.integration.test.ts"],
+          include: [
+            "src/**/*.integration.test.ts",
+            "test/**/*.integration.test.ts",
+          ],
+          // Test harness (#49): globalSetup builds/refreshes the
+          // wellregarded_template database once per run; each test file
+          // clones it via setupTestDb() in test/harness.ts.
+          globalSetup: ["./test/globalSetup.ts"],
         },
       },
     ],

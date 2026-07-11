@@ -20,7 +20,7 @@ Four levels, from cheapest to most expensive. Two exist today (unit and integrat
 | Level | Status | How to run |
 |---|---|---|
 | Unit | **exists** | `pnpm test` — Vitest, colocated `*.test.ts` files in every workspace; excludes `*.integration.test.ts`, needs no services |
-| Integration | **exists** ([#40](https://github.com/plattegruber/well-regarded/issues/40)); local compose [#29](https://github.com/plattegruber/well-regarded/issues/29) and isolation harness [#49](https://github.com/plattegruber/well-regarded/issues/49) still planned | `docker compose up -d && pnpm db:migrate && pnpm test:integration` — Vitest against real local Postgres; file convention `*.integration.test.ts`; each test file will get an isolated schema or transaction rollback via the harness in `packages/db/test` once [#49](https://github.com/plattegruber/well-regarded/issues/49) lands |
+| Integration | **exists** ([#40](https://github.com/plattegruber/well-regarded/issues/40), harness [#49](https://github.com/plattegruber/well-regarded/issues/49)); local compose [#29](https://github.com/plattegruber/well-regarded/issues/29) still planned | `docker compose up -d && pnpm test:integration` — Vitest against real local Postgres; file convention `*.integration.test.ts`; each test file gets its own database cloned from a migrated template via the harness in `packages/db/test` (see [Writing DB tests](#writing-db-tests)) |
 | Worker | planned: [#113](https://github.com/plattegruber/well-regarded/issues/113) | `@cloudflare/vitest-pool-workers` for queue consumers and Hono routes (Miniflare under the hood) |
 | E2E | planned: Epic [#25](https://github.com/plattegruber/well-regarded/issues/25) | Playwright against the seeded demo practice |
 
@@ -34,6 +34,48 @@ The two levels are separated by file glob, enforced by Vitest projects (see `pac
 Locally: `pnpm run setup` (starts the compose Postgres and migrates — see the README Quickstart), then `pnpm test:integration` with `DATABASE_URL=postgres://wellregarded:wellregarded@localhost:54322/wellregarded`. In CI, the `integration` job spins up a health-checked `pgvector/pgvector:pg16` service container, applies migrations, and runs `pnpm test:integration` — in parallel with the unit `test` job, which stays service-free.
 
 One rule this split imposes: unit tests may import DB code, but nothing may open a connection at module scope — construct clients inside tests/fixtures (connect lazily), or the unit project breaks for everyone.
+
+### Writing DB tests
+
+The harness in [`packages/db/test`](packages/db/test) ([#49](https://github.com/plattegruber/well-regarded/issues/49)) gives every integration test file its own throwaway Postgres database and a set of row factories. All DB-touching tests use it — no shared-database tests, no hand-written cleanup.
+
+**How it works.** A Vitest `globalSetup` builds `wellregarded_template` once per run: it creates the database and applies every migration, then stamps the template with a fingerprint of the migrations folder (warm runs with unchanged migrations reuse it in well under 2s). Each `*.integration.test.ts` file then calls `setupTestDb()`, which clones the template (`CREATE DATABASE test_<pid>_<n> TEMPLATE wellregarded_template` — milliseconds, no re-migration) in `beforeAll` and drops it in `afterAll`. Template cloning (rather than schema-per-worker + `search_path`) is deliberate: our schema spans two Postgres schemas (`public` and `pii`, with cross-schema FKs), the pgvector extension, and hand-written triggers — a template copy is byte-exact where `search_path` juggling is not.
+
+**Start Postgres.** `docker compose up -d` (or `pnpm run setup`). The harness needs nothing but `DATABASE_URL` — it creates, migrates, and drops its own databases.
+
+**The idiom** — `setupTestDb()` once at file scope, factories for rows:
+
+```ts
+import { eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
+
+import { consent, practice, signal } from "../../test/factories.js";
+import { pgError, setupTestDb } from "../../test/harness.js";
+import { signals } from "../schema/signals.js";
+
+describe("my feature (integration)", () => {
+  const t = setupTestDb(); // this file's own database; dropped afterAll
+
+  it("does the thing", async () => {
+    // Factories fill defaults and create parents on demand — signal()
+    // without a practiceId creates the practice too.
+    const s = await signal(t.db, { originalText: "as captured" });
+
+    const rows = await t.db.select().from(signals).where(eq(signals.id, s.id));
+    expect(rows).toHaveLength(1);
+
+    // Constraint/trigger assertions use pgError for the Postgres error code.
+    const { code } = await pgError(
+      t.db.update(signals).set({ originalText: "edited" }).where(eq(signals.id, s.id)),
+    );
+    expect(code).toBe("P0001");
+  });
+});
+```
+
+Factories exist for `practice`, `location`, `provider`, `staffMember`, `signal`, `derivation`, `consent` (grants through `grantConsent`, so versioning is the sanctioned path), `patient`, `contactPoint` (encrypts through `upsertContactPoint` with the exported `TEST_KEYRING`), and `proofExcerpt`. Each takes `Partial<Insert...>` overrides, inserts a real row, and returns the full row. Data is deterministic: faker is seeded per file by the harness; unique columns combine faker output with a monotonic counter. (`recoveryItem()` arrives with Epic [#15](https://github.com/plattegruber/well-regarded/issues/15)'s table.)
+
+**Run a single file:** `pnpm --filter @wellregarded/db test:integration -- src/schema/signals.integration.test.ts` (with `DATABASE_URL` set). The naming rule is the whole contract: name the file `*.integration.test.ts` and it runs in the integration project with the harness available; name it `*.test.ts` and it must stay DB-free.
 
 Ground rules that hold at every level:
 

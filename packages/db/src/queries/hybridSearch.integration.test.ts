@@ -1,17 +1,15 @@
-import { randomUUID } from "node:crypto";
+import { ne, sql } from "drizzle-orm";
+import { beforeAll, describe, expect, it } from "vitest";
 
-import { inArray, ne, sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-
-import { createDb, type Db, type Sql } from "../client.js";
+import { practice, proofExcerpt, signal } from "../../test/factories.js";
+import { setupTestDb } from "../../test/harness.js";
 import { proofExcerpts } from "../schema/proofExcerpts.js";
-import { signals } from "../schema/signals.js";
-import { practices } from "../schema/tenancy.js";
 import { hybridSearch } from "./hybridSearch.js";
 
 /**
  * Integration tests for proof_excerpts and hybridSearch (migration 0007,
- * issue #48) against a real Postgres with pgvector.
+ * issue #48) against a real Postgres with pgvector, on the #49 harness
+ * (own database per file, factories for fixtures, no cleanup needed).
  *
  * Real embeddings are not available in tests, so we seed synthetic
  * 1024-dim vectors constructed to have known cosine ordering:
@@ -19,19 +17,8 @@ import { hybridSearch } from "./hybridSearch.js";
  *
  * Run locally with:
  *
- *   docker compose up -d && pnpm db:migrate && \
- *     DATABASE_URL=postgres://... pnpm test:integration
- *
- * DATABASE_URL is asserted, never skipped (see CONTRIBUTING.md).
+ *   docker compose up -d && pnpm --filter @wellregarded/db test:integration
  */
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error(
-    "DATABASE_URL must be set to run integration tests " +
-      "(local compose default: postgres://wellregarded:wellregarded@localhost:54322/wellregarded). " +
-      "Integration tests never skip — a missing database is a failure.",
-  );
-}
 
 const DIMS = 1024;
 
@@ -51,45 +38,12 @@ function vec(weight: number, offAxis = 0, axis = 1): number[] {
 const queryEmbedding = vec(1);
 
 describe("proof_excerpts + hybridSearch (integration)", () => {
-  let db: Db;
-  let sql_: Sql;
-  const runId = randomUUID().slice(0, 8);
-  const practiceIds: string[] = [];
+  const t = setupTestDb();
   let practiceId: string;
   let otherPracticeId: string;
 
   /** Excerpt ids by fixture name, for assertions. */
   const ids: Record<string, string> = {};
-
-  async function insertPractice(suffix: string) {
-    const [practice] = await db
-      .insert(practices)
-      .values({
-        clerkOrgId: `org_${runId}_${suffix}`,
-        name: `Hybrid Test Practice ${suffix}`,
-        slug: `hybrid-test-${runId}-${suffix}`,
-      })
-      .returning();
-    if (!practice) throw new Error("practice insert returned no row");
-    practiceIds.push(practice.id);
-    return practice.id;
-  }
-
-  async function insertSignal(pid: string) {
-    const [signal] = await db
-      .insert(signals)
-      .values({
-        practiceId: pid,
-        sourceKind: "google",
-        sourceId: `reviews/${runId}/${randomUUID()}`,
-        occurredAt: new Date("2026-06-01T00:00:00Z"),
-        originalText: "Parent review text.",
-        visibility: "public",
-      })
-      .returning();
-    if (!signal) throw new Error("signal insert returned no row");
-    return signal;
-  }
 
   async function insertExcerpt(
     name: string,
@@ -98,21 +52,35 @@ describe("proof_excerpts + hybridSearch (integration)", () => {
     excerptText: string,
     embedding: number[] | null,
   ) {
-    const [row] = await db
-      .insert(proofExcerpts)
-      .values({ practiceId: pid, signalId, excerptText, embedding })
-      .returning();
-    if (!row) throw new Error("excerpt insert returned no row");
+    const row = await proofExcerpt(t.db, {
+      practiceId: pid,
+      signalId,
+      excerptText,
+      embedding,
+    });
     ids[name] = row.id;
     return row;
   }
 
   beforeAll(async () => {
-    ({ db, sql: sql_ } = createDb(connectionString));
-    practiceId = await insertPractice("a");
-    otherPracticeId = await insertPractice("b");
-    const signal = await insertSignal(practiceId);
-    const foreignSignal = await insertSignal(otherPracticeId);
+    practiceId = (await practice(t.db)).id;
+    otherPracticeId = (await practice(t.db)).id;
+    const parent = await signal(t.db, {
+      practiceId,
+      sourceKind: "google",
+      sourceId: "reviews/hybrid/parent",
+      occurredAt: new Date("2026-06-01T00:00:00Z"),
+      originalText: "Parent review text.",
+      visibility: "public",
+    });
+    const foreignParent = await signal(t.db, {
+      practiceId: otherPracticeId,
+      sourceKind: "google",
+      sourceId: "reviews/hybrid/foreign-parent",
+      occurredAt: new Date("2026-06-01T00:00:00Z"),
+      originalText: "Parent review text.",
+      visibility: "public",
+    });
 
     // Vector branch ordering (cosine sim to queryEmbedding, descending):
     //   vecTop (1.0) > fusionMid (~0.89) > textTop (~0.45) > vecFar (0.0)
@@ -122,35 +90,35 @@ describe("proof_excerpts + hybridSearch (integration)", () => {
     await insertExcerpt(
       "vecTop",
       practiceId,
-      signal.id,
+      parent.id,
       "The parking situation out front was easy and spacious.",
       vec(1), // identical direction to the query: vector rank 1
     );
     await insertExcerpt(
       "fusionMid",
       practiceId,
-      signal.id,
+      parent.id,
       "The sedation option kept my anxiety manageable during the visit.",
       vec(1, 0.5), // close but not closest: vector rank 2
     );
     await insertExcerpt(
       "textTop",
       practiceId,
-      signal.id,
+      parent.id,
       "Sedation, sedation, sedation — anxiety about anxiety, and sedation again.",
       vec(1, 2), // far-ish: vector rank 3
     );
     await insertExcerpt(
       "vecFar",
       practiceId,
-      signal.id,
+      parent.id,
       "Billing was straightforward and the front desk was kind.",
       vec(0, 1), // orthogonal to the query: vector rank 4
     );
     await insertExcerpt(
       "noEmbedding",
       practiceId,
-      signal.id,
+      parent.id,
       "An excerpt still waiting for the embedding job.",
       null,
     );
@@ -158,23 +126,14 @@ describe("proof_excerpts + hybridSearch (integration)", () => {
     await insertExcerpt(
       "foreign",
       otherPracticeId,
-      foreignSignal.id,
+      foreignParent.id,
       "Sedation anxiety sedation anxiety — the perfect match.",
       vec(1),
     );
   });
 
-  afterAll(async () => {
-    await db
-      .delete(proofExcerpts)
-      .where(inArray(proofExcerpts.practiceId, practiceIds));
-    await db.delete(signals).where(inArray(signals.practiceId, practiceIds));
-    await db.delete(practices).where(inArray(practices.id, practiceIds));
-    await sql_?.end();
-  });
-
   it("populates the generated tsv column on insert", async () => {
-    const [row] = await db
+    const [row] = await t.db
       .select()
       .from(proofExcerpts)
       .where(sql`${proofExcerpts.id} = ${ids.fusionMid}`);
@@ -183,7 +142,7 @@ describe("proof_excerpts + hybridSearch (integration)", () => {
   });
 
   it("vector-only (empty queryText): near vectors rank above far ones", async () => {
-    const results = await hybridSearch(db, {
+    const results = await hybridSearch(t.db, {
       practiceId,
       queryEmbedding,
       queryText: "   ",
@@ -203,7 +162,7 @@ describe("proof_excerpts + hybridSearch (integration)", () => {
   });
 
   it("text-only (no embedding): websearch_to_tsquery handles multi-word queries", async () => {
-    const results = await hybridSearch(db, {
+    const results = await hybridSearch(t.db, {
       practiceId,
       queryText: "sedation anxiety",
     });
@@ -218,7 +177,7 @@ describe("proof_excerpts + hybridSearch (integration)", () => {
   });
 
   it("fusion: mid-pack-in-both outscores top-of-one-branch-only at the default rrfK", async () => {
-    const results = await hybridSearch(db, {
+    const results = await hybridSearch(t.db, {
       practiceId,
       queryEmbedding,
       queryText: "sedation anxiety",
@@ -248,7 +207,7 @@ describe("proof_excerpts + hybridSearch (integration)", () => {
   });
 
   it("never returns other practices' excerpts", async () => {
-    const results = await hybridSearch(db, {
+    const results = await hybridSearch(t.db, {
       practiceId,
       queryEmbedding,
       queryText: "sedation anxiety",
@@ -265,7 +224,7 @@ describe("proof_excerpts + hybridSearch (integration)", () => {
 
   it("composes a caller filter into both branches", async () => {
     // The consent-gate shape: callers pass extra WHERE on proof_excerpts.
-    const results = await hybridSearch(db, {
+    const results = await hybridSearch(t.db, {
       practiceId,
       queryEmbedding,
       queryText: "sedation anxiety",
@@ -279,7 +238,7 @@ describe("proof_excerpts + hybridSearch (integration)", () => {
   });
 
   it("respects limit and returns mapped row shapes", async () => {
-    const results = await hybridSearch(db, {
+    const results = await hybridSearch(t.db, {
       practiceId,
       queryEmbedding,
       queryText: "sedation anxiety",
@@ -297,13 +256,13 @@ describe("proof_excerpts + hybridSearch (integration)", () => {
 
   it("throws when both the embedding and the query text are absent", async () => {
     await expect(
-      hybridSearch(db, { practiceId, queryText: "  " }),
+      hybridSearch(t.db, { practiceId, queryText: "  " }),
     ).rejects.toThrow(/query embedding, a non-empty query text, or both/);
   });
 
   it("throws on a wrong-dimension embedding", async () => {
     await expect(
-      hybridSearch(db, {
+      hybridSearch(t.db, {
         practiceId,
         queryEmbedding: [1, 2, 3],
         queryText: "",
@@ -312,7 +271,7 @@ describe("proof_excerpts + hybridSearch (integration)", () => {
   });
 
   it("uses the HNSW and GIN indexes it shipped (sanity check via pg_indexes)", async () => {
-    const rows = await db.execute(sql`
+    const rows = await t.db.execute(sql`
       SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'proof_excerpts'
     `);
     const defs = [...rows].map(

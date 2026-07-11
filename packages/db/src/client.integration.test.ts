@@ -1,56 +1,35 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { createDb, type Db, type Sql } from "./client.js";
+import { setupTestDb } from "../test/harness.js";
 
 /**
- * Integration tests against a real Postgres (#40's CI canary).
+ * Integration tests against a real Postgres (#40's CI canary), on the #49
+ * harness: this file gets its own database cloned from the fully-migrated
+ * template (see test/harness.ts). Run locally with:
  *
- * Only the `integration` Vitest project picks this file up — the
- * `*.integration.test.ts` glob never runs under `pnpm test` (see
- * vitest.config.ts). Run locally with:
+ *   docker compose up -d && pnpm --filter @wellregarded/db test:integration
  *
- *   docker compose up -d && pnpm db:migrate && \
- *     DATABASE_URL=postgres://... pnpm test:integration
- *
- * In CI the `integration` job provides a pgvector/pgvector:pg16 service
- * container and applies migrations before this runs. DATABASE_URL is
- * asserted, never skipped: a missing/misconfigured database must fail the
- * integration run loudly, not let it pass with zero tests executed. The
- * per-test isolation harness is a separate issue in Epic #3; until it lands
- * these tests hit the shared database directly.
+ * DATABASE_URL is asserted by the harness, never skipped: a missing or
+ * misconfigured database must fail the integration run loudly, not let it
+ * pass with zero tests executed.
  */
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error(
-    "DATABASE_URL must be set to run integration tests " +
-      "(local compose default: postgres://wellregarded:wellregarded@localhost:54322/wellregarded). " +
-      "Integration tests never skip — a missing database is a failure.",
-  );
-}
-
 describe("createDb (integration)", () => {
-  let db: Db;
-  let sql: Sql;
-
-  afterAll(async () => {
-    await sql?.end();
-  });
+  const t = setupTestDb();
 
   it("connects and runs SELECT 1", async () => {
-    ({ db, sql } = createDb(connectionString));
-    const rows = await sql`SELECT 1 AS one`;
+    const rows = await t.sql`SELECT 1 AS one`;
     expect(rows).toEqual([{ one: 1 }]);
   });
 
   it("has the vector extension installed (migration 0001)", async () => {
-    const rows = await sql`
+    const rows = await t.sql`
       SELECT extname FROM pg_extension WHERE extname = 'vector'
     `;
     expect(rows).toHaveLength(1);
   });
 
   it("has the pii schema (migration 0001)", async () => {
-    const rows = await sql`
+    const rows = await t.sql`
       SELECT schema_name FROM information_schema.schemata
       WHERE schema_name = 'pii'
     `;
@@ -58,7 +37,7 @@ describe("createDb (integration)", () => {
   });
 
   it("runs queries through the drizzle client too", async () => {
-    const result = await db.execute("SELECT 2 AS two");
+    const result = await t.db.execute("SELECT 2 AS two");
     expect(result).toEqual([{ two: 2 }]);
   });
 });
