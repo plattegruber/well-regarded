@@ -3,21 +3,32 @@ import { afterAll, describe, expect, it } from "vitest";
 import { createDb, type Db, type Sql } from "./client.js";
 
 /**
- * Integration tests against a real Postgres (the local compose database).
+ * Integration tests against a real Postgres (#40's CI canary).
  *
- * Run with:
+ * Only the `integration` Vitest project picks this file up — the
+ * `*.integration.test.ts` glob never runs under `pnpm test` (see
+ * vitest.config.ts). Run locally with:
  *
  *   docker compose up -d && pnpm db:migrate && \
- *     DATABASE_URL=postgres://... pnpm --filter @wellregarded/db test
+ *     DATABASE_URL=postgres://... pnpm test:integration
  *
- * Skipped automatically when DATABASE_URL is not set so the plain unit-test
- * run (`pnpm test` without a database) stays green. The per-test isolation
- * harness is a separate issue in Epic #3; until it lands these tests hit the
- * shared local database directly.
+ * In CI the `integration` job provides a pgvector/pgvector:pg16 service
+ * container and applies migrations before this runs. DATABASE_URL is
+ * asserted, never skipped: a missing/misconfigured database must fail the
+ * integration run loudly, not let it pass with zero tests executed. The
+ * per-test isolation harness is a separate issue in Epic #3; until it lands
+ * these tests hit the shared database directly.
  */
-const connectionString = process.env.DATABASE_URL ?? "";
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error(
+    "DATABASE_URL must be set to run integration tests " +
+      "(local compose default: postgres://wellregarded:wellregarded@localhost:54322/wellregarded). " +
+      "Integration tests never skip — a missing database is a failure.",
+  );
+}
 
-describe.skipIf(!connectionString)("createDb (integration)", () => {
+describe("createDb (integration)", () => {
   let db: Db;
   let sql: Sql;
 
