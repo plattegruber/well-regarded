@@ -6,21 +6,32 @@ Start with the [README](README.md) for what the product is and how to get runnin
 
 - Work happens on short-lived branches off `main`, named `<area>/<slug>` — e.g. `pipeline/dedupe-stage`, `db/consents-table`, `infra/biome-setup`.
 - Every PR references its issue in the body: `Closes #N`.
-- CI ([#39](https://github.com/plattegruber/well-regarded/issues/39)) runs three checks on every PR — **lint**, **typecheck**, and **test** — and all three must be green before merge.
+- CI ([#39](https://github.com/plattegruber/well-regarded/issues/39), [#40](https://github.com/plattegruber/well-regarded/issues/40)) runs four parallel checks on every PR — **lint**, **typecheck**, **test** (unit), and **integration** (real Postgres service container) — and all four must be green before merge.
 - PRs are **squash-merged**. Keep the PR title in the imperative — it becomes the commit message on `main`.
 - A PR template is coming with Epic [#2](https://github.com/plattegruber/well-regarded/issues/2) (CI/CD). Until it lands, the expectation it will encode: state what changed and why, link the issue, list how you verified it (which test levels you ran), and call out anything reviewers should look at closely.
 - Keep PRs scoped to one issue. If you find adjacent work, file an issue rather than growing the diff.
 
 ## Tests
 
-Four levels, from cheapest to most expensive. Two exist today; two are planned — do not be surprised when the commands for the planned ones fail.
+Four levels, from cheapest to most expensive. Two exist today (unit and integration); two are planned — do not be surprised when the commands for the planned ones fail.
 
 | Level | Status | How to run |
 |---|---|---|
-| Unit | **exists** | `pnpm test` — Vitest, colocated `*.test.ts` files in every workspace |
-| Integration | planned: [#29](https://github.com/plattegruber/well-regarded/issues/29) (compose) + [#49](https://github.com/plattegruber/well-regarded/issues/49) (harness) | `docker compose up -d && pnpm test:integration` — Vitest against real local Postgres; file convention `*.integration.test.ts`; each test file gets an isolated schema or transaction rollback via the harness in `packages/db/test` |
+| Unit | **exists** | `pnpm test` — Vitest, colocated `*.test.ts` files in every workspace; excludes `*.integration.test.ts`, needs no services |
+| Integration | **exists** ([#40](https://github.com/plattegruber/well-regarded/issues/40)); local compose [#29](https://github.com/plattegruber/well-regarded/issues/29) and isolation harness [#49](https://github.com/plattegruber/well-regarded/issues/49) still planned | `docker compose up -d && pnpm db:migrate && pnpm test:integration` — Vitest against real local Postgres; file convention `*.integration.test.ts`; each test file will get an isolated schema or transaction rollback via the harness in `packages/db/test` once [#49](https://github.com/plattegruber/well-regarded/issues/49) lands |
 | Worker | planned: [#113](https://github.com/plattegruber/well-regarded/issues/113) | `@cloudflare/vitest-pool-workers` for queue consumers and Hono routes (Miniflare under the hood) |
 | E2E | planned: Epic [#25](https://github.com/plattegruber/well-regarded/issues/25) | Playwright against the seeded demo practice |
+
+### Unit vs integration split
+
+The two levels are separated by file glob, enforced by Vitest projects (see `packages/db/vitest.config.ts`):
+
+- **`*.integration.test.ts`** ⇒ needs Postgres. Runs only under `pnpm test:integration` (uncached in turbo — a shared mutable database is not a cacheable input). Requires `DATABASE_URL`; the run **fails** when it is unset or the database is unreachable — integration tests never silently skip.
+- **Anything else (`*.test.ts`)** ⇒ must run with no services. `pnpm test` never needs Docker or a network.
+
+Locally: `docker compose up -d && pnpm db:migrate && pnpm test:integration` with `DATABASE_URL=postgres://wellregarded:wellregarded@localhost:54322/wellregarded` (the compose setup is [#29](https://github.com/plattegruber/well-regarded/issues/29); until it lands, point `DATABASE_URL` at any Postgres with pgvector). In CI, the `integration` job spins up a health-checked `pgvector/pgvector:pg16` service container, applies migrations, and runs `pnpm test:integration` — in parallel with the unit `test` job, which stays service-free.
+
+One rule this split imposes: unit tests may import DB code, but nothing may open a connection at module scope — construct clients inside tests/fixtures (connect lazily), or the unit project breaks for everyone.
 
 Ground rules that hold at every level:
 

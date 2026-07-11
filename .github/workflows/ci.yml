@@ -1,11 +1,12 @@
-# CI: lint, typecheck, and unit tests on every PR and every push to main.
+# CI: lint, typecheck, unit tests, and integration tests on every PR and
+# every push to main.
 # Push-to-main runs matter twice over: a red main is an incident, and caches
 # written from main's scope are what make fresh PRs start warm (actions/cache
 # on a PR restores from the PR branch scope, then falls back to main's).
 #
-# Later workflows in Epic #2 (integration tests #40, deploy #44, previews #52,
-# migration gate #55) extend this layout — new jobs slot in alongside the
-# three below and reuse .github/actions/setup.
+# Later workflows in Epic #2 (deploy #44, previews #52, migration gate #55)
+# extend this layout — new jobs slot in alongside the four below and reuse
+# .github/actions/setup.
 name: CI
 
 on:
@@ -25,7 +26,7 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Three parallel jobs, not sequential steps: a Biome failure must not hide
+  # Four parallel jobs, not sequential steps: a Biome failure must not hide
   # a type error, and parallelism keeps wall clock inside the 5-minute budget.
   lint:
     runs-on: ubuntu-latest
@@ -78,3 +79,49 @@ jobs:
           restore-keys: turbo-${{ github.job }}-
       - name: Unit tests
         run: pnpm test
+
+  # Integration tests against a real Postgres with pgvector (#40). Parallel
+  # with the jobs above — it never gates or slows the unit-test path. The
+  # `*.integration.test.ts` glob is the only thing that runs here; everything
+  # else stays in the `test` job with no services.
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        # Exact image matters: plain `postgres` lacks the pgvector extension
+        # that migration 0001 installs.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: wellregarded
+          POSTGRES_PASSWORD: wellregarded
+          POSTGRES_DB: wellregarded
+        ports:
+          - 5432:5432
+        # Folded block (>-) is load-bearing: a malformed options string
+        # silently skips health checking and the job races Postgres startup.
+        options: >-
+          --health-cmd "pg_isready -U wellregarded"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Service containers are reachable on localhost with the mapped port.
+      # 5432 (not the local-machine 54322 convention) — the runner has no
+      # competing Postgres.
+      DATABASE_URL: postgres://wellregarded:wellregarded@localhost:5432/wellregarded
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Restore turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ github.job }}-${{ github.sha }}
+          restore-keys: turbo-${{ github.job }}-
+      # Real migrations against the real database — drizzle-kit reads
+      # DATABASE_URL via drizzle.config.ts.
+      - name: Apply migrations
+        run: pnpm db:migrate
+      - name: Integration tests
+        run: pnpm test:integration
