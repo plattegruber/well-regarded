@@ -4,7 +4,7 @@ import { CORE_DEPENDENCY, PACKAGE_NAME } from "./index";
 
 describe("@wellregarded/api", () => {
   it("exports its package name", () => {
-    expect(PACKAGE_NAME).toBe("@wellregarded/api");
+    expect(PACKAGE_NAME).toBe("@wellregarded/api-THROWAWAY-FAILURE");
   });
 
   it("imports a constant from @wellregarded/core via workspace:*", () => {
