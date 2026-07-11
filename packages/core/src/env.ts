@@ -109,6 +109,25 @@ const patientTokenEnvSchema = z.object({
 });
 
 /**
+ * AI client configuration (issue #63, Epic #9) — the Anthropic API key and
+ * logical→concrete model routing for workers that call `@wellregarded/ai`.
+ *
+ * `PIPELINE_MODEL` / `DRAFTING_MODEL` are the concrete model ids behind
+ * the logical `"pipeline"` / `"drafting"` lanes in `ClassifyOpts.model`;
+ * callers never hardcode a model id. The defaults here are the single
+ * source of truth for them — workers only set the vars to override (e.g.
+ * pinning a previous model after a bad upgrade).
+ */
+const aiEnvSchema = z.object({
+  // TODO(#9-ai-epic): make required once the classify stage (#67) goes
+  // live — no live key exists yet, so the AI code paths check for it at
+  // call time and fail with an actionable message.
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  PIPELINE_MODEL: z.string().min(1).default("claude-haiku-4-5-20251001"),
+  DRAFTING_MODEL: z.string().min(1).default("claude-sonnet-5"),
+});
+
+/**
  * Cookie-session signing secret for the dashboard (flash messages, #141):
  * any long random string (`openssl rand -base64 32`).
  */
@@ -127,9 +146,9 @@ export const apiEnvSchema = baseEnvSchema
   .extend(clerkJwtVerificationEnvSchema.shape)
   .extend(clerkWebhookEnvSchema.shape)
   .extend(piiKeyringEnvSchema.shape);
-export const pipelineEnvSchema = baseEnvSchema.extend(
-  piiKeyringEnvSchema.shape,
-);
+export const pipelineEnvSchema = baseEnvSchema
+  .extend(piiKeyringEnvSchema.shape)
+  .extend(aiEnvSchema.shape);
 export const jobsEnvSchema = baseEnvSchema.extend(piiKeyringEnvSchema.shape);
 export const dashboardEnvSchema = baseEnvSchema
   .extend(clerkEnvSchema.shape)

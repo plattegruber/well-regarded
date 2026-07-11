@@ -68,6 +68,20 @@ them in. `wrangler deploy --dry-run --env preview|prod` parses every config
 `wrangler deploy` will fail on those placeholder ids until Epic #2 fills them
 in — that is expected. `wrangler dev` needs none of it.
 
+## External API secrets
+
+Secrets are set per worker per environment with `wrangler secret put` (never
+in `vars`); the full variable table and naming rules live in
+[`docs/secrets.md`](../docs/secrets.md).
+
+| Secret | Workers using it | local | preview | prod | Provisioned? |
+| --- | --- | --- | --- | --- | --- |
+| `ANTHROPIC_API_KEY` | pipeline (classify stage, Epic #9) | `workers/pipeline/.dev.vars` (unset until needed) | `wrangler secret put ANTHROPIC_API_KEY --env preview` | `wrangler secret put ANTHROPIC_API_KEY --env prod` | **TBD, Epic #9 — no live key exists yet** (env schema keeps it optional, issue #63) |
+
+Model routing (`PIPELINE_MODEL` / `DRAFTING_MODEL`) is **not** a secret: the
+defaults live in `packages/core/src/env.ts` and the vars only exist to
+override them per environment via `vars` in `wrangler.jsonc`.
+
 ### Hyperdrive local development
 
 Hyperdrive has no Miniflare simulator; locally, wrangler connects the

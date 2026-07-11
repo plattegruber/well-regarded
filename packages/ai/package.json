@@ -20,5 +20,9 @@
     "@wellregarded/tsconfig": "workspace:*",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
+    "zod": "^4.4.3"
   }
 }

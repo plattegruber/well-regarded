@@ -51,9 +51,19 @@ files contain placeholder values only, and secrets never go in `vars` in
 | `PII_HASH_KEY` | **Yes** | api, pipeline, jobs | each worker's `.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put PII_HASH_KEY --env preview\|prod` |
 | `PATIENT_TOKEN_SECRET` | **Yes** | patient (verify); workers that mint links add it when those paths land | `apps/patient/.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put PATIENT_TOKEN_SECRET --env preview\|prod` |
 | `SESSION_SECRET` | **Yes** | dashboard (flash-message cookie session, #141) | `apps/dashboard/.dev.vars` (dev-only value in `.dev.vars.example`; the app falls back to an insecure dev secret when unset locally) | `wrangler secret put SESSION_SECRET --env preview\|prod` |
+| `ANTHROPIC_API_KEY` | **Yes** | pipeline (classify stage, Epic #9); other AI callers add it when their paths land | `workers/pipeline/.dev.vars` (no dev value — leave unset until needed) | `wrangler secret put ANTHROPIC_API_KEY --env preview\|prod` |
+| `PIPELINE_MODEL` | No | pipeline | `.dev.vars` (optional — defaults to `claude-haiku-4-5-20251001` in the schema) | `vars` in `wrangler.jsonc` (only to override the default) |
+| `DRAFTING_MODEL` | No | pipeline | `.dev.vars` (optional — defaults to `claude-sonnet-5` in the schema) | `vars` in `wrangler.jsonc` (only to override the default) |
 
 Every `CLERK_*` var is **optional in the schemas until the real Clerk
 application exists** — see the next section for the exact flip.
+
+`ANTHROPIC_API_KEY` is **optional in the schemas until the classify stage
+(#67) goes live** (`TODO(#9-ai-epic)` in `packages/core/src/env.ts`) — no
+live key exists yet. `PIPELINE_MODEL` / `DRAFTING_MODEL` route the logical
+`"pipeline"` / `"drafting"` model lanes in `@wellregarded/ai` to concrete
+model ids; the schema defaults are the source of truth, so the vars only
+exist as an override knob (issue #63).
 
 `CLERK_JWKS_PUBLIC_KEY` is the PEM public key the staff-auth middleware in
 `workers/api` uses for **networkless** session-JWT verification (issue #68);

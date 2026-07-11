@@ -48,6 +48,35 @@ describe("getEnv", () => {
     }
   });
 
+  it("defaults the AI model routing vars on the pipeline schema (#63)", () => {
+    const env = getEnv({ ENVIRONMENT: "local" }, pipelineEnvSchema);
+    expect(env.PIPELINE_MODEL).toBe("claude-haiku-4-5-20251001");
+    expect(env.DRAFTING_MODEL).toBe("claude-sonnet-5");
+    // No live key exists yet (TODO(#9-ai-epic)) — stays optional.
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+  });
+
+  it("lets deploys override the AI model routing vars", () => {
+    const env = getEnv(
+      {
+        ENVIRONMENT: "prod",
+        ANTHROPIC_API_KEY: "sk-ant-test",
+        PIPELINE_MODEL: "claude-haiku-9",
+        DRAFTING_MODEL: "claude-sonnet-9",
+      },
+      pipelineEnvSchema,
+    );
+    expect(env.ANTHROPIC_API_KEY).toBe("sk-ant-test");
+    expect(env.PIPELINE_MODEL).toBe("claude-haiku-9");
+    expect(env.DRAFTING_MODEL).toBe("claude-sonnet-9");
+  });
+
+  it("rejects empty-string AI model overrides", () => {
+    expect(() =>
+      getEnv({ ENVIRONMENT: "prod", PIPELINE_MODEL: "" }, pipelineEnvSchema),
+    ).toThrow(/PIPELINE_MODEL/);
+  });
+
   it("rejects an invalid ENVIRONMENT value", () => {
     expect(() => getEnv({ ENVIRONMENT: "staging" }, jobsEnvSchema)).toThrow(
       /ENVIRONMENT/,
