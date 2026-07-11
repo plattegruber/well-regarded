@@ -1,41 +1,41 @@
 :root {
   /* ————— Base palette ————— */
   /* Ink — near-black, the workhorse */
-  --ink-900: #0C0F0E;
-  --ink-800: #1B211F;
-  --ink-700: #313A37;
+  --ink-900: #0c0f0e;
+  --ink-800: #1b211f;
+  --ink-700: #313a37;
 
   /* Neutral grays — cool, precise */
-  --gray-600: #575F5B;
-  --gray-500: #767E7A;
-  --gray-400: #9CA3A0;
-  --gray-300: #C6CBC8;
-  --gray-200: #E3E6E4;
-  --gray-100: #EFF1F0;
-  --gray-50:  #F7F8F7;
+  --gray-600: #575f5b;
+  --gray-500: #767e7a;
+  --gray-400: #9ca3a0;
+  --gray-300: #c6cbc8;
+  --gray-200: #e3e6e4;
+  --gray-100: #eff1f0;
+  --gray-50: #f7f8f7;
 
-  --white: #FFFFFF;
+  --white: #ffffff;
 
   /* Signal green — the single accent. Links, live data, stars, checked states. */
-  --accent-800: #00623C;
-  --accent-700: #007A4A;
-  --accent-600: #00915A;
-  --accent-500: #0CAB6D;
-  --accent-200: #AEE7CC;
-  --accent-100: #D9F4E7;
-  --accent-50:  #EDFAF4;
+  --accent-800: #00623c;
+  --accent-700: #007a4a;
+  --accent-600: #00915a;
+  --accent-500: #0cab6d;
+  --accent-200: #aee7cc;
+  --accent-100: #d9f4e7;
+  --accent-50: #edfaf4;
 
   /* Semantic hues */
-  --red-700: #C2402A;
-  --red-100: #FCE7E2;
-  --amber-700: #96690B;
-  --amber-100: #F9EFD2;
+  --red-700: #c2402a;
+  --red-100: #fce7e2;
+  --amber-700: #96690b;
+  --amber-100: #f9efd2;
 
   /* ————— Semantic aliases ————— */
   --text-primary: var(--ink-900);
   --text-secondary: var(--gray-600);
   --text-tertiary: var(--gray-500);
-  --text-on-dark: #F5F7F6;
+  --text-on-dark: #f5f7f6;
   --text-brand: var(--ink-900);
   --text-link: var(--accent-700);
   --text-danger: var(--red-700);
@@ -47,8 +47,8 @@
   --surface-brand-subtle: var(--accent-50);
   --surface-inverse: var(--ink-900);
 
-  --border-default: var(--gray-200);   /* hairline rules everywhere */
-  --border-strong: var(--ink-900);     /* interactive chrome is outlined in black */
+  --border-default: var(--gray-200); /* hairline rules everywhere */
+  --border-strong: var(--ink-900); /* interactive chrome is outlined in black */
   --border-brand: var(--accent-600);
 
   --accent-star: var(--accent-600);

@@ -78,7 +78,7 @@ A pnpm + Turborepo monorepo. Workspaces live under `apps/*`, `workers/*`, and `p
 
 | Path | Purpose |
 |---|---|
-| `apps/dashboard` | React Router v7 staff dashboard (Clerk auth) — placeholder; RR7 scaffold is a separate issue |
+| `apps/dashboard` | React Router v7 staff dashboard, SSR on Workers — bare scaffold; design system and Clerk auth land in later issues |
 | `apps/patient` | Tokenized patient pages: feedback, review invite, consent, opt-out (no Clerk, minimal deps) — placeholder |
 | `workers/api` | Hono API worker: webhooks, integration callbacks, dashboard API, proof API |
 | `workers/pipeline` | Queue consumers: normalize → dedupe → classify → route — placeholder |

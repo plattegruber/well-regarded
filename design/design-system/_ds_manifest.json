@@ -1,1 +1,56 @@
-{"namespace":"WellRegardedDesignSystem_71432a","components":[{"name":"Button","sourcePath":"components/actions/Button.jsx"},{"name":"IconButton","sourcePath":"components/actions/IconButton.jsx"},{"name":"Badge","sourcePath":"components/display/Badge.jsx"},{"name":"Card","sourcePath":"components/display/Card.jsx"},{"name":"RatingStars","sourcePath":"components/display/RatingStars.jsx"},{"name":"Tag","sourcePath":"components/display/Tag.jsx"},{"name":"Checkbox","sourcePath":"components/forms/Checkbox.jsx"},{"name":"Input","sourcePath":"components/forms/Input.jsx"},{"name":"RadioGroup","sourcePath":"components/forms/RadioGroup.jsx"},{"name":"Select","sourcePath":"components/forms/Select.jsx"},{"name":"Switch","sourcePath":"components/forms/Switch.jsx"},{"name":"Tabs","sourcePath":"components/navigation/Tabs.jsx"},{"name":"Dialog","sourcePath":"components/overlay/Dialog.jsx"},{"name":"Toast","sourcePath":"components/overlay/Toast.jsx"},{"name":"Tooltip","sourcePath":"components/overlay/Tooltip.jsx"}],"startingPoints":[{"name":"app","path":"ui_kits/app/index.html","previewPath":"ui_kits/app/index.html","kind":"screen","section":"App","subtitle":"Full product shell with three interactive screens","viewport":"1280x800"},{"name":"website","path":"ui_kits/website/index.html","previewPath":"ui_kits/website/index.html","kind":"screen","section":"Website","subtitle":"Marketing landing page","viewport":"1280x760"}],"hasThumbnailHtml":false,"globalCssPaths":["tokens/fonts.css","tokens/colors.css","tokens/typography.css","tokens/spacing.css","tokens/effects.css","tokens/base.css","styles.css"],"fontFamilies":["IBM Plex Mono","Space Grotesk"],"source":"spa","note":"Abridged import: full manifest in the Claude Design project includes per-card gallery metadata and a token index duplicating tokens/*.css; see _adherence.oxlintrc.json for component prop APIs."}
+{
+  "namespace": "WellRegardedDesignSystem_71432a",
+  "components": [
+    { "name": "Button", "sourcePath": "components/actions/Button.jsx" },
+    { "name": "IconButton", "sourcePath": "components/actions/IconButton.jsx" },
+    { "name": "Badge", "sourcePath": "components/display/Badge.jsx" },
+    { "name": "Card", "sourcePath": "components/display/Card.jsx" },
+    {
+      "name": "RatingStars",
+      "sourcePath": "components/display/RatingStars.jsx"
+    },
+    { "name": "Tag", "sourcePath": "components/display/Tag.jsx" },
+    { "name": "Checkbox", "sourcePath": "components/forms/Checkbox.jsx" },
+    { "name": "Input", "sourcePath": "components/forms/Input.jsx" },
+    { "name": "RadioGroup", "sourcePath": "components/forms/RadioGroup.jsx" },
+    { "name": "Select", "sourcePath": "components/forms/Select.jsx" },
+    { "name": "Switch", "sourcePath": "components/forms/Switch.jsx" },
+    { "name": "Tabs", "sourcePath": "components/navigation/Tabs.jsx" },
+    { "name": "Dialog", "sourcePath": "components/overlay/Dialog.jsx" },
+    { "name": "Toast", "sourcePath": "components/overlay/Toast.jsx" },
+    { "name": "Tooltip", "sourcePath": "components/overlay/Tooltip.jsx" }
+  ],
+  "startingPoints": [
+    {
+      "name": "app",
+      "path": "ui_kits/app/index.html",
+      "previewPath": "ui_kits/app/index.html",
+      "kind": "screen",
+      "section": "App",
+      "subtitle": "Full product shell with three interactive screens",
+      "viewport": "1280x800"
+    },
+    {
+      "name": "website",
+      "path": "ui_kits/website/index.html",
+      "previewPath": "ui_kits/website/index.html",
+      "kind": "screen",
+      "section": "Website",
+      "subtitle": "Marketing landing page",
+      "viewport": "1280x760"
+    }
+  ],
+  "hasThumbnailHtml": false,
+  "globalCssPaths": [
+    "tokens/fonts.css",
+    "tokens/colors.css",
+    "tokens/typography.css",
+    "tokens/spacing.css",
+    "tokens/effects.css",
+    "tokens/base.css",
+    "styles.css"
+  ],
+  "fontFamilies": ["IBM Plex Mono", "Space Grotesk"],
+  "source": "spa",
+  "note": "Abridged import: full manifest in the Claude Design project includes per-card gallery metadata and a token index duplicating tokens/*.css; see _adherence.oxlintrc.json for component prop APIs."
+}

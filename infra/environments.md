@@ -108,3 +108,19 @@ Fixed in each `wrangler.jsonc` so `pnpm dev` can run everything side by side:
 | jobs      | 8789 | 9231           |
 | patient   | 8790 | 9232           |
 | dashboard | 8791 | 9233           |
+
+The dashboard is a React Router v7 app whose dev server is Vite
+(`@cloudflare/vite-plugin` running workerd inside it), so its port is pinned
+in `apps/dashboard/vite.config.ts` (`server.port`) as well as in the
+`dev` block of its `wrangler.jsonc` (which only covers a raw `wrangler dev`).
+Keep the two in sync when changing the matrix.
+
+### Deploying the dashboard (React Router v7)
+
+Unlike the plain workers, the dashboard must be **built before deploying**:
+`react-router build` resolves `wrangler.jsonc` — honoring `$CLOUDFLARE_ENV`
+for environment selection — into `build/server/wrangler.json` and drops a
+redirect in `.wrangler/deploy/config.json` that `wrangler deploy` follows.
+Select the environment at build time (`CLOUDFLARE_ENV=preview pnpm build`),
+not with `--env` at deploy time; the built config is already flattened to a
+single environment.

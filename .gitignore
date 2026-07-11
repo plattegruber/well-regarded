@@ -5,3 +5,7 @@ dist/
 .dev.vars
 .env
 coverage/
+
+# React Router (apps/dashboard): vite build output and generated route types
+build/
+.react-router/
