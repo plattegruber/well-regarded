@@ -30,7 +30,11 @@ async function pgErrorCode(promise: Promise<unknown>): Promise<string> {
   try {
     await promise;
   } catch (error) {
-    return (error as { code?: string }).code ?? "";
+    // drizzle-orm ≥0.41 wraps driver errors in DrizzleQueryError; the
+    // postgres-js PostgresError (which carries `.code`) is on `cause`.
+    // Fall back to the error itself for anything thrown unwrapped.
+    const cause = (error as { cause?: { code?: string } }).cause;
+    return cause?.code ?? (error as { code?: string }).code ?? "";
   }
   return "no error thrown";
 }
