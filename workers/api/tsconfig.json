@@ -1,4 +1,11 @@
 {
   "extends": "@wellregarded/tsconfig/worker.json",
-  "include": ["src"]
+  "compilerOptions": {
+    // Test files exercise the app under Node (vitest) and reach into
+    // packages/db's node-side test harness, so node types join the worker
+    // types here.
+    "types": ["@cloudflare/workers-types", "node"],
+    "resolveJsonModule": true
+  },
+  "include": ["src", "test", "vitest.config.ts"]
 }
