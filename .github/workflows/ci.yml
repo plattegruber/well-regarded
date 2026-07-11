@@ -1,0 +1,80 @@
+# CI: lint, typecheck, and unit tests on every PR and every push to main.
+# Push-to-main runs matter twice over: a red main is an incident, and caches
+# written from main's scope are what make fresh PRs start warm (actions/cache
+# on a PR restores from the PR branch scope, then falls back to main's).
+#
+# Later workflows in Epic #2 (integration tests #40, deploy #44, previews #52,
+# migration gate #55) extend this layout — new jobs slot in alongside the
+# three below and reuse .github/actions/setup.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Nothing here needs write access. Later workflows (deploy, previews) grant
+# their own permissions.
+permissions:
+  contents: read
+
+# Superseded pushes to the same PR cancel their stale runs; runs on main are
+# never cancelled (every main commit must be fully verified).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # Three parallel jobs, not sequential steps: a Biome failure must not hide
+  # a type error, and parallelism keeps wall clock inside the 5-minute budget.
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      # "Remote-style" Turbo caching via the Actions cache, not Turbo Remote
+      # Cache / Vercel — that would add an external account dependency we
+      # don't want yet. Keyed per job (lint/typecheck/test produce different
+      # task caches; a shared key would thrash the 10 GB repo cache limit).
+      # The sha key always saves a fresh cache; restore-keys best-effort
+      # restores the most recent one and turbo's own hashing decides what in
+      # it is reusable.
+      - name: Restore turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ github.job }}-${{ github.sha }}
+          restore-keys: turbo-${{ github.job }}-
+      - name: Lint (Biome via turbo)
+        run: pnpm lint
+
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Restore turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ github.job }}-${{ github.sha }}
+          restore-keys: turbo-${{ github.job }}-
+      - name: Typecheck
+        run: pnpm typecheck
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Restore turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ github.job }}-${{ github.sha }}
+          restore-keys: turbo-${{ github.job }}-
+      - name: Unit tests
+        run: pnpm test

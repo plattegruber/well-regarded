@@ -1,5 +1,7 @@
 # Well-Regarded
 
+[![CI](https://github.com/plattegruber/well-regarded/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/plattegruber/well-regarded/actions/workflows/ci.yml)
+
 **The Patient Trust Platform** — for healthcare (initially dental) practices.
 
 ## What this is

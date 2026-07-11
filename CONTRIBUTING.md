@@ -6,6 +6,7 @@ Start with the [README](README.md) for what the product is and how to get runnin
 
 - Work happens on short-lived branches off `main`, named `<area>/<slug>` — e.g. `pipeline/dedupe-stage`, `db/consents-table`, `infra/biome-setup`.
 - Every PR references its issue in the body: `Closes #N`.
+- CI ([#39](https://github.com/plattegruber/well-regarded/issues/39)) runs three checks on every PR — **lint**, **typecheck**, and **test** — and all three must be green before merge.
 - PRs are **squash-merged**. Keep the PR title in the imperative — it becomes the commit message on `main`.
 - A PR template is coming with Epic [#2](https://github.com/plattegruber/well-regarded/issues/2) (CI/CD). Until it lands, the expectation it will encode: state what changed and why, link the issue, list how you verified it (which test levels you ran), and call out anything reviewers should look at closely.
 - Keep PRs scoped to one issue. If you find adjacent work, file an issue rather than growing the diff.
