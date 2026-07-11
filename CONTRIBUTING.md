@@ -1,6 +1,6 @@
 # Contributing
 
-Start with the [README](README.md) for what the product is and how to get running, and [docs/architecture.md](docs/architecture.md) for the system map. This document covers the mechanics: branches, PRs, tests, and how work is tracked.
+Start with the [README](README.md) for what the product is and how to get running, and [docs/architecture.md](docs/architecture.md) for the system map. This document covers the mechanics: branches, PRs, tests, and how work is tracked. Working on the dashboard? [docs/frontend-conventions.md](docs/frontend-conventions.md) is the contract for forms, errors, toasts, and pending UI.
 
 ## Branches and pull requests
 

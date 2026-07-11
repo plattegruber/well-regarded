@@ -12,3 +12,9 @@ ENVIRONMENT=local
 # real test-instance keys to exercise authenticated flows locally.
 # CLERK_SECRET_KEY=sk_test_placeholder
 # CLERK_PUBLISHABLE_KEY=pk_test_placeholder
+
+# Signs the flash-message cookie session (#141). Any long random string
+# (`openssl rand -base64 32`). Optional locally — the app falls back to an
+# insecure dev-only secret; deployed environments must set it via
+# `wrangler secret put SESSION_SECRET --env preview|prod`.
+SESSION_SECRET=dev-only-session-secret
