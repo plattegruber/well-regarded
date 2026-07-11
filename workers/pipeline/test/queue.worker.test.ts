@@ -37,6 +37,17 @@ import {
   type NormalizeStore,
   normalizeArtifact,
 } from "../src/stages/normalize";
+import {
+  auditOnlyProofSink,
+  auditOnlyRecoverySink,
+  defaultRoutingConfig,
+  type RouteDeps,
+  type RouteStore,
+  type RoutingDerivations,
+  type RoutingOutcome,
+  routeSignal,
+  type SignalForRouting,
+} from "../src/stages/route";
 import worker from "../src/worker";
 
 const uuid = "8a9c1a52-6a54-4d43-9c39-9d5df2bb0e1a";
@@ -66,13 +77,11 @@ beforeEach(() => {
 
 describe("worker.queue", () => {
   it("acks a valid message on each stub-stage main queue", async () => {
-    // wr-classify and wr-ingest are deliberately absent: since #67/#104
-    // their handlers do real work (Postgres, R2, AI provider) and are
-    // exercised with injected deps in their own describes below.
-    const cases = [
-      ["wr-dedupe", validSignalStage],
-      ["wr-route", validSignalStage],
-    ] as const;
+    // wr-classify, wr-ingest, and wr-route are deliberately absent: since
+    // #67/#104/#108 their handlers do real work (Postgres, R2, AI
+    // provider) and are exercised with injected deps in their own
+    // describes below.
+    const cases = [["wr-dedupe", validSignalStage]] as const;
     for (const [queue, body] of cases) {
       const batch = createMessageBatch(queue, [
         { id: `${queue}-1`, timestamp, attempts: 1, body },
@@ -454,6 +463,173 @@ describe("classify stage on a real workerd batch (issue #67)", () => {
     expect(result.retryMessages).toEqual([{ msgId: "classify-3" }]);
     expect(result.explicitAcks).toEqual([]);
     expect(inserted).toHaveLength(0);
+  });
+});
+
+describe("route stage on a real workerd batch (issue #108)", () => {
+  // The real `route` handler wires Postgres off env; here the dispatcher
+  // runs against the real Queues runtime with the store seam injected
+  // (in-memory RouteStore + the interim audit-only sinks), so the
+  // assertions cover the actual ack/retry outcomes the platform records.
+  // The full Postgres-backed path runs in test/route.integration.test.ts.
+
+  function routeSignalFixture(
+    overrides: Partial<SignalForRouting> = {},
+  ): SignalForRouting {
+    return {
+      visibility: "public",
+      originalText:
+        "Dr. Patel explained every step of my cleaning and the front desk " +
+        "sorted my insurance without me asking twice.",
+      originalRating: "5.0",
+      retentionState: "active",
+      pipelineStatus: "pending_route",
+      ...overrides,
+    };
+  }
+
+  function makeRouteStore(
+    signal: SignalForRouting | undefined,
+    derivations: Partial<RoutingDerivations> = {},
+  ) {
+    const committed: RoutingOutcome[] = [];
+    const store: RouteStore = {
+      getSignal: async () => signal,
+      getCurrentDerivations: async () => ({
+        sentiment: undefined,
+        urgency: undefined,
+        response_risk: undefined,
+        publication_suitability: undefined,
+        ...derivations,
+      }),
+      commitRouting: async (_message, outcome) => {
+        committed.push(outcome);
+      },
+    };
+    return { store, committed };
+  }
+
+  function handlersWithRoute(deps: RouteDeps): StageHandlers {
+    return {
+      ...stageHandlers,
+      route: (message, _env) => routeSignal(message, deps),
+    };
+  }
+
+  it("acks after committing all three branches through the sinks in one outcome", async () => {
+    const { store, committed } = makeRouteStore(routeSignalFixture(), {
+      sentiment: {
+        value: "positive",
+        confidence: 0.95,
+        basis: "inferred_text",
+      },
+      urgency: { value: "critical", confidence: 0.85, basis: "inferred_text" },
+      publication_suitability: {
+        value: "suitable",
+        confidence: 0.9,
+        basis: "inferred_text",
+      },
+    });
+    const recoveryCalls: unknown[] = [];
+    const deps: RouteDeps = {
+      store,
+      recovery: {
+        openRecoveryItem: async (signal, urgency, context) => {
+          recoveryCalls.push(urgency);
+          await auditOnlyRecoverySink.openRecoveryItem(
+            signal,
+            urgency,
+            context,
+          );
+        },
+      },
+      proof: auditOnlyProofSink,
+      config: defaultRoutingConfig,
+    };
+
+    const batch = createMessageBatch("wr-route", [
+      { id: "route-1", timestamp, attempts: 1, body: validSignalStage },
+    ]);
+    const ctx = createExecutionContext();
+    await handleQueueBatch(batch, env, handlersWithRoute(deps));
+    const result = await getQueueResult(batch, ctx);
+
+    expect(result.explicitAcks).toEqual(["route-1"]);
+    expect(result.retryMessages).toEqual([]);
+    expect(recoveryCalls).toEqual(["critical"]);
+    expect(committed).toHaveLength(1);
+    expect(committed[0]?.audits.map((audit) => audit.action)).toEqual([
+      "signal.routed_urgent",
+      "signal.entered_review_inbox",
+      "signal.proof_candidate",
+    ]);
+    expect(committed[0]?.stats).toEqual({
+      route_urgent: 1,
+      route_review_inbox: 1,
+      route_proof_candidate: 1,
+    });
+  });
+
+  it("forwards missing-derivations to the route DLQ and acks (never route on absent data)", async () => {
+    const { store, committed } = makeRouteStore(
+      routeSignalFixture({ visibility: "private" }),
+    );
+    const dlqSend = vi.fn().mockResolvedValue(undefined);
+    const deps: RouteDeps = {
+      store,
+      recovery: auditOnlyRecoverySink,
+      proof: auditOnlyProofSink,
+      config: defaultRoutingConfig,
+    };
+
+    const batch = createMessageBatch("wr-route", [
+      { id: "route-2", timestamp, attempts: 1, body: validSignalStage },
+    ]);
+    const ctx = createExecutionContext();
+    await handleQueueBatch(
+      batch,
+      { ...env, ROUTE_DLQ: { send: dlqSend } },
+      handlersWithRoute(deps),
+    );
+    const result = await getQueueResult(batch, ctx);
+
+    expect(dlqSend).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        kind: DLQ_FORWARD_KIND,
+        stage: "route",
+        reason: "non_retryable",
+        error: expect.stringContaining("no derivations"),
+        body: validSignalStage,
+      }),
+    );
+    expect(result.explicitAcks).toEqual(["route-2"]);
+    expect(result.retryMessages).toEqual([]);
+    expect(committed).toHaveLength(0);
+  });
+
+  it("retries when the routing commit fails (transient Postgres trouble)", async () => {
+    const { store } = makeRouteStore(routeSignalFixture(), {
+      sentiment: { value: "negative", confidence: 0.9, basis: "inferred_text" },
+    });
+    store.commitRouting = async () => {
+      throw new Error("connection reset");
+    };
+    const deps: RouteDeps = {
+      store,
+      recovery: auditOnlyRecoverySink,
+      proof: auditOnlyProofSink,
+      config: defaultRoutingConfig,
+    };
+
+    const batch = createMessageBatch("wr-route", [
+      { id: "route-3", timestamp, attempts: 1, body: validSignalStage },
+    ]);
+    const ctx = createExecutionContext();
+    await handleQueueBatch(batch, env, handlersWithRoute(deps));
+    const result = await getQueueResult(batch, ctx);
+
+    expect(result.retryMessages).toEqual([{ msgId: "route-3" }]);
+    expect(result.explicitAcks).toEqual([]);
   });
 });
 

@@ -68,6 +68,52 @@ export const URGENCY_LEVELS = [
 
 export type UrgencyLevel = (typeof URGENCY_LEVELS)[number];
 
+/** Narrowing guard for jsonb-stored urgency values (`derivations.value`). */
+export function isUrgencyLevel(value: unknown): value is UrgencyLevel {
+  return (
+    typeof value === "string" &&
+    (URGENCY_LEVELS as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * THE urgency ordering (issue #108): `none < low < medium < high <
+ * critical`, by position in {@link URGENCY_LEVELS}. Consumers compare
+ * through this — never `<` on the strings, which would sort
+ * alphabetically ("critical" < "high" < "low" < "medium" < "none").
+ */
+export function urgencyRank(level: UrgencyLevel): number {
+  return URGENCY_LEVELS.indexOf(level);
+}
+
+/**
+ * Is `level` at or above `threshold` in the urgency ordering? The route
+ * stage's recovery branch (issue #108) fires exactly when this is true of
+ * a signal's current urgency derivation.
+ */
+export function meetsUrgencyThreshold(
+  level: UrgencyLevel,
+  threshold: UrgencyLevel,
+): boolean {
+  return urgencyRank(level) >= urgencyRank(threshold);
+}
+
+/**
+ * Default urgency threshold for routing a signal into recovery (issue
+ * #108): `high` and `critical` open recovery work; `medium` and below
+ * rest in the inbox.
+ *
+ * Per-practice override is specified by #108 but `practices` has no
+ * settings storage yet (no settings jsonb; Epic #3/#4 never shipped one).
+ * The route stage takes the threshold as injected config
+ * (`RoutingConfig`), so when practice settings land (#122 proposes a
+ * settings jsonb on `practices` for recovery windows — the routing
+ * threshold belongs in the same mechanism), only the config *loader*
+ * changes; every comparison already goes through
+ * {@link meetsUrgencyThreshold}.
+ */
+export const DEFAULT_URGENCY_ROUTING_THRESHOLD: UrgencyLevel = "high";
+
 /**
  * If the practice replied publicly, how easy is the reply to get wrong?
  * `high` = any reply risks confirming a care relationship or disclosing
