@@ -8,7 +8,7 @@
  *   objects typed here, consumed directly off `c.env`.
  */
 
-import type { StaffActor } from "@wellregarded/core";
+import type { ApiKeyActor, StaffActor } from "@wellregarded/core";
 import type { Db } from "@wellregarded/db";
 
 /**
@@ -25,14 +25,18 @@ export interface ApiBindings {
 }
 
 /**
- * The app-wide Hono type (issue #68 requirement 4): middleware sets both
- * `actor` and `db`, so every handler downstream of the staff-auth group is
- * practice-scoped by construction.
+ * The app-wide Hono type (issue #68 requirement 4): middleware sets `db`
+ * plus the actor for its route group — `actor` (StaffActor) downstream of
+ * `staffAuth`, `apiActor` (ApiKeyActor, issue #81) downstream of
+ * `apiKeyAuth` — so every handler is practice-scoped by construction. A
+ * route group mounts exactly one of the two auth middlewares; no route
+ * ever accepts both credential types.
  */
 export type AppEnv = {
   Bindings: ApiBindings;
   Variables: {
     actor: StaffActor;
+    apiActor: ApiKeyActor;
     db: Db;
   };
 };
