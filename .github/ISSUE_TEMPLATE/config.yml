@@ -1,0 +1,7 @@
+# Issues are authored via `gh` following the template in CONTRIBUTING — not
+# YAML issue forms — so blank issues stay enabled.
+blank_issues_enabled: true
+contact_links:
+  - name: Epic list
+    url: https://github.com/plattegruber/well-regarded/issues?q=is%3Aissue+is%3Aopen+label%3Aepic
+    about: "Find the epic your work belongs to — new work items should be created as sub-issues of an epic with area/type/priority labels per CONTRIBUTING"

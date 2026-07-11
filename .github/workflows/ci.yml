@@ -27,6 +27,15 @@ concurrency:
 jobs:
   # Parallel jobs, not sequential steps: a Biome failure must not hide a
   # type error, and parallelism keeps wall clock inside the 5-minute budget.
+  #
+  # WARNING: all five job ids below (lint, typecheck, test, integration,
+  # migration-check) are required status-check contexts in main's branch
+  # protection (#57, infra/branch-protection.json). Renaming a job here
+  # breaks protection SILENTLY — the old context is required forever-pending
+  # and the new one requires nothing. Update infra/branch-protection.json
+  # and re-apply it (see CONTRIBUTING "Repository settings") in the same PR
+  # as any rename. None of these jobs may become a matrix job for the same
+  # reason (matrix legs get per-leg check names).
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 10

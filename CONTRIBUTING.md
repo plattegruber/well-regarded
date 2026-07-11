@@ -6,9 +6,11 @@ Start with the [README](README.md) for what the product is and how to get runnin
 
 - Work happens on short-lived branches off `main`, named `<area>/<slug>` — e.g. `pipeline/dedupe-stage`, `db/consents-table`, `infra/biome-setup`.
 - Every PR references its issue in the body: `Closes #N`.
-- CI ([#39](https://github.com/plattegruber/well-regarded/issues/39), [#40](https://github.com/plattegruber/well-regarded/issues/40), [#55](https://github.com/plattegruber/well-regarded/issues/55)) runs five parallel checks on every PR — **lint**, **typecheck**, **test** (unit), **integration** (real Postgres service container), and **migration-check** (the Drizzle migration gate — see [Database migrations](#database-migrations)) — and all five must be green before merge.
-- PRs are **squash-merged**. Keep the PR title in the imperative — it becomes the commit message on `main`.
-- A PR template is coming with Epic [#2](https://github.com/plattegruber/well-regarded/issues/2) (CI/CD). Until it lands, the expectation it will encode: state what changed and why, link the issue, list how you verified it (which test levels you ran), and call out anything reviewers should look at closely.
+- CI ([#39](https://github.com/plattegruber/well-regarded/issues/39), [#40](https://github.com/plattegruber/well-regarded/issues/40), [#55](https://github.com/plattegruber/well-regarded/issues/55)) runs five parallel checks on every PR — **lint**, **typecheck**, **test** (unit), **integration** (real Postgres service container), and **migration-check** (the Drizzle migration gate — see [Database migrations](#database-migrations)) — and all five are **required by branch protection** ([#57](https://github.com/plattegruber/well-regarded/issues/57), see [Repository settings](#repository-settings)): a red check blocks the merge button, for admins too.
+- PRs are **squash-merged** (the only merge method the repo allows). Keep the PR title in the imperative — it becomes the commit message on `main`. Head branches are auto-deleted on merge.
+- Fill in the [PR template](.github/pull_request_template.md): **What** (with the `Closes #N` line), **Why**, **Testing** (which levels ran), **Screenshots** (dashboard/patient-app PRs; "n/a" elsewhere).
+- All review conversations must be resolved before merge (enforced by branch protection).
+- Protection runs in strict mode: if `main` moved since your branch was created, update the branch (merge `main` in or rebase and re-push) and let CI re-run before merging.
 - Keep PRs scoped to one issue. If you find adjacent work, file an issue rather than growing the diff.
 
 ## Tests
@@ -65,6 +67,32 @@ pnpm format     # format only
 ```
 
 Run `pnpm lint:fix` before pushing. TypeScript compiler options live in the shared [`packages/tsconfig`](packages/tsconfig) package (`base.json`, `worker.json`, `react.json`) — every workspace extends one of those; do not add per-workspace strictness overrides.
+
+## Repository settings
+
+Branch protection and merge settings live in GitHub's repo settings, not in-repo state — this section makes them reproducible after a transfer/fork and diffable in review ([#57](https://github.com/plattegruber/well-regarded/issues/57)). The canonical protection payload is [`infra/branch-protection.json`](infra/branch-protection.json); the protection API is a **replace, not a patch**, so always re-apply the full file:
+
+```sh
+# Branch protection on main (full replace — edit the JSON, then re-run):
+gh api -X PUT repos/plattegruber/well-regarded/branches/main/protection \
+  --input infra/branch-protection.json
+
+# Repo merge settings: squash-only, auto-delete head branches:
+gh api -X PATCH repos/plattegruber/well-regarded \
+  -F allow_squash_merge=true -F allow_merge_commit=false \
+  -F allow_rebase_merge=false -F delete_branch_on_merge=true
+
+# Verify:
+gh api repos/plattegruber/well-regarded/branches/main/protection
+```
+
+What the payload enforces on `main`:
+
+- **Required status checks, strict**: `lint`, `typecheck`, `test`, `integration`, `migration-check` — the job ids in [ci.yml](.github/workflows/ci.yml). Renaming a job there without updating the JSON (and re-applying) breaks protection silently; see the warning comment in ci.yml. Strict mode means the branch must be up to date with `main` before merging.
+- **Pull requests required, 0 approvals**: the `required_pull_request_reviews` object is present so nothing lands on `main` without a PR, but `required_approving_review_count` is 0 — a solo maintainer has no second reviewer to wait on. **Revisit trigger:** the day a second contributor joins, bump the count to 1 and consider `require_code_owner_reviews` (CODEOWNERS already routes to @plattegruber).
+- **Conversation resolution required.**
+- **`enforce_admins: true`** — admins don't get to bypass red CI; "a red main is an incident" only holds if red can't merge. This does **not** block the normal workflow: `gh pr merge --squash` on a green, up-to-date PR works exactly as before. What it removes is `gh pr merge --admin` around red checks and direct pushes to `main`. The emergency escape hatch is temporarily disabling protection (`gh api -X DELETE repos/plattegruber/well-regarded/branches/main/protection`, then re-apply the JSON after) — which leaves an audit trail — never a bypass left on permanently.
+- **Linear history, no force pushes, no deletions** — matches the squash-merge convention.
 
 ## Issue workflow
 
