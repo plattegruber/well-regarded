@@ -8,15 +8,26 @@
       "types": "./src/index.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./src/testing.ts",
+      "import": "./dist/testing.js",
+      "default": "./dist/testing.js"
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@wellregarded/core": "workspace:*",
+    "zod": "^4.4.3"
+  },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260711.1",
+    "@wellregarded/db": "workspace:*",
     "@wellregarded/tsconfig": "workspace:*",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"

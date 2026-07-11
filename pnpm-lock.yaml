@@ -172,7 +172,20 @@ importers:
         version: 3.2.7(@types/node@26.1.1)(happy-dom@20.10.6)(jiti@2.7.0)(jsdom@29.1.1)(lightningcss@1.32.0)(tsx@4.23.0)
 
   packages/sources:
+    dependencies:
+      '@wellregarded/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^5.20260711.1
+        version: 5.20260711.1
+      '@wellregarded/db':
+        specifier: workspace:*
+        version: link:../db
       '@wellregarded/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig
