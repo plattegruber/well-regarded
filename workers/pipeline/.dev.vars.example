@@ -15,3 +15,16 @@ ENVIRONMENT=local
 # not be rotated casually — rotating it orphans every stored value_hash.
 PII_ENCRYPTION_KEYS={"1":"JB0/YtR2n0wh265yN8SRYBs45Lp0yt7sE2m+Ty6LOaE="}
 PII_HASH_KEY=JKTMICa0vU/Ori8626X0AqH4D+At4aJ3cPg5JQBKqwI=
+
+# Anthropic API key for @wellregarded/ai (issue #63). No live key exists
+# yet — the env schema keeps it optional (TODO(#9-ai-epic)) and the AI code
+# paths fail with an actionable message when it is missing. Uncomment and
+# set a real key (Anthropic console) once the classify stage (#67) needs it.
+# ANTHROPIC_API_KEY=sk-ant-...
+
+# Logical→concrete AI model routing (issue #63). Optional — the schema in
+# packages/core/src/env.ts owns the defaults (claude-haiku-4-5-20251001 /
+# claude-sonnet-5); set these only to override, e.g. to pin a previous
+# model after a bad upgrade.
+# PIPELINE_MODEL=claude-haiku-4-5-20251001
+# DRAFTING_MODEL=claude-sonnet-5

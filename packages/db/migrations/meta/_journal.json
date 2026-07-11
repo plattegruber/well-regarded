@@ -64,6 +64,13 @@
       "when": 1783778543831,
       "tag": "0009_api_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783779978729,
+      "tag": "0010_ai_calls",
+      "breakpoints": true
     }
   ]
 }
