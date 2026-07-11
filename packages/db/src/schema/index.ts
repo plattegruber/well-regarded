@@ -4,6 +4,7 @@
 // `drizzle.config.ts` (schema entry: this barrel) and the typed client
 // (`PostgresJsDatabase<typeof schema>`) pick it up.
 
+export * from "./apiKeys.js";
 export * from "./audit.js";
 export * from "./consents.js";
 export * from "./derivations.js";

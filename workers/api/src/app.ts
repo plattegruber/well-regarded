@@ -11,8 +11,10 @@ import { apiEnvSchema, getEnv } from "@wellregarded/core";
 import { Hono } from "hono";
 
 import type { AppEnv } from "./bindings";
+import { apiKeyAuth } from "./middleware/apiKeyAuth";
 import { staffAuth } from "./middleware/staffAuth";
 import { withDb } from "./middleware/withDb";
+import { apiKeyRoutes } from "./routes/apiKeys";
 import { clerkWebhook } from "./routes/webhooks/clerk";
 
 export const app = new Hono<AppEnv>();
@@ -44,8 +46,11 @@ app.get("/healthz", (c) => {
 //    auth is the provider's signature (svix for Clerk). They still get
 //    `withDb()`.
 //
-// 3. Future proof-API routes (publishable API keys, separate issue) also
-//    stay outside staff auth and will bring their own key-auth middleware.
+// 3. Proof API routes (issue #81) go on the `proof` router below, OUTSIDE
+//    staff auth, behind `apiKeyAuth()` — publishable `pk_live_`/`pk_test_`
+//    keys resolve to a typed `ApiKeyActor` at `c.get("apiActor")`. A route
+//    group mounts exactly ONE auth middleware: nothing may ever accept
+//    both staff JWTs and API keys.
 // ---------------------------------------------------------------------------
 
 const webhooks = new Hono<AppEnv>();
@@ -60,4 +65,16 @@ staff.use("*", staffAuth());
 /** Who am I — the smallest practice-scoped route; also exercised by tests. */
 staff.get("/me", (c) => c.json({ actor: c.get("actor") }));
 
+/** Key management (issue #81): owner-gated via manage_api_keys. */
+staff.route("/api-keys", apiKeyRoutes);
+
 app.route("/api", staff);
+
+const proof = new Hono<AppEnv>();
+proof.use("*", withDb());
+proof.use("*", apiKeyAuth());
+
+/** Which practice am I — the smallest key-scoped route; exercised by tests. */
+proof.get("/me", (c) => c.json({ actor: c.get("apiActor") }));
+
+app.route("/proof", proof);
