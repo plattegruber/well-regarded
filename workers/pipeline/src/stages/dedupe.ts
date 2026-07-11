@@ -1,3 +1,5 @@
+import { createLogger } from "@wellregarded/core";
+
 import type { StageHandler } from "./types";
 
 /**
@@ -9,13 +11,13 @@ import type { StageHandler } from "./types";
  * ClassifyMessage on `env.CLASSIFY_QUEUE` for survivors.
  */
 export const dedupe: StageHandler<"dedupe"> = async (message, _env) => {
-  console.log(
-    JSON.stringify({
-      event: "pipeline.stage.stub",
-      stage: "dedupe",
-      signalId: message.signalId,
-      practiceId: message.practiceId,
-      importRunId: message.importRunId,
-    }),
-  );
+  createLogger({
+    worker: "pipeline",
+    requestId: message.requestId,
+    practiceId: message.practiceId,
+    stage: "dedupe",
+  }).info("pipeline.stage.stub", {
+    signalId: message.signalId,
+    importRunId: message.importRunId,
+  });
 };

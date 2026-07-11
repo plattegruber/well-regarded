@@ -14,6 +14,7 @@
 
 import {
   DEFAULT_SYNCED_ROLE,
+  type Logger,
   ROLE_MAP,
   type StaffRole,
 } from "@wellregarded/core";
@@ -31,13 +32,13 @@ const WEBHOOK_ACTOR = { type: "system", id: "webhook:clerk" } as const;
  * changed in our DB (Settings, later) survives webhook replays. It only
  * drifts from Clerk when the membership row is (re)created.
  */
-export function mapClerkRole(clerkRole: string): StaffRole {
+export function mapClerkRole(clerkRole: string, log: Logger): StaffRole {
   const mapped = ROLE_MAP[clerkRole];
   if (mapped) return mapped;
-  console.warn(
-    `clerk webhook: unknown Clerk role ${JSON.stringify(clerkRole)} — ` +
-      `defaulting to ${DEFAULT_SYNCED_ROLE}`,
-  );
+  log.warn("clerk webhook: unknown Clerk role — defaulting", {
+    clerkRole,
+    defaultRole: DEFAULT_SYNCED_ROLE,
+  });
   return DEFAULT_SYNCED_ROLE;
 }
 
@@ -122,6 +123,7 @@ export async function syncMembership(
     public_user_data: PublicUserData;
     role: string;
   },
+  log: Logger,
 ): Promise<void> {
   const user = membership.public_user_data;
   const displayName = displayNameFrom(user);
@@ -136,7 +138,7 @@ export async function syncMembership(
         clerkUserId: user.user_id,
         email: user.identifier,
         displayName,
-        role: mapClerkRole(membership.role),
+        role: mapClerkRole(membership.role, log),
       })
       .onConflictDoUpdate({
         target: [staffMembers.practiceId, staffMembers.clerkUserId],

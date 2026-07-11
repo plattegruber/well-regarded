@@ -75,10 +75,13 @@ export function apiKeyAuth(): MiddlewareHandler<AppEnv> {
       environment: resolved.apiKey.environment,
     };
     c.set("apiActor", actor);
+    // Bind the tenant onto the request logger (issue #64).
+    c.set("logger", c.get("logger").child({ practiceId: actor.practiceId }));
 
+    const log = c.get("logger");
     const touching = touchApiKeyLastUsed(db, resolved.apiKey.id).catch(
       (error) => {
-        console.error("api_keys.last_used_at touch failed:", error);
+        log.error("api_keys.last_used_at touch failed", { error });
       },
     );
     let executionCtx:

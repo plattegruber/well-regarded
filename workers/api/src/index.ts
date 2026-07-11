@@ -6,6 +6,7 @@
 
 export { app } from "./app";
 export type { ApiBindings, AppEnv } from "./bindings";
+export { requestId } from "./middleware/requestId";
 export { extractOrgClaims, type OrgClaims } from "./middleware/sessionClaims";
 export {
   type ForbiddenReason,

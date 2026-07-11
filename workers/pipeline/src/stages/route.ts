@@ -1,3 +1,5 @@
+import { createLogger } from "@wellregarded/core";
+
 import type { StageHandler } from "./types";
 
 /**
@@ -9,13 +11,13 @@ import type { StageHandler } from "./types";
  * publishable candidate → a proof suggestion (consent-gated downstream).
  */
 export const route: StageHandler<"route"> = async (message, _env) => {
-  console.log(
-    JSON.stringify({
-      event: "pipeline.stage.stub",
-      stage: "route",
-      signalId: message.signalId,
-      practiceId: message.practiceId,
-      importRunId: message.importRunId,
-    }),
-  );
+  createLogger({
+    worker: "pipeline",
+    requestId: message.requestId,
+    practiceId: message.practiceId,
+    stage: "route",
+  }).info("pipeline.stage.stub", {
+    signalId: message.signalId,
+    importRunId: message.importRunId,
+  });
 };

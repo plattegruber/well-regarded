@@ -35,18 +35,21 @@ import worker from "../src/worker";
 
 const uuid = "8a9c1a52-6a54-4d43-9c39-9d5df2bb0e1a";
 const otherUuid = "3f2b6a1e-90cd-4f5e-8a2f-1b0f4a7c9d21";
+const requestId = "5e0f7ad2-3a9f-4a56-8f18-1b2c3d4e5f60";
 
 const validIngest = {
   importRunId: uuid,
   rawArtifactKey: "raw/google/sha256-abc123",
   sourceKind: "google",
   practiceId: otherUuid,
+  requestId,
 };
 
 const validSignalStage = {
   signalId: uuid,
   practiceId: otherUuid,
   importRunId: uuid,
+  requestId,
 };
 
 const timestamp = new Date("2026-07-10T12:00:00Z");
@@ -77,6 +80,28 @@ describe("worker.queue", () => {
       expect(result.ackAll).toBe(false);
       expect(result.retryBatch.retry).toBe(false);
     }
+  });
+
+  it("logs from the workerd consumer carry the message's requestId (issue #64)", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const batch = createMessageBatch("wr-dedupe", [
+      { id: "trace-1", timestamp, attempts: 1, body: validSignalStage },
+    ]);
+    const ctx = createExecutionContext();
+    await worker.queue(batch, env, ctx);
+    const result = await getQueueResult(batch, ctx);
+    expect(result.explicitAcks).toEqual(["trace-1"]);
+    const records = logSpy.mock.calls.map((call) =>
+      JSON.parse(String(call[0])),
+    );
+    const stubLine = records.find(
+      (record) => record.msg === "pipeline.stage.stub",
+    );
+    expect(stubLine).toMatchObject({
+      worker: "pipeline",
+      stage: "dedupe",
+      requestId,
+    });
   });
 
   it("acks a zod-invalid message and forwards it to the stage DLQ producer", async () => {

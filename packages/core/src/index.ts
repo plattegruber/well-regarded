@@ -10,6 +10,7 @@ export * from "./consent.js";
 export * from "./crypto/fieldEncryption.js";
 export * from "./derivations.js";
 export * from "./env.js";
+export * from "./log/index.js";
 export * from "./patients.js";
 export * from "./patientTokens.js";
 export * from "./permissions/index.js";

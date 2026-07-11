@@ -2,6 +2,7 @@ import {
   DLQ_FORWARD_KIND,
   NonRetryableError,
   RetryableError,
+  UNKNOWN_REQUEST_ID_PREFIX,
 } from "@wellregarded/core";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
@@ -14,18 +15,21 @@ import {
 
 const uuid = "8a9c1a52-6a54-4d43-9c39-9d5df2bb0e1a";
 const otherUuid = "3f2b6a1e-90cd-4f5e-8a2f-1b0f4a7c9d21";
+const requestId = "5e0f7ad2-3a9f-4a56-8f18-1b2c3d4e5f60";
 
 const validIngest = {
   importRunId: uuid,
   rawArtifactKey: "raw/google/sha256-abc123",
   sourceKind: "google",
   practiceId: otherUuid,
+  requestId,
 };
 
 const validSignalStage = {
   signalId: uuid,
   practiceId: otherUuid,
   importRunId: uuid,
+  requestId,
 };
 
 interface FakeMessage extends QueueMessageLike {
@@ -296,5 +300,87 @@ describe("DLQ consumption", () => {
     const { message } = await dispatchOne("wr-ingest-dlq", circular);
     expect(message.ack).toHaveBeenCalledOnce();
     expect(message.retry).not.toHaveBeenCalled();
+  });
+});
+
+describe("requestId tracing (issue #64)", () => {
+  it("dispatcher retry logs carry the message's requestId", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const handlers = makeHandlers();
+    handlers.dedupe.mockRejectedValue(new TypeError("boom"));
+    await dispatchOne("wr-dedupe", validSignalStage, { handlers });
+    const records = logSpy.mock.calls.map((call) =>
+      JSON.parse(String(call[0])),
+    );
+    const retryLine = records.find(
+      (record) => record.msg === "pipeline.dispatch.retry",
+    );
+    expect(retryLine).toMatchObject({
+      level: "error",
+      worker: "pipeline",
+      stage: "dedupe",
+      requestId,
+      practiceId: otherUuid,
+    });
+  });
+
+  it("real stage stubs log with the requestId propagated in the message", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const message = makeMessage(validSignalStage);
+    // No injected handlers: the default (real) dedupe stub runs.
+    await handleQueueBatch(
+      { queue: "wr-dedupe", messages: [message] },
+      makeEnv(),
+    );
+    expect(message.ack).toHaveBeenCalledOnce();
+    const records = logSpy.mock.calls.map((call) =>
+      JSON.parse(String(call[0])),
+    );
+    const stubLine = records.find(
+      (record) => record.msg === "pipeline.stage.stub",
+    );
+    expect(stubLine).toMatchObject({
+      worker: "pipeline",
+      stage: "dedupe",
+      requestId,
+      practiceId: otherUuid,
+      signalId: uuid,
+    });
+  });
+
+  it("delivers a legacy message (no requestId) with an unknown- backfill", async () => {
+    const { requestId: _dropped, ...legacy } = validSignalStage;
+    const { handlers } = await dispatchOne("wr-dedupe", legacy);
+    expect(handlers.dedupe).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        ...legacy,
+        requestId: expect.stringMatching(
+          new RegExp(`^${UNKNOWN_REQUEST_ID_PREFIX}`),
+        ),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("malformed messages forward to the DLQ with a best-effort requestId", async () => {
+    const bad = { signalId: "not-a-uuid", requestId: "trace-mal-1" };
+    const { env } = await dispatchOne("wr-dedupe", bad);
+    expect(env.DEDUPE_DLQ.send).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        reason: "malformed",
+        requestId: "trace-mal-1",
+      }),
+    );
+  });
+
+  it("non-retryable forwards carry the message's requestId in the envelope", async () => {
+    const handlers = makeHandlers();
+    handlers.route.mockRejectedValue(new NonRetryableError("gone"));
+    const { env } = await dispatchOne("wr-route", validSignalStage, {
+      handlers,
+    });
+    expect(env.ROUTE_DLQ.send).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ reason: "non_retryable", requestId }),
+    );
   });
 });

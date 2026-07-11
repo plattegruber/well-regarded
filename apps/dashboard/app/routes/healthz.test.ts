@@ -1,3 +1,4 @@
+import { createLogger } from "@wellregarded/core";
 import { describe, expect, it } from "vitest";
 
 import { loader } from "./healthz";
@@ -14,6 +15,12 @@ function loaderArgs(env: Partial<Env>) {
         env: env as Env,
         ctx: {} as ExecutionContext,
       },
+      requestId: "test-request-id",
+      logger: createLogger({
+        worker: "dashboard",
+        requestId: "test-request-id",
+        sink: () => {},
+      }),
     },
   };
 }

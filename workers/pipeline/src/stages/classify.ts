@@ -49,6 +49,8 @@ import {
 } from "@wellregarded/ai";
 import {
   type ClassifyMessage,
+  createLogger,
+  fallbackRequestId,
   getEnv,
   NonRetryableError,
   pipelineEnvSchema,
@@ -113,16 +115,18 @@ export interface ClassifyDeps {
 }
 
 function log(event: string, message: ClassifyMessage, extra?: object): void {
-  console.log(
-    JSON.stringify({
-      event,
-      stage: "classify",
-      signalId: message.signalId,
-      practiceId: message.practiceId,
-      importRunId: message.importRunId,
-      ...extra,
-    }),
-  );
+  // The dispatcher guarantees a requestId on delivered messages (issue
+  // #64); the fallback only fires for direct test invocations.
+  createLogger({
+    worker: "pipeline",
+    requestId: message.requestId ?? fallbackRequestId(),
+    practiceId: message.practiceId,
+    stage: "classify",
+  }).info(event, {
+    signalId: message.signalId,
+    importRunId: message.importRunId,
+    ...extra,
+  });
 }
 
 /**
@@ -171,6 +175,8 @@ export async function classifySignal(
     signalId: message.signalId,
     practiceId: message.practiceId,
     importRunId: message.importRunId,
+    // Producers copy the trace id forward (issue #64).
+    requestId: message.requestId,
   } satisfies RouteMessage);
 }
 
@@ -209,6 +215,7 @@ async function classifyWithModel(
       purpose: "judgments",
       practiceId: message.practiceId,
       model: "pipeline",
+      requestId: message.requestId,
     },
   );
 

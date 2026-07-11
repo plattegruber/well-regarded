@@ -1,4 +1,7 @@
-import type { PipelineMessageFor, PipelineStage } from "@wellregarded/core";
+import type {
+  PipelineStage,
+  TracedPipelineMessageFor,
+} from "@wellregarded/core";
 
 import type { PipelineBindings } from "../bindings";
 
@@ -12,8 +15,13 @@ import type { PipelineBindings } from "../bindings";
  * - return                     → ack
  * - throw RetryableError / any → retry (max_retries: 3, then dead-letter)
  * - throw NonRetryableError    → forward to the stage DLQ + ack
+ *
+ * Messages arrive as `TracedPipelineMessageFor<S>`: the wire-optional
+ * `requestId` (issue #64) is guaranteed by `parsePipelineMessage`, so a
+ * handler can bind its logger — and stamp its next-stage message — with
+ * `message.requestId` unconditionally.
  */
 export type StageHandler<S extends PipelineStage> = (
-  message: PipelineMessageFor<S>,
+  message: TracedPipelineMessageFor<S>,
   env: PipelineBindings,
 ) => Promise<void>;

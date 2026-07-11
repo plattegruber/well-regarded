@@ -55,6 +55,12 @@ export interface ClassifyOpts {
   model?: LogicalModel;
   /** Cap on output tokens for this call (defaults to the provider's). */
   maxOutputTokens?: number;
+  /**
+   * Trace id propagated from the caller's execution context (issue #64,
+   * e.g. the pipeline message's `requestId`), so provider log lines join
+   * the signal's journey. Optional: tenant-less/offline callers omit it.
+   */
+  requestId?: string | undefined;
 }
 
 /** Usage metadata carried alongside every parsed result. */
