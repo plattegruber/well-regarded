@@ -3,89 +3,35 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { practice } from "../test/factories.js";
+import { pgError, setupTestDb } from "../test/harness.js";
 import { audit } from "./audit.js";
-import { createDb, type Db, type Sql } from "./client.js";
 import { auditLog } from "./schema/audit.js";
-import { practices } from "./schema/tenancy.js";
 
 /**
  * Integration tests for audit_log (migrations 0007 + 0008, issue #46)
- * against a real Postgres.
+ * against a real Postgres, on the #49 harness. The harness is what makes
+ * this suite clean up after itself at all: audit rows are append-only by
+ * design (the very property under test), so no afterAll could ever delete
+ * them — instead the whole per-file database is dropped. Run locally with:
  *
- * Run locally with:
- *
- *   docker compose up -d && pnpm db:migrate && \
- *     DATABASE_URL=postgres://... pnpm test:integration
- *
- * DATABASE_URL is asserted, never skipped (see CONTRIBUTING.md).
- *
- * No cleanup on purpose: audit rows are append-only by design (the very
- * property under test), so this suite cannot delete what it writes — and
- * the fixture practice cannot be deleted either (audit rows reference it).
- * Rows are runId-suffixed; the CI database is ephemeral and the local
- * compose database tolerates leftover fixtures.
+ *   docker compose up -d && pnpm --filter @wellregarded/db test:integration
  */
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error(
-    "DATABASE_URL must be set to run integration tests " +
-      "(local compose default: postgres://wellregarded:wellregarded@localhost:54322/wellregarded). " +
-      "Integration tests never skip — a missing database is a failure.",
-  );
-}
 
 /** RAISE EXCEPTION in a plpgsql trigger without an explicit ERRCODE. */
 const RAISE_EXCEPTION = "P0001";
 
-/**
- * Extract the Postgres error code/message. drizzle-orm wraps driver errors
- * in DrizzleQueryError with the PostgresError on `cause`, so check both.
- */
-async function pgError(
-  promise: Promise<unknown>,
-): Promise<{ code: string; message: string }> {
-  try {
-    await promise;
-  } catch (error) {
-    const e = error as {
-      code?: string;
-      message?: string;
-      cause?: { code?: string; message?: string };
-    };
-    return {
-      code: e.code ?? e.cause?.code ?? "",
-      message: [e.message, e.cause?.message].filter(Boolean).join(" | "),
-    };
-  }
-  return { code: "no error thrown", message: "" };
-}
-
 describe("audit_log (integration)", () => {
-  let db: Db;
-  let sql: Sql;
-  const runId = randomUUID().slice(0, 8);
+  const t = setupTestDb();
   let practiceId: string;
 
   beforeAll(async () => {
-    ({ db, sql } = createDb(connectionString));
-    const [practice] = await db
-      .insert(practices)
-      .values({
-        clerkOrgId: `org_${runId}_audit`,
-        name: "Audit Test Practice",
-        slug: `audit-test-${runId}`,
-      })
-      .returning();
-    if (!practice) throw new Error("practice insert returned no row");
-    practiceId = practice.id;
-    return async () => {
-      await sql?.end();
-    };
+    practiceId = (await practice(t.db)).id;
   });
 
   it("audit() inserts a readable row for a staff actor", async () => {
     const entityId = randomUUID();
-    await audit(db, {
+    await audit(t.db, {
       practiceId,
       actor: { type: "staff", id: "11111111-1111-1111-1111-111111111111" },
       action: "consent.granted",
@@ -94,7 +40,7 @@ describe("audit_log (integration)", () => {
       payload: { after: { channels: ["website"] } },
     });
 
-    const [row] = await db
+    const [row] = await t.db
       .select()
       .from(auditLog)
       .where(eq(auditLog.entityId, entityId));
@@ -109,7 +55,7 @@ describe("audit_log (integration)", () => {
 
   it("audit() inserts a row for a system actor (worker/job name)", async () => {
     const entityId = randomUUID();
-    await audit(db, {
+    await audit(t.db, {
       practiceId,
       actor: { type: "system", id: "pipeline:classify" },
       action: "signal.redacted",
@@ -117,7 +63,7 @@ describe("audit_log (integration)", () => {
       entityId,
     });
 
-    const [row] = await db
+    const [row] = await t.db
       .select()
       .from(auditLog)
       .where(eq(auditLog.entityId, entityId));
@@ -128,25 +74,25 @@ describe("audit_log (integration)", () => {
 
   it("audit() inserts a row for a patient_token actor (jti)", async () => {
     const entityId = randomUUID();
-    await audit(db, {
+    await audit(t.db, {
       practiceId,
-      actor: { type: "patient_token", jti: `jti_${runId}` },
+      actor: { type: "patient_token", jti: "jti_fixture" },
       action: "consent.granted",
       entityType: "consents",
       entityId,
     });
 
-    const [row] = await db
+    const [row] = await t.db
       .select()
       .from(auditLog)
       .where(eq(auditLog.entityId, entityId));
     expect(row?.actorType).toBe("patient_token");
-    expect(row?.actorId).toBe(`jti_${runId}`);
+    expect(row?.actorId).toBe("jti_fixture");
   });
 
   it("rejects UPDATE via the audit_log_block_mutation trigger", async () => {
     const entityId = randomUUID();
-    await audit(db, {
+    await audit(t.db, {
       practiceId,
       actor: { type: "system", id: "test:immutability" },
       action: "response.published",
@@ -155,7 +101,7 @@ describe("audit_log (integration)", () => {
     });
 
     const { code, message } = await pgError(
-      db
+      t.db
         .update(auditLog)
         .set({ action: "x" })
         .where(eq(auditLog.entityId, entityId)),
@@ -166,7 +112,7 @@ describe("audit_log (integration)", () => {
 
   it("rejects DELETE via the audit_log_block_mutation trigger", async () => {
     const entityId = randomUUID();
-    await audit(db, {
+    await audit(t.db, {
       practiceId,
       actor: { type: "system", id: "test:immutability" },
       action: "patient.viewed",
@@ -175,13 +121,13 @@ describe("audit_log (integration)", () => {
     });
 
     const { code, message } = await pgError(
-      db.delete(auditLog).where(eq(auditLog.entityId, entityId)),
+      t.db.delete(auditLog).where(eq(auditLog.entityId, entityId)),
     );
     expect(code).toBe(RAISE_EXCEPTION);
     expect(message).toContain("audit_log is append-only");
 
     // The row is still there.
-    const rows = await db
+    const rows = await t.db
       .select()
       .from(auditLog)
       .where(eq(auditLog.entityId, entityId));
@@ -191,7 +137,7 @@ describe("audit_log (integration)", () => {
   it("leaves no row when audit() runs inside a rolled-back transaction (same-transaction convention)", async () => {
     const entityId = randomUUID();
     await expect(
-      db.transaction(async (tx) => {
+      t.db.transaction(async (tx) => {
         await audit(tx, {
           practiceId,
           actor: { type: "staff", id: "22222222-2222-2222-2222-222222222222" },
@@ -204,7 +150,7 @@ describe("audit_log (integration)", () => {
       }),
     ).rejects.toThrow("simulated mutation failure");
 
-    const rows = await db
+    const rows = await t.db
       .select()
       .from(auditLog)
       .where(
