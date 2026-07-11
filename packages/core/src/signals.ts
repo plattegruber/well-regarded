@@ -44,3 +44,20 @@ export type SignalAvailability = (typeof SIGNAL_AVAILABILITIES)[number];
 export const RETENTION_STATES = ["active", "redacted", "purged"] as const;
 
 export type RetentionState = (typeof RETENTION_STATES)[number];
+
+/**
+ * Where a signal sits in the pipeline spine (Epic #6). The normalize stage
+ * (#104) inserts rows as `pending_dedupe`; dedupe (#106) advances survivors
+ * to `pending_classify`; classify (#67) to `pending_route`; route (#108)
+ * lands them at `processed`, the terminal state every downstream surface
+ * reads. Deliberately named "pipeline status": it records position in the
+ * spine, never a derived judgment (those live in `derivations`).
+ */
+export const SIGNAL_PIPELINE_STATUSES = [
+  "pending_dedupe",
+  "pending_classify",
+  "pending_route",
+  "processed",
+] as const;
+
+export type SignalPipelineStatus = (typeof SIGNAL_PIPELINE_STATUSES)[number];
