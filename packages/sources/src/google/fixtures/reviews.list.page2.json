@@ -1,0 +1,70 @@
+{
+  "reviews": [
+    {
+      "name": "accounts/1/locations/1/reviews/10",
+      "reviewId": "10",
+      "reviewer": {
+        "displayName": "Kate Patterson",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/fake-kate-patterson"
+      },
+      "starRating": "FIVE",
+      "comment": "I've been terrified of dentists my whole life and this is the first office that made me feel at ease.",
+      "createTime": "2025-06-04T13:33:48.000Z",
+      "updateTime": "2025-06-04T13:33:48.000Z"
+    },
+    {
+      "name": "accounts/1/locations/1/reviews/7",
+      "reviewId": "7",
+      "reviewer": {
+        "displayName": "Luis Okafor",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/fake-luis-okafor"
+      },
+      "starRating": "FIVE",
+      "comment": "Super clean office, on time, and they actually explain your x-rays instead of rushing you out. Edit: still feeling great two months later.",
+      "createTime": "2025-05-25T15:23:28.000Z",
+      "updateTime": "2025-06-01T15:23:28.000Z"
+    },
+    {
+      "name": "accounts/1/locations/1/reviews/13",
+      "reviewId": "13",
+      "reviewer": {
+        "displayName": "Marcus Kowalski",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/fake-marcus-kowalski"
+      },
+      "starRating": "FIVE",
+      "comment": "Emergency visit on a Friday afternoon for my son's cracked molar — they stayed late for us.",
+      "reviewReply": {
+        "comment": "We're so glad you had a great visit! Thanks for trusting us with your smile.",
+        "updateTime": "2025-04-03T19:19:07.000Z",
+        "reviewReplyState": "APPROVED"
+      },
+      "createTime": "2025-03-30T19:19:07.000Z",
+      "updateTime": "2025-04-03T19:19:07.000Z"
+    },
+    {
+      "name": "accounts/1/locations/1/reviews/5",
+      "reviewId": "5",
+      "reviewer": {
+        "displayName": "A Google user",
+        "isAnonymous": true
+      },
+      "starRating": "FIVE",
+      "comment": "In and out in 45 minutes for a filling, numb the whole time, no lecture. Great experience.",
+      "createTime": "2025-03-31T00:17:40.000Z",
+      "updateTime": "2025-03-31T00:17:40.000Z"
+    },
+    {
+      "name": "accounts/1/locations/1/reviews/1",
+      "reviewId": "1",
+      "reviewer": {
+        "displayName": "Priya Novak",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/fake-priya-novak"
+      },
+      "starRating": "FIVE",
+      "createTime": "2025-03-25T19:55:35.000Z",
+      "updateTime": "2025-03-25T19:55:35.000Z"
+    }
+  ],
+  "totalReviewCount": 15,
+  "averageRating": 4.4
+}

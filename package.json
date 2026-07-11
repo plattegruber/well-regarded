@@ -8,6 +8,7 @@
   "scripts": {
     "setup": "bash scripts/setup.sh",
     "dev": "turbo run dev",
+    "dev:fake-gbp": "pnpm --filter @wellregarded/sources dev:fake-gbp",
     "build": "turbo run build",
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",

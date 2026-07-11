@@ -1,0 +1,12 @@
+{
+  "accounts": [
+    {
+      "name": "accounts/1",
+      "accountName": "Cedar Ridge Dental Group",
+      "type": "PERSONAL",
+      "role": "PRIMARY_OWNER",
+      "verificationState": "VERIFIED",
+      "vettedState": "NOT_VETTED"
+    }
+  ]
+}

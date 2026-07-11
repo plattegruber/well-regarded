@@ -13,22 +13,32 @@
       "types": "./src/testing.ts",
       "import": "./dist/testing.js",
       "default": "./dist/testing.js"
+    },
+    "./google/fake": {
+      "types": "./src/google/fake/index.ts",
+      "import": "./dist/google/fake/index.js",
+      "default": "./dist/google/fake/index.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "dev:fake-gbp": "tsx scripts/dev-fake-gbp.ts",
+    "gen:google-fixtures": "tsx scripts/generate-google-fixtures.ts",
     "test": "vitest run",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@wellregarded/core": "workspace:*",
+    "hono": "^4.12.29",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260711.1",
+    "@hono/node-server": "^1.19.0",
     "@wellregarded/db": "workspace:*",
     "@wellregarded/tsconfig": "workspace:*",
+    "tsx": "^4.23.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }
