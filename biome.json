@@ -1,5 +1,8 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.3/schema.json",
+  "files": {
+    "includes": ["**", "!**/migrations/meta"]
+  },
   "vcs": {
     "enabled": true,
     "clientKind": "git",
