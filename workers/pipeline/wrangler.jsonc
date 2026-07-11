@@ -130,14 +130,23 @@
     ]
   },
 
+  "r2_buckets": [
+    // Immutable raw artifacts (#100), read by the normalize stage (#104).
+    // Local dev uses Miniflare's R2 simulator; the bucket is not provisioned.
+    { "binding": "RAW_ARTIFACTS", "bucket_name": "wr-raw-artifacts-local" }
+  ],
+
   "hyperdrive": [
-    // The classify stage (#67) re-reads `signals` and writes `derivations`
-    // through this. Local dev ignores the id and connects via the env var
+    // The normalize stage (#104) writes `signals` + `import_runs`, the
+    // classify stage (#67) re-reads `signals` and writes `derivations`, and
+    // the DLQ consumer persists failures (#111) through this. Local dev
+    // ignores the id and connects via the env var
     // CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE (a local
     // Postgres connection string — see .dev.vars.example). The
     // localConnectionString below is the docker-compose Postgres, so
-    // `wrangler dev` and the workerd test pool boot without extra env; the
-    // env var, when set, overrides it.
+    // `wrangler dev` boots without extra env; the env var, when set,
+    // overrides it (the workerd unit-test pool overrides it with a dead end
+    // — see vitest.config.ts).
     // <TBD>: real Hyperdrive config id — provisioned in Epic #2.
     {
       "binding": "HYPERDRIVE",
@@ -219,6 +228,12 @@
           { "binding": "ROUTE_DLQ", "queue": "wr-route-dlq-preview" }
         ]
       },
+      "r2_buckets": [
+        {
+          "binding": "RAW_ARTIFACTS",
+          "bucket_name": "wr-raw-artifacts-preview"
+        }
+      ],
       "hyperdrive": [
         // <TBD>: real Hyperdrive config id — provisioned in Epic #2.
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
@@ -296,6 +311,9 @@
           { "binding": "ROUTE_DLQ", "queue": "wr-route-dlq-prod" }
         ]
       },
+      "r2_buckets": [
+        { "binding": "RAW_ARTIFACTS", "bucket_name": "wr-raw-artifacts-prod" }
+      ],
       "hyperdrive": [
         // <TBD>: real Hyperdrive config id — provisioned in Epic #2.
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }

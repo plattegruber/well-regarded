@@ -10,6 +10,13 @@ function makeEnv(environment = "local"): FakeEnv {
   const producer = () => ({ send: vi.fn().mockResolvedValue(undefined) });
   return {
     ENVIRONMENT: environment,
+    // Never touched by the debug endpoint.
+    RAW_ARTIFACTS: {
+      head: async () => null,
+      put: async () => undefined,
+      get: async () => null,
+    },
+    HYPERDRIVE: { connectionString: "postgresql://unused:x@127.0.0.1:9/none" },
     DEDUPE_QUEUE: producer(),
     CLASSIFY_QUEUE: producer(),
     ROUTE_QUEUE: producer(),

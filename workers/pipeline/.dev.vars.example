@@ -5,7 +5,9 @@
 # Which environment this isolate believes it is in ("local" | "preview" | "prod").
 ENVIRONMENT=local
 
-# Postgres for the classify stage (#67), via the HYPERDRIVE binding. Optional:
+# Postgres via the HYPERDRIVE binding — the normalize stage (#104) writes
+# signals + import_runs, the classify stage (#67) writes derivations, and the
+# DLQ consumer persists failures (#111). Optional:
 # wrangler.jsonc carries the docker-compose Postgres as localConnectionString;
 # set this only to point local dev somewhere else.
 # CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://wellregarded:wellregarded@localhost:54322/wellregarded
