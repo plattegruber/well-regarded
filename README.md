@@ -30,7 +30,7 @@ pnpm dev        # boot every worker side by side (turbo terminal UI — one pane
 > pnpm's own built-in `setup` command (which configures `PNPM_HOME` and edits
 > your shell rc) instead of the repo script. See Troubleshooting.
 
-`pnpm run setup` is idempotent — run it whenever you pull new migrations. It never overwrites an existing `.dev.vars`. (Seeding a demo practice is part of the setup flow once [#32](https://github.com/plattegruber/well-regarded/issues/32) lands.)
+`pnpm run setup` is idempotent — run it whenever you pull new migrations. It never overwrites an existing `.dev.vars`. It finishes by seeding the demo practice (**Cedar Ridge Dental** — the same practice the design mockup shows), so local dev has realistic data from the first boot. Re-seed anytime with `pnpm seed` (wipe-and-recreate, scoped to the demo practice only; refuses non-local databases). See `packages/db/README.md` § "Demo seed" for what the dataset contains and the `SEED_VERSION` contract.
 
 After `pnpm dev` you have:
 

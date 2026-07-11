@@ -1,6 +1,6 @@
-import type { Action } from "./actions";
-import { PERMISSION_MATRIX } from "./matrix";
-import type { Resource, StaffActor } from "./types";
+import type { Action } from "./actions.js";
+import { PERMISSION_MATRIX } from "./matrix.js";
+import type { Resource, StaffActor } from "./types.js";
 
 /**
  * The one permission check — pure, no I/O — consulted by dashboard

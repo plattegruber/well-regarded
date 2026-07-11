@@ -75,6 +75,8 @@ describe("my feature (integration)", () => {
 
 Factories exist for `practice`, `location`, `provider`, `staffMember`, `signal`, `derivation`, `consent` (grants through `grantConsent`, so versioning is the sanctioned path), `patient`, `contactPoint` (encrypts through `upsertContactPoint` with the exported `TEST_KEYRING`), and `proofExcerpt`. Each takes `Partial<Insert...>` overrides, inserts a real row, and returns the full row. Data is deterministic: faker is seeded per file by the harness; unique columns combine faker output with a monotonic counter. (`recoveryItem()` arrives with Epic [#15](https://github.com/plattegruber/well-regarded/issues/15)'s table.)
 
+For a test that wants a whole realistic practice instead of a few rows, the demo seed is importable too: `runSeed(t.db)` from `packages/db/src/seed/run.ts` builds Cedar Ridge Dental (80 signals, all consent states — see `packages/db/README.md` § "Demo seed"), and its fixture arrays under `packages/db/src/seed/fixtures/` are plain data you can assert against. E2E (Epic [#25](https://github.com/plattegruber/well-regarded/issues/25)) runs against exactly that dataset, so changing it means bumping `SEED_VERSION`.
+
 **Run a single file:** `pnpm --filter @wellregarded/db test:integration -- src/schema/signals.integration.test.ts` (with `DATABASE_URL` set). The naming rule is the whole contract: name the file `*.integration.test.ts` and it runs in the integration project with the harness available; name it `*.test.ts` and it must stay DB-free.
 
 Ground rules that hold at every level:

@@ -7,7 +7,8 @@
 #   1. copies each .dev.vars.example -> .dev.vars where missing (never overwrites),
 #   2. starts the docker compose Postgres and waits for its healthcheck,
 #   3. applies database migrations (re-running is a no-op),
-#   4. seeds the database (placeholder until #32 lands the seed system).
+#   4. seeds the demo practice (#32; wipe-and-recreate, scoped to the demo
+#      practice only, so re-running always converges on the same dataset).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -68,8 +69,9 @@ info "Applying database migrations..."
 DATABASE_URL="$LOCAL_DATABASE_URL" pnpm --filter @wellregarded/db db:migrate
 
 # --- 4. Seed -------------------------------------------------------------------
-# TODO(#32): once the seed system lands, replace this echo with:
-#   DATABASE_URL="$LOCAL_DATABASE_URL" pnpm --filter @wellregarded/db seed
-info "Seed: skipped — no seed system yet (lands in #32)."
+# Wipe-and-recreate the demo practice (Cedar Ridge Dental) — idempotent and
+# scoped to the demo practice only; it never touches other data (#32).
+info "Seeding the demo practice (Cedar Ridge Dental)..."
+DATABASE_URL="$LOCAL_DATABASE_URL" pnpm --filter @wellregarded/db seed
 
 info "Done. Run \`pnpm dev\` to boot the local workers (ports: see README Quickstart)."
