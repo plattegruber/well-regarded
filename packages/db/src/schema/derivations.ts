@@ -75,6 +75,13 @@ export const derivations = pgTable(
      * pipeline in Epic #9 always sets it).
      */
     modelVersion: text("model_version"),
+    /**
+     * One-line explanation for the derivations panel (issue #67) — the
+     * model's own justification for an inferred judgment, or the
+     * deterministic rule for `source_metadata` rows. NULL for `manual`
+     * rows (the human is the rationale) and for pre-#67 history.
+     */
+    rationale: text("rationale"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

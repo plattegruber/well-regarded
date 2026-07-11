@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
+    "@wellregarded/core": "workspace:*",
     "zod": "^4.4.3"
   }
 }

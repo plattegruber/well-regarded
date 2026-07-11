@@ -5,8 +5,11 @@
 # Which environment this isolate believes it is in ("local" | "preview" | "prod").
 ENVIRONMENT=local
 
-# No Hyperdrive binding here: the pipeline worker talks to queues only, so it
-# needs no local Postgres connection string.
+# Postgres for the classify stage (#67), via the HYPERDRIVE binding. Optional:
+# wrangler.jsonc carries the docker-compose Postgres as localConnectionString;
+# set this only to point local dev somewhere else.
+# CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://wellregarded:wellregarded@localhost:54322/wellregarded
+
 # PII field-encryption keyring (issue #47) — dev-only values, safe to commit
 # because they never protect real data. Generate real keys with
 # `openssl rand -base64 32`. PII_ENCRYPTION_KEYS maps key version -> base64
@@ -16,10 +19,12 @@ ENVIRONMENT=local
 PII_ENCRYPTION_KEYS={"1":"JB0/YtR2n0wh265yN8SRYBs45Lp0yt7sE2m+Ty6LOaE="}
 PII_HASH_KEY=JKTMICa0vU/Ori8626X0AqH4D+At4aJ3cPg5JQBKqwI=
 
-# Anthropic API key for @wellregarded/ai (issue #63). No live key exists
-# yet — the env schema keeps it optional (TODO(#9-ai-epic)) and the AI code
-# paths fail with an actionable message when it is missing. Uncomment and
-# set a real key (Anthropic console) once the classify stage (#67) needs it.
+# Anthropic API key for @wellregarded/ai (issue #63). The classify stage
+# (#67) needs it for signals that carry text; without it those messages
+# retry with an actionable error and dead-letter (rating-only signals still
+# classify deterministically). The env schema keeps it optional
+# (TODO(#9-ai-epic)) so the rest of the spine runs without a key. Uncomment
+# and set a real key (Anthropic console) to exercise live classification.
 # ANTHROPIC_API_KEY=sk-ant-...
 
 # Logical→concrete AI model routing (issue #63). Optional — the schema in
