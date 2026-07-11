@@ -31,6 +31,9 @@ export {
   type Derivation,
   getCurrentDerivations,
   getCurrentDerivationsForSignals,
+  insertDerivations,
+  type NewDerivation,
+  signalHasDerivations,
 } from "./queries/derivations.js";
 export {
   type HybridSearchParams,
@@ -45,4 +48,5 @@ export {
   type UpsertContactPointInput,
   upsertContactPoint,
 } from "./queries/patients.js";
+export { getSignal, type Signal } from "./queries/signals.js";
 export * as schema from "./schema/index.js";

@@ -1,0 +1,1 @@
+ALTER TABLE "derivations" ADD COLUMN "rationale" text;
