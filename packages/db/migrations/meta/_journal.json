@@ -15,6 +15,34 @@
       "when": 1783746527717,
       "tag": "0002_tenancy_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783747280045,
+      "tag": "0003_signals",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783747289778,
+      "tag": "0004_signals_protect_original",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783747345904,
+      "tag": "0005_derivations",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783747377323,
+      "tag": "0006_consents",
+      "breakpoints": true
     }
   ]
 }
