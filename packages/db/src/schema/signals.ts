@@ -41,6 +41,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { patients } from "./pii.js";
 import { locations, practices, providers } from "./tenancy.js";
 
 // Enum values sourced from @wellregarded/core (one source of truth; the
@@ -66,10 +67,12 @@ export const signals = pgTable(
 
     // Nullable associations.
     /**
-     * FK to pii.patients added with the pii schema (#47) — `pii.patients`
-     * lands after this table, so this migration creates the column only.
+     * FK to `pii.patients` (deferred from #35, added by #47). SET NULL on
+     * patient delete — deleting a patient must never destroy signals.
      */
-    patientId: uuid("patient_id"),
+    patientId: uuid("patient_id").references(() => patients.id, {
+      onDelete: "set null",
+    }),
     locationId: uuid("location_id").references(() => locations.id),
     providerId: uuid("provider_id").references(() => providers.id),
 

@@ -85,6 +85,43 @@ fixed by a new corrective migration, never by editing the old file.
 `devDependencies` and **must never be imported by Worker code** — nothing
 under `src/` may import it, so it is never bundled.
 
+## PII & field encryption
+
+Patient identity lives in the isolated `pii` Postgres schema
+(`pii.patients`, `pii.contact_points` — see `src/schema/pii.ts`), and
+contact values are encrypted at the application layer (AES-256-GCM via
+WebCrypto, `encryptField` in `@wellregarded/core`) before they reach the
+database. A deterministic HMAC (`value_hash`) makes encrypted values
+findable by equality without decryption.
+
+**The rule: nothing outside `packages/db` and `packages/core` touches
+`value_encrypted` or the keyring.** Reads and writes go through
+`findContactPoint` / `upsertContactPoint` in `src/queries/patients.ts`
+(hash lookup, encrypt-on-write — never decrypt-to-search). API responses
+that include contact info decrypt explicitly at the edge with
+`decryptField`, and every such access is audited via `audit()` with action
+`patient.viewed`.
+
+Key handling (see `docs/secrets.md` for the variable table):
+
+- `PII_ENCRYPTION_KEYS` — JSON map of version → base64 32-byte AES key,
+  e.g. `{ "1": "<openssl rand -base64 32>" }`. The highest version
+  encrypts new writes; every version that still has rows must remain
+  present. Rotation = add `"2"` and keep `"1"`.
+- `PII_HASH_KEY` — base64 32 bytes, separate from the encryption keys.
+  Never rotate it casually: rotating orphans every stored `value_hash`.
+- Generate keys with `openssl rand -base64 32`. Dev placeholders live in
+  the workers' `.dev.vars.example`; never commit real keys.
+
+## Audit log
+
+`audit_log` is append-only, enforced by the database (the
+`audit_log_block_mutation` trigger rejects UPDATE and DELETE; TRUNCATE is
+revoked from PUBLIC). Every mutation path calls `audit()` from
+`src/audit.ts` **inside the same transaction as the change it records** —
+an audit row cannot exist without its mutation, or the mutation without
+its audit row.
+
 ## Hyperdrive caveats
 
 The connection defaults in `createDb` exist because of how Hyperdrive pools

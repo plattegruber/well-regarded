@@ -37,6 +37,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { patients } from "./pii.js";
 import { signals } from "./signals.js";
 import { practices } from "./tenancy.js";
 
@@ -60,11 +61,14 @@ export const consents = pgTable(
       .notNull()
       .references(() => signals.id),
     /**
-     * FK to pii.patients added with the pii schema (#47) — column only for
-     * now. NULL for practice-attested imports where we have no patient
+     * FK to `pii.patients` (deferred from #38, added by #47). SET NULL on
+     * patient delete — deleting a patient must never destroy consent
+     * history. NULL for practice-attested imports where we have no patient
      * record.
      */
-    patientId: uuid("patient_id"),
+    patientId: uuid("patient_id").references(() => patients.id, {
+      onDelete: "set null",
+    }),
     /** Where republication is allowed. */
     channels: consentChannelEnum("channels").array().notNull(),
     attribution: consentAttributionEnum("attribution").notNull(),

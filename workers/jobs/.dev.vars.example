@@ -7,3 +7,11 @@ ENVIRONMENT=local
 
 # The local Hyperdrive->Postgres connection string does NOT go here — wrangler
 # ignores it in .dev.vars. It lives in this directory's `.env` (see .env.example).
+# PII field-encryption keyring (issue #47) — dev-only values, safe to commit
+# because they never protect real data. Generate real keys with
+# `openssl rand -base64 32`. PII_ENCRYPTION_KEYS maps key version -> base64
+# 32-byte AES key (highest version encrypts new writes; keep old versions
+# while rows encrypted with them exist). PII_HASH_KEY is separate and must
+# not be rotated casually — rotating it orphans every stored value_hash.
+PII_ENCRYPTION_KEYS={"1":"JB0/YtR2n0wh265yN8SRYBs45Lp0yt7sE2m+Ty6LOaE="}
+PII_HASH_KEY=JKTMICa0vU/Ori8626X0AqH4D+At4aJ3cPg5JQBKqwI=
