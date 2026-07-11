@@ -23,6 +23,11 @@ export {
   isRetryableStatus,
 } from "./backoff.js";
 export {
+  EMBEDDING_DIMENSIONS,
+  type EmbeddingProvider,
+  FakeEmbeddingProvider,
+} from "./embedding.js";
+export {
   AiError,
   AiRequestError,
   AiResponseError,

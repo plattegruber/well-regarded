@@ -335,30 +335,6 @@ describe("requestId tracing (issue #64)", () => {
     });
   });
 
-  it("real stage stubs log with the requestId propagated in the message", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    const message = makeMessage(validSignalStage);
-    // No injected handlers: the default (real) dedupe stub runs.
-    await handleQueueBatch(
-      { queue: "wr-dedupe", messages: [message] },
-      makeEnv(),
-    );
-    expect(message.ack).toHaveBeenCalledOnce();
-    const records = logSpy.mock.calls.map((call) =>
-      JSON.parse(String(call[0])),
-    );
-    const stubLine = records.find(
-      (record) => record.msg === "pipeline.stage.stub",
-    );
-    expect(stubLine).toMatchObject({
-      worker: "pipeline",
-      stage: "dedupe",
-      requestId,
-      practiceId: otherUuid,
-      signalId: uuid,
-    });
-  });
-
   it("delivers a legacy message (no requestId) with an unknown- backfill", async () => {
     const { requestId: _dropped, ...legacy } = validSignalStage;
     const { handlers } = await dispatchOne("wr-dedupe", legacy);

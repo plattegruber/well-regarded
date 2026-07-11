@@ -27,6 +27,24 @@ export {
   revokeConsent,
 } from "./queries/consents.js";
 export {
+  canonicalPair,
+  type DuplicateCandidate,
+  type FindDuplicateCandidatesParams,
+  findDuplicateCandidates,
+  getImportRunArtifactKeys,
+  getSignalWithCurrentContent,
+  insertSuspectedDuplicates,
+  listSuspectedDuplicatesForPractice,
+  type RecordSignalVersionInput,
+  recordSignalVersion,
+  type SignalVersion,
+  type SignalWithCurrentContent,
+  type SuspectedDuplicate,
+  type SuspectedDuplicateLink,
+  setSignalPipelineStatus,
+  updateSignalEmbedding,
+} from "./queries/dedupe.js";
+export {
   type CurrentDerivations,
   type Derivation,
   getCurrentDerivations,
