@@ -4,9 +4,8 @@
 # written from main's scope are what make fresh PRs start warm (actions/cache
 # on a PR restores from the PR branch scope, then falls back to main's).
 #
-# Later workflows in Epic #2 (deploy #44, previews #52, migration gate #55)
-# extend this layout — new jobs slot in alongside the four below and reuse
-# .github/actions/setup.
+# Later workflows in Epic #2 (deploy #44, previews #52) extend this layout —
+# new jobs slot in alongside the ones below and reuse .github/actions/setup.
 name: CI
 
 on:
@@ -26,8 +25,8 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Four parallel jobs, not sequential steps: a Biome failure must not hide
-  # a type error, and parallelism keeps wall clock inside the 5-minute budget.
+  # Parallel jobs, not sequential steps: a Biome failure must not hide a
+  # type error, and parallelism keeps wall clock inside the 5-minute budget.
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -79,6 +78,74 @@ jobs:
           restore-keys: turbo-${{ github.job }}-
       - name: Unit tests
         run: pnpm test
+
+  # Migration gate (#55): two filesystem-only checks, no database needed.
+  # (1) Drift: the schema in packages/db/src/schema must match the committed
+  #     migrations — `drizzle-kit generate` must be a no-op.
+  # (2) Append-only: a *.sql migration that exists on origin/main must never
+  #     be modified, deleted, or renamed — fix-forward with a new migration.
+  # Scope note: the append-only rule covers only *.sql files. Drizzle's
+  # migrations/meta/_journal.json and meta/*_snapshot.json are legitimately
+  # rewritten by `generate` when a new migration is appended, so they can't
+  # be immutable — their integrity is covered by the drift check instead
+  # (generate is deterministic given schema + journal, so a hand-edited
+  # journal or snapshot makes the next generate produce a diff).
+  migration-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the append-only check diffs against the merge-base
+          # with origin/main (three-dot), which a shallow clone may not have.
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      # Issue #55 specified a skip-guard for the window before Epic #3 landed
+      # drizzle. That window has closed (#171), so the guard is inverted: a
+      # missing config now means something is broken, and silently skipping
+      # would disarm the gate.
+      - name: Assert drizzle config exists
+        run: |
+          test -f packages/db/drizzle.config.ts || {
+            echo "::error::packages/db/drizzle.config.ts is missing — the migration gate cannot run."
+            exit 1
+          }
+      # Append-only check first: pure git, no build needed, fails fast.
+      # Three-dot (merge-base) diff, not two-dot: a PR merely behind main
+      # must not flag files that *main* changed. --diff-filter=MDR: renames
+      # included because a rename breaks the journal's reference to the file
+      # (the journal records migration tags by name).
+      - name: Append-only check (merged migrations are immutable)
+        run: |
+          git fetch origin main
+          violations=$(git diff --name-status --diff-filter=MDR origin/main...HEAD -- 'packages/db/migrations/*.sql')
+          if [ -n "$violations" ]; then
+            echo "$violations"
+            echo "::error::Migrations are append-only once merged. Create a new migration instead of editing this one."
+            exit 1
+          fi
+          echo "No merged migration was modified, deleted, or renamed."
+      # Drift check: regenerate and require a no-op. The schema barrel imports
+      # @wellregarded/core, which resolves to its dist/ build, so build the
+      # db package's workspace dependencies first — with plain pnpm, not
+      # turbo: the build task declares `outputs: []`, so a turbo cache hit
+      # would skip tsc without restoring dist and generate would then fail.
+      # drizzle-kit generate is deterministic given the same schema + journal
+      # + drizzle-kit version (pinned by the workspace devDependency — never
+      # install drizzle-kit ad hoc here), so add-and-diff is a sound oracle.
+      # add-then-diff (not plain `git diff`) so *untracked* new migration
+      # files are caught too.
+      - name: Build schema dependencies
+        run: pnpm --filter "@wellregarded/db^..." build
+      - name: Drift check (schema must match committed migrations)
+        run: |
+          pnpm --filter @wellregarded/db db:generate
+          git add -A
+          if ! git diff --cached --exit-code --stat -- packages/db; then
+            echo "::error::Schema changed without a migration. Run \`pnpm --filter @wellregarded/db db:generate\` and commit the result."
+            exit 1
+          fi
+          echo "drizzle-kit generate was a no-op — schema and migrations agree."
 
   # Integration tests against a real Postgres with pgvector (#40). Parallel
   # with the jobs above — it never gates or slows the unit-test path. The

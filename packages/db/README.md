@@ -43,6 +43,9 @@ is a no-op).
 - **Migrations are append-only.** Never edit or delete a checked-in
   migration; fix-forward with a new one. Drizzle records applied migrations
   by hash — editing an applied file breaks every existing database.
+- **Schema and migrations must agree.** Every change under `src/schema`
+  ships with the migration `pnpm db:generate` emits for it, in the same PR —
+  including the `meta/` journal and snapshot updates it writes alongside.
 - **Generated SQL is reviewed like source code** before merge. `db:generate`
   output is a starting point, not a finished artifact.
 - **Hand-written SQL migrations are expected** for anything the schema DSL
@@ -51,6 +54,30 @@ is a no-op).
   then write the SQL by hand. Migration
   `0001_enable_pgvector_and_pii_schema` (pgvector + the `pii` schema) is the
   template.
+
+### CI enforcement (the migration gate)
+
+CI's `migration-check` job
+([#55](https://github.com/plattegruber/well-regarded/issues/55), see
+`.github/workflows/ci.yml`) enforces both conventions on every PR:
+
+- **Drift check** — re-runs `drizzle-kit generate` and fails if it produces
+  any change: "schema changed without a migration". Fix by running
+  `pnpm db:generate` and committing everything it wrote.
+- **Append-only check** — fails if any `*.sql` file under `migrations/` that
+  exists on `origin/main` was modified, deleted, or renamed (diffed against
+  the merge-base, so migrations that land on `main` while your PR is open
+  are never flagged as edits). Fix by reverting and writing a new migration.
+
+The scoping is deliberate: `meta/_journal.json` and `meta/*_snapshot.json`
+are *not* covered by the append-only rule, because `generate` legitimately
+rewrites the journal (and adds a snapshot) whenever a new migration is
+appended. Their integrity is covered by the drift check instead — `generate`
+is deterministic given schema + journal + drizzle-kit version, so a
+hand-edited journal or snapshot makes the regeneration diff non-empty.
+
+There is **no override**. A merged migration that turns out to be broken is
+fixed by a new corrective migration, never by editing the old file.
 
 ### Tooling boundary
 

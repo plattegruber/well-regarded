@@ -6,7 +6,7 @@ Start with the [README](README.md) for what the product is and how to get runnin
 
 - Work happens on short-lived branches off `main`, named `<area>/<slug>` — e.g. `pipeline/dedupe-stage`, `db/consents-table`, `infra/biome-setup`.
 - Every PR references its issue in the body: `Closes #N`.
-- CI ([#39](https://github.com/plattegruber/well-regarded/issues/39), [#40](https://github.com/plattegruber/well-regarded/issues/40)) runs four parallel checks on every PR — **lint**, **typecheck**, **test** (unit), and **integration** (real Postgres service container) — and all four must be green before merge.
+- CI ([#39](https://github.com/plattegruber/well-regarded/issues/39), [#40](https://github.com/plattegruber/well-regarded/issues/40), [#55](https://github.com/plattegruber/well-regarded/issues/55)) runs five parallel checks on every PR — **lint**, **typecheck**, **test** (unit), **integration** (real Postgres service container), and **migration-check** (the Drizzle migration gate — see [Database migrations](#database-migrations)) — and all five must be green before merge.
 - PRs are **squash-merged**. Keep the PR title in the imperative — it becomes the commit message on `main`.
 - A PR template is coming with Epic [#2](https://github.com/plattegruber/well-regarded/issues/2) (CI/CD). Until it lands, the expectation it will encode: state what changed and why, link the issue, list how you verified it (which test levels you ran), and call out anything reviewers should look at closely.
 - Keep PRs scoped to one issue. If you find adjacent work, file an issue rather than growing the diff.
@@ -38,6 +38,21 @@ Ground rules that hold at every level:
 - Pure logic (consent checks, permission matrix, normalization) must be unit-testable without network or DB.
 - No test may call a real external API. External services get local fakes (fake Google server, logging SMS/email adapters, fake `AppointmentEventSource`).
 - AI prompts get golden-dataset eval fixtures in `packages/ai/evals`; classification changes run evals in CI (planned: [#73](https://github.com/plattegruber/well-regarded/issues/73)).
+
+## Database migrations
+
+Schema lives in `packages/db/src/schema`; migrations live in `packages/db/migrations` (see [packages/db/README.md](packages/db/README.md) for the full workflow). CI's `migration-check` job ([#55](https://github.com/plattegruber/well-regarded/issues/55)) gates every PR against the two ways migrations rot:
+
+1. **Drift** — the schema changed but no migration was generated, so schema-as-code and the actual database silently diverge. CI re-runs `drizzle-kit generate` and fails if it produces anything. **Fix:** run `pnpm --filter @wellregarded/db db:generate` (or `pnpm db:generate` from the root) and commit the result — the generated SQL, the new `meta/*_snapshot.json`, and the `meta/_journal.json` update all belong in the PR.
+2. **Editing history** — a `*.sql` migration that already exists on `main` was modified, deleted, or renamed. Drizzle records applied migrations by hash, so editing an applied file produces databases whose history depends on *when* they migrated. CI diffs `origin/main...HEAD` (merge-base, so new migrations arriving on `main` while your PR is open are never flagged) and fails on any modification. **Fix:** revert the edit and create a **new** migration with the change you wanted.
+
+What "edited" means, precisely: the append-only rule covers only `*.sql` files under `packages/db/migrations/`. The `meta/_journal.json` and `meta/*_snapshot.json` files are legitimately rewritten by `generate` when a new migration is appended, so they are exempt from the append-only check — their integrity is enforced by the drift check instead (`generate` is deterministic given schema + journal, so a hand-edited journal or snapshot makes the regeneration diff non-empty). Adding brand-new migration files is always fine.
+
+Rules that follow:
+
+- **Migrations are append-only once merged, with no override** — there is no label or escape hatch that skips the gate. A truly broken merged migration is fixed by a **new corrective migration**, never by editing the old one.
+- **Expand → migrate → contract** (the deploy discipline from [#44](https://github.com/plattegruber/well-regarded/issues/44)): migrations run before workers deploy, so every migration must be compatible with the *currently deployed* code. Add the new column/table first (expand), ship code that uses it, and only remove the old shape in a later migration once nothing depends on it (contract). Never drop or rename in the same PR that stops using the old shape.
+- Use the pinned workspace `drizzle-kit` (via the pnpm scripts) — never a globally installed one; a version mismatch changes what `generate` emits and trips the drift check.
 
 ## Lint and format
 
