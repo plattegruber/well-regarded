@@ -44,13 +44,53 @@ files contain placeholder values only, and secrets never go in `vars` in
 | `ENVIRONMENT` | No | all workers (api, pipeline, jobs, dashboard, patient) | `.dev.vars` (`ENVIRONMENT=local`) | `vars` in each worker's `wrangler.jsonc` (`preview` \| `prod`) |
 | `CLERK_SECRET_KEY` | **Yes** | api, dashboard | `workers/api/.dev.vars`, `apps/dashboard/.dev.vars` | `wrangler secret put CLERK_SECRET_KEY --env preview\|prod` |
 | `CLERK_PUBLISHABLE_KEY` | No (publishable) | api, dashboard | `workers/api/.dev.vars`, `apps/dashboard/.dev.vars` | `vars` in `wrangler.jsonc` |
+| `CLERK_JWKS_PUBLIC_KEY` | No (public key) | api | `workers/api/.dev.vars` | `wrangler secret put CLERK_JWKS_PUBLIC_KEY --env preview\|prod` (stored as a secret purely because the PEM is multiline — `vars` values are single-line) |
+| `CLERK_AUTHORIZED_PARTIES` | No | api | `workers/api/.dev.vars` | `vars` in `wrangler.jsonc` |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | **Yes** | api | `workers/api/.dev.vars` | `wrangler secret put CLERK_WEBHOOK_SIGNING_SECRET --env preview\|prod` |
 | `PII_ENCRYPTION_KEYS` | **Yes** | api, pipeline, jobs | each worker's `.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put PII_ENCRYPTION_KEYS --env preview\|prod` |
 | `PII_HASH_KEY` | **Yes** | api, pipeline, jobs | each worker's `.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put PII_HASH_KEY --env preview\|prod` |
 | `PATIENT_TOKEN_SECRET` | **Yes** | patient (verify); workers that mint links add it when those paths land | `apps/patient/.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put PATIENT_TOKEN_SECRET --env preview\|prod` |
 
-`CLERK_SECRET_KEY` / `CLERK_PUBLISHABLE_KEY` are **optional until Epic #4**
-lands Clerk; the schemas in `packages/core/src/env.ts` flip them to required
-then (`TODO(#4-auth-epic)`).
+Every `CLERK_*` var is **optional in the schemas until the real Clerk
+application exists** — see the next section for the exact flip.
+
+`CLERK_JWKS_PUBLIC_KEY` is the PEM public key the staff-auth middleware in
+`workers/api` uses for **networkless** session-JWT verification (issue #68);
+`CLERK_AUTHORIZED_PARTIES` is a comma-separated list of dashboard origins
+checked against the token's `azp` claim; `CLERK_WEBHOOK_SIGNING_SECRET` is
+the svix signing secret for `POST /webhooks/clerk` (issue #60 — see
+[`docs/clerk-setup.md`](./clerk-setup.md)).
+
+## Flipping on real Clerk keys
+
+The Epic #4 auth code shipped before a real Clerk application existed, so
+the schemas keep every `CLERK_*` var optional and the auth surfaces fail at
+request time with a pointer here. When the Clerk app is provisioned:
+
+1. In the Clerk dashboard, create (or use) the application; note the values:
+   - **API keys** page → `CLERK_SECRET_KEY` (`sk_…`),
+     `CLERK_PUBLISHABLE_KEY` (`pk_…`), and the **JWKS public key** (PEM,
+     "JWT verification key") → `CLERK_JWKS_PUBLIC_KEY`.
+   - **Webhooks** page → create the endpoint per
+     [`docs/clerk-setup.md`](./clerk-setup.md) → signing secret (`whsec_…`)
+     → `CLERK_WEBHOOK_SIGNING_SECRET`.
+2. Local dev: put all of the above in `workers/api/.dev.vars` (and the
+   dashboard's keys in `apps/dashboard/.dev.vars` when Epic #5 wires them).
+3. Deployed: from `workers/api`, for each of `preview` and `prod`:
+
+   ```sh
+   wrangler secret put CLERK_SECRET_KEY --env preview
+   wrangler secret put CLERK_JWKS_PUBLIC_KEY --env preview
+   wrangler secret put CLERK_WEBHOOK_SIGNING_SECRET --env preview
+   ```
+
+   and add the non-secrets to `vars` in `wrangler.jsonc` (all three env
+   stanzas!): `CLERK_PUBLISHABLE_KEY`, and `CLERK_AUTHORIZED_PARTIES` set to
+   the dashboard origin(s) for that environment.
+4. Flip the schemas: in `packages/core/src/env.ts` remove `.optional()` from
+   the `CLERK_*` fields (the `TODO(#4-auth-epic)` markers), so a
+   misconfigured deploy fails on first request with the full missing-var
+   list instead of a 500 on the first authenticated route.
 
 `PII_ENCRYPTION_KEYS` / `PII_HASH_KEY` are **optional until the PII
 write/read paths land** (`TODO(#19/#20)` in the schemas). Format and

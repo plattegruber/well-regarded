@@ -1,0 +1,40 @@
+{
+  "data": {
+    "created_at": 1770001000000,
+    "id": "orgmem_2fixturedananguyen000000",
+    "object": "organization_membership",
+    "organization": {
+      "created_at": 1770000000000,
+      "created_by": "user_2fixtureadminaaaaaaaaaaaaa",
+      "id": "org_2fixturebrightsmiles000000",
+      "image_url": "https://img.clerk.com/fixture",
+      "logo_url": null,
+      "max_allowed_memberships": 5,
+      "name": "Bright Smiles Dental",
+      "object": "organization",
+      "public_metadata": {},
+      "slug": "bright-smiles-dental",
+      "updated_at": 1770000000000
+    },
+    "public_user_data": {
+      "first_name": "Dana",
+      "identifier": "dana@brightsmiles.example.com",
+      "image_url": "https://img.clerk.com/fixture-user",
+      "last_name": "Nguyen",
+      "profile_image_url": "https://img.clerk.com/fixture-user",
+      "user_id": "user_2fixturedananguyen0000000"
+    },
+    "role": "org:member",
+    "role_name": "Member",
+    "updated_at": 1770003000000
+  },
+  "event_attributes": {
+    "http_request": {
+      "client_ip": "203.0.113.7",
+      "user_agent": "Mozilla/5.0"
+    }
+  },
+  "object": "event",
+  "timestamp": 1770003000000,
+  "type": "organizationMembership.deleted"
+}

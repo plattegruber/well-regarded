@@ -39,12 +39,47 @@ const baseEnvSchema = z.object({
 /**
  * Clerk credentials, shared by the workers that terminate authenticated
  * user traffic (api, dashboard).
+ *
+ * Everything Clerk-related stays `.optional()` until the real Clerk
+ * application is provisioned — the Epic #4 code (issues #60/#68) ships
+ * before any live credentials exist, so the routes that need a var check
+ * for it at request time and fail with an actionable message. Once the
+ * Clerk app exists, follow docs/secrets.md § "Flipping on real Clerk keys"
+ * to set the values, then drop the `.optional()`s.
  */
 const clerkEnvSchema = z.object({
-  // TODO(#4-auth-epic): make required — Epic #4 flips these to required when
-  // Clerk lands.
+  // TODO(#4-auth-epic): make required once the real Clerk app exists (see
+  // docs/secrets.md § "Flipping on real Clerk keys").
   CLERK_SECRET_KEY: z.string().min(1).optional(),
   CLERK_PUBLISHABLE_KEY: z.string().min(1).optional(),
+});
+
+/**
+ * Networkless Clerk session-JWT verification (issue #68) — the staff-auth
+ * middleware in workers/api verifies session tokens against this public
+ * key with zero Clerk API round-trips.
+ */
+const clerkJwtVerificationEnvSchema = z.object({
+  /**
+   * PEM-encoded RSA public key (Clerk dashboard → API keys → "JWKS public
+   * key" / JWT verification key).
+   */
+  // TODO(#4-auth-epic): make required once the real Clerk app exists (see
+  // docs/secrets.md § "Flipping on real Clerk keys").
+  CLERK_JWKS_PUBLIC_KEY: z.string().min(1).optional(),
+  /**
+   * Comma-separated origins allowed as the token's `azp` claim (the
+   * dashboard origin(s)); blocks session-token reuse from other origins.
+   * When unset, `azp` is not checked.
+   */
+  CLERK_AUTHORIZED_PARTIES: z.string().min(1).optional(),
+});
+
+/** Clerk webhook (svix) signature verification (issue #60). */
+const clerkWebhookEnvSchema = z.object({
+  // TODO(#4-auth-epic): make required once the real Clerk app exists (see
+  // docs/secrets.md § "Flipping on real Clerk keys").
+  CLERK_WEBHOOK_SIGNING_SECRET: z.string().min(1).optional(),
 });
 
 /**
@@ -78,6 +113,8 @@ const patientTokenEnvSchema = z.object({
 // the connection arrives through the binding (typed by `Env`, see header).
 export const apiEnvSchema = baseEnvSchema
   .extend(clerkEnvSchema.shape)
+  .extend(clerkJwtVerificationEnvSchema.shape)
+  .extend(clerkWebhookEnvSchema.shape)
   .extend(piiKeyringEnvSchema.shape);
 export const pipelineEnvSchema = baseEnvSchema.extend(
   piiKeyringEnvSchema.shape,

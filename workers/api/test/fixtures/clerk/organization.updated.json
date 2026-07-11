@@ -1,0 +1,24 @@
+{
+  "data": {
+    "created_at": 1770000000000,
+    "created_by": "user_2fixtureadminaaaaaaaaaaaaa",
+    "id": "org_2fixturebrightsmiles000000",
+    "image_url": "https://img.clerk.com/fixture",
+    "logo_url": null,
+    "max_allowed_memberships": 5,
+    "name": "Bright Smiles Dental Group",
+    "object": "organization",
+    "public_metadata": {},
+    "slug": "bright-smiles-dental-group",
+    "updated_at": 1770000600000
+  },
+  "event_attributes": {
+    "http_request": {
+      "client_ip": "203.0.113.7",
+      "user_agent": "Mozilla/5.0"
+    }
+  },
+  "object": "event",
+  "timestamp": 1770000600000,
+  "type": "organization.updated"
+}

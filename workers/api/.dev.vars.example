@@ -8,10 +8,25 @@ ENVIRONMENT=local
 # The local Hyperdrive->Postgres connection string does NOT go here — wrangler
 # ignores it in .dev.vars. It lives in this directory's `.env` (see .env.example).
 
-# Clerk credentials — optional until Epic #4 lands auth; uncomment and fill in
+# Clerk credentials — optional until the real Clerk app is provisioned
+# (docs/secrets.md § "Flipping on real Clerk keys"); uncomment and fill in
 # real test-instance keys to exercise authenticated flows locally.
 # CLERK_SECRET_KEY=sk_test_placeholder
 # CLERK_PUBLISHABLE_KEY=pk_test_placeholder
+
+# Networkless session-JWT verification (issue #68): PEM public key from the
+# Clerk dashboard's API-keys page ("JWT verification key"). Multiline PEM in
+# dotenv needs quotes with \n escapes.
+# CLERK_JWKS_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+
+# Comma-separated dashboard origins checked against the token's azp claim;
+# unset = azp not checked (fine for local dev).
+# CLERK_AUTHORIZED_PARTIES=http://localhost:5173
+
+# Svix signing secret for POST /webhooks/clerk (issue #60) — from the
+# webhook endpoint in the Clerk dashboard (docs/clerk-setup.md covers local
+# tunneling with cloudflared/ngrok).
+# CLERK_WEBHOOK_SIGNING_SECRET=whsec_placeholder
 # PII field-encryption keyring (issue #47) — dev-only values, safe to commit
 # because they never protect real data. Generate real keys with
 # `openssl rand -base64 32`. PII_ENCRYPTION_KEYS maps key version -> base64
