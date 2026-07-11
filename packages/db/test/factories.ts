@@ -18,7 +18,7 @@
  */
 
 import { faker } from "@faker-js/faker";
-import { createKeyring } from "@wellregarded/core";
+import { createKeyring, generateApiKey } from "@wellregarded/core";
 import { eq } from "drizzle-orm";
 
 import type { Db } from "../src/client.js";
@@ -33,6 +33,7 @@ import {
   type UpsertContactPointInput,
   upsertContactPoint,
 } from "../src/queries/patients.js";
+import { apiKeys } from "../src/schema/apiKeys.js";
 import { derivations } from "../src/schema/derivations.js";
 import { patients } from "../src/schema/pii.js";
 import { proofExcerpts } from "../src/schema/proofExcerpts.js";
@@ -70,6 +71,7 @@ function must<T>(row: T | undefined, what: string): T {
   return row;
 }
 
+type ApiKeyInsert = typeof apiKeys.$inferInsert;
 type PracticeInsert = typeof practices.$inferInsert;
 type LocationInsert = typeof locations.$inferInsert;
 type StaffMemberInsert = typeof staffMembers.$inferInsert;
@@ -94,6 +96,34 @@ export async function practice(
     })
     .returning();
   return must(row, "practice");
+}
+
+/**
+ * Inserts an `api_keys` row backed by a real generated key. `keyHash` and
+ * `last4` cannot be overridden — they are derived from the generated
+ * plaintext, which is returned as the extra `key` property (not a column;
+ * the DB never stores it) so tests can present the credential.
+ */
+export async function apiKey(
+  db: Db,
+  overrides: Partial<Omit<ApiKeyInsert, "keyHash" | "last4">> = {},
+): Promise<typeof apiKeys.$inferSelect & { key: string }> {
+  const n = nextSeq();
+  const practiceId = overrides.practiceId ?? (await practice(db)).id;
+  const environment = overrides.environment ?? "live";
+  const generated = await generateApiKey(environment);
+  const [row] = await db
+    .insert(apiKeys)
+    .values({
+      name: `Test key ${n}`,
+      ...overrides,
+      practiceId,
+      environment,
+      keyHash: generated.hash,
+      last4: generated.last4,
+    })
+    .returning();
+  return { ...must(row, "api key"), key: generated.key };
 }
 
 export async function location(
