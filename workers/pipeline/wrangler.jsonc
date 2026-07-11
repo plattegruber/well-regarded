@@ -8,7 +8,11 @@
 //
 // Pipeline spine (each consumer produces to the next stage's queue):
 //   wr-ingest --(normalize)--> wr-dedupe --> wr-classify --> wr-route --> (terminal)
-// Every consumer has a DLQ (`wr-<stage>-dlq`) and max_retries: 3.
+// Every main consumer has a DLQ (`wr-<stage>-dlq`) and max_retries: 3; this
+// worker also consumes all four DLQs (persisting failures, issue #98) and
+// holds a producer binding to each DLQ for the malformed-message forward
+// path. Batch tuning: volumes are small, correctness beats throughput —
+// max_batch_size 10 / max_batch_timeout 5s everywhere.
 //
 // Environment matrix: see infra/environments.md. Binding names are API surface
 // and are documented in docs/architecture-bindings.md.
@@ -41,22 +45,60 @@
       {
         "queue": "wr-ingest",
         "max_retries": 3,
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
         "dead_letter_queue": "wr-ingest-dlq"
       },
       {
         "queue": "wr-dedupe",
         "max_retries": 3,
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
         "dead_letter_queue": "wr-dedupe-dlq"
       },
       {
         "queue": "wr-classify",
         "max_retries": 3,
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
         "dead_letter_queue": "wr-classify-dlq"
       },
       {
         "queue": "wr-route",
         "max_retries": 3,
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
         "dead_letter_queue": "wr-route-dlq"
+      },
+      // DLQ consumers persist failures (src/stages/dlq.ts) and ack
+      // unconditionally, so they never retry into a loop — no
+      // dead_letter_queue of their own (a DLQ for a DLQ never terminates).
+      // max_retries still 3: the handler can't throw, so platform retries
+      // only fire on isolate-level failures, and three bounded attempts beat
+      // dropping a failure record.
+      {
+        "queue": "wr-ingest-dlq",
+        "max_retries": 3,
+        "max_batch_size": 10,
+        "max_batch_timeout": 5
+      },
+      {
+        "queue": "wr-dedupe-dlq",
+        "max_retries": 3,
+        "max_batch_size": 10,
+        "max_batch_timeout": 5
+      },
+      {
+        "queue": "wr-classify-dlq",
+        "max_retries": 3,
+        "max_batch_size": 10,
+        "max_batch_timeout": 5
+      },
+      {
+        "queue": "wr-route-dlq",
+        "max_retries": 3,
+        "max_batch_size": 10,
+        "max_batch_timeout": 5
       }
     ],
     "producers": [
@@ -64,7 +106,18 @@
       // dedupe feeds classify, classify feeds route. Route is terminal.
       { "binding": "DEDUPE_QUEUE", "queue": "wr-dedupe" },
       { "binding": "CLASSIFY_QUEUE", "queue": "wr-classify" },
-      { "binding": "ROUTE_QUEUE", "queue": "wr-route" }
+      { "binding": "ROUTE_QUEUE", "queue": "wr-route" },
+      // Per-stage DLQ producers: the dispatcher forwards malformed /
+      // non-retryable messages here directly (retrying them is pointless).
+      { "binding": "INGEST_DLQ", "queue": "wr-ingest-dlq" },
+      { "binding": "DEDUPE_DLQ", "queue": "wr-dedupe-dlq" },
+      { "binding": "CLASSIFY_DLQ", "queue": "wr-classify-dlq" },
+      { "binding": "ROUTE_DLQ", "queue": "wr-route-dlq" },
+      // LOCAL ONLY (deliberately absent from env.preview/env.prod): feeds the
+      // /__local/enqueue/ingest debug endpoint so the whole spine is drivable
+      // under `wrangler dev`. Deployed producers to wr-ingest live in
+      // workers/api and workers/jobs.
+      { "binding": "INGEST_QUEUE", "queue": "wr-ingest" }
     ]
   },
 
@@ -80,28 +133,65 @@
           {
             "queue": "wr-ingest-preview",
             "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
             "dead_letter_queue": "wr-ingest-dlq-preview"
           },
           {
             "queue": "wr-dedupe-preview",
             "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
             "dead_letter_queue": "wr-dedupe-dlq-preview"
           },
           {
             "queue": "wr-classify-preview",
             "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
             "dead_letter_queue": "wr-classify-dlq-preview"
           },
           {
             "queue": "wr-route-preview",
             "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
             "dead_letter_queue": "wr-route-dlq-preview"
+          },
+          // DLQ consumers: see the local block's comment.
+          {
+            "queue": "wr-ingest-dlq-preview",
+            "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5
+          },
+          {
+            "queue": "wr-dedupe-dlq-preview",
+            "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5
+          },
+          {
+            "queue": "wr-classify-dlq-preview",
+            "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5
+          },
+          {
+            "queue": "wr-route-dlq-preview",
+            "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5
           }
         ],
         "producers": [
           { "binding": "DEDUPE_QUEUE", "queue": "wr-dedupe-preview" },
           { "binding": "CLASSIFY_QUEUE", "queue": "wr-classify-preview" },
-          { "binding": "ROUTE_QUEUE", "queue": "wr-route-preview" }
+          { "binding": "ROUTE_QUEUE", "queue": "wr-route-preview" },
+          { "binding": "INGEST_DLQ", "queue": "wr-ingest-dlq-preview" },
+          { "binding": "DEDUPE_DLQ", "queue": "wr-dedupe-dlq-preview" },
+          { "binding": "CLASSIFY_DLQ", "queue": "wr-classify-dlq-preview" },
+          { "binding": "ROUTE_DLQ", "queue": "wr-route-dlq-preview" }
         ]
       }
     },
@@ -116,28 +206,65 @@
           {
             "queue": "wr-ingest-prod",
             "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
             "dead_letter_queue": "wr-ingest-dlq-prod"
           },
           {
             "queue": "wr-dedupe-prod",
             "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
             "dead_letter_queue": "wr-dedupe-dlq-prod"
           },
           {
             "queue": "wr-classify-prod",
             "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
             "dead_letter_queue": "wr-classify-dlq-prod"
           },
           {
             "queue": "wr-route-prod",
             "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
             "dead_letter_queue": "wr-route-dlq-prod"
+          },
+          // DLQ consumers: see the local block's comment.
+          {
+            "queue": "wr-ingest-dlq-prod",
+            "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5
+          },
+          {
+            "queue": "wr-dedupe-dlq-prod",
+            "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5
+          },
+          {
+            "queue": "wr-classify-dlq-prod",
+            "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5
+          },
+          {
+            "queue": "wr-route-dlq-prod",
+            "max_retries": 3,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5
           }
         ],
         "producers": [
           { "binding": "DEDUPE_QUEUE", "queue": "wr-dedupe-prod" },
           { "binding": "CLASSIFY_QUEUE", "queue": "wr-classify-prod" },
-          { "binding": "ROUTE_QUEUE", "queue": "wr-route-prod" }
+          { "binding": "ROUTE_QUEUE", "queue": "wr-route-prod" },
+          { "binding": "INGEST_DLQ", "queue": "wr-ingest-dlq-prod" },
+          { "binding": "DEDUPE_DLQ", "queue": "wr-dedupe-dlq-prod" },
+          { "binding": "CLASSIFY_DLQ", "queue": "wr-classify-dlq-prod" },
+          { "binding": "ROUTE_DLQ", "queue": "wr-route-dlq-prod" }
         ]
       }
     }
