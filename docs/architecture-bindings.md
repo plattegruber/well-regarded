@@ -1,0 +1,29 @@
+# Bindings
+
+Every platform binding a Well Regarded worker sees on its `env` object.
+Binding **names are API surface**: renaming one touches code in every worker
+that uses it, so they are settled here (issue #28) before any consuming code
+exists. Resource names/ids behind the bindings, and which are provisioned vs
+TBD, live in [`infra/environments.md`](../infra/environments.md).
+
+| Binding          | Type            | Workers                    | Purpose                                                                                         |
+| ---------------- | --------------- | -------------------------- | ----------------------------------------------------------------------------------------------- |
+| `ENVIRONMENT`    | var (string)    | all five                   | `"local"` \| `"preview"` \| `"prod"` — lets code branch on environment without sniffing hostnames |
+| `INGEST_QUEUE`   | queue producer  | api, jobs                  | Enqueue raw review/mention payloads at the top of the pipeline spine (`wr-ingest`)              |
+| `DEDUPE_QUEUE`   | queue producer  | pipeline                   | Normalize stage (consumer of `wr-ingest`) feeds the dedupe stage (`wr-dedupe`)                  |
+| `CLASSIFY_QUEUE` | queue producer  | pipeline                   | Dedupe stage feeds the classify stage (`wr-classify`)                                           |
+| `ROUTE_QUEUE`    | queue producer  | pipeline                   | Classify stage feeds the route stage (`wr-route`, terminal)                                     |
+| `PROOF_CACHE`    | KV namespace    | api                        | Cache of rendered social-proof payloads served by the API                                       |
+| `RAW_IMPORTS`    | R2 bucket       | api                        | Raw uploaded/imported source files (`wr-raw-imports-<env>`)                                     |
+| `HYPERDRIVE`     | Hyperdrive      | api, jobs, dashboard       | Pooled connection to the Postgres database (pgvector)                                           |
+| `SYNC_LOCK`      | Durable Object  | jobs                       | Per-practice lock serializing Open Dental sync runs (class `SyncLock`, SQLite-backed; stub until Epic #20) |
+
+Queue **consumers** (not bindings, but part of the same contract) all live in
+`workers/pipeline`: `wr-ingest`, `wr-dedupe`, `wr-classify`, `wr-route`, each
+with `max_retries: 3` and a `wr-<stage>-dlq` dead-letter queue.
+
+`apps/patient` intentionally has no bindings beyond `ENVIRONMENT` (minimal
+deps mandate).
+
+> Maintained as a standalone file because `docs/architecture.md` is authored
+> in issue #34; that doc links here rather than duplicating this table.

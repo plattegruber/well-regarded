@@ -1,0 +1,145 @@
+// Wrangler configuration for the Well Regarded pipeline worker (`wr-pipeline-<env>`).
+//
+// !! Bindings are NOT inherited across envs — edit all three sections !!
+// Wrangler environments only inherit a small set of top-level keys (main,
+// compatibility_date, etc.). Every queue consumer/producer below must be
+// repeated in full inside `env.preview` and `env.prod`. If you add, rename, or
+// remove a binding, update the top-level (local) block AND both env blocks.
+//
+// Pipeline spine (each consumer produces to the next stage's queue):
+//   wr-ingest --(normalize)--> wr-dedupe --> wr-classify --> wr-route --> (terminal)
+// Every consumer has a DLQ (`wr-<stage>-dlq`) and max_retries: 3.
+//
+// Environment matrix: see infra/environments.md. Binding names are API surface
+// and are documented in docs/architecture-bindings.md.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  // Top-level config is the LOCAL default (`wrangler dev` with Miniflare
+  // simulators). Local runs never deploy; the name still follows the
+  // `wr-<name>-<env>` convention so logs stay consistent.
+  "name": "wr-pipeline-local",
+  // Worker entrypoint. Kept separate from src/index.ts: workerd only allows
+  // handler/DO exports on the entry module, and unit tests import src/index.ts
+  // under Node.
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Fixed ports so `pnpm dev` can run every worker side by side.
+  "dev": {
+    "port": 8788,
+    "inspector_port": 9230
+  },
+
+  "vars": {
+    "ENVIRONMENT": "local"
+  },
+
+  "queues": {
+    "consumers": [
+      {
+        "queue": "wr-ingest",
+        "max_retries": 3,
+        "dead_letter_queue": "wr-ingest-dlq"
+      },
+      {
+        "queue": "wr-dedupe",
+        "max_retries": 3,
+        "dead_letter_queue": "wr-dedupe-dlq"
+      },
+      {
+        "queue": "wr-classify",
+        "max_retries": 3,
+        "dead_letter_queue": "wr-classify-dlq"
+      },
+      {
+        "queue": "wr-route",
+        "max_retries": 3,
+        "dead_letter_queue": "wr-route-dlq"
+      }
+    ],
+    "producers": [
+      // Next-stage producers: ingest consumer (normalize) feeds dedupe,
+      // dedupe feeds classify, classify feeds route. Route is terminal.
+      { "binding": "DEDUPE_QUEUE", "queue": "wr-dedupe" },
+      { "binding": "CLASSIFY_QUEUE", "queue": "wr-classify" },
+      { "binding": "ROUTE_QUEUE", "queue": "wr-route" }
+    ]
+  },
+
+  "env": {
+    "preview": {
+      "name": "wr-pipeline-preview",
+      "vars": {
+        "ENVIRONMENT": "preview"
+      },
+      "queues": {
+        "consumers": [
+          // <TBD>: queues + DLQs must be provisioned before first deploy — Epic #2.
+          {
+            "queue": "wr-ingest-preview",
+            "max_retries": 3,
+            "dead_letter_queue": "wr-ingest-dlq-preview"
+          },
+          {
+            "queue": "wr-dedupe-preview",
+            "max_retries": 3,
+            "dead_letter_queue": "wr-dedupe-dlq-preview"
+          },
+          {
+            "queue": "wr-classify-preview",
+            "max_retries": 3,
+            "dead_letter_queue": "wr-classify-dlq-preview"
+          },
+          {
+            "queue": "wr-route-preview",
+            "max_retries": 3,
+            "dead_letter_queue": "wr-route-dlq-preview"
+          }
+        ],
+        "producers": [
+          { "binding": "DEDUPE_QUEUE", "queue": "wr-dedupe-preview" },
+          { "binding": "CLASSIFY_QUEUE", "queue": "wr-classify-preview" },
+          { "binding": "ROUTE_QUEUE", "queue": "wr-route-preview" }
+        ]
+      }
+    },
+    "prod": {
+      "name": "wr-pipeline-prod",
+      "vars": {
+        "ENVIRONMENT": "prod"
+      },
+      "queues": {
+        "consumers": [
+          // <TBD>: queues + DLQs must be provisioned before first deploy — Epic #2.
+          {
+            "queue": "wr-ingest-prod",
+            "max_retries": 3,
+            "dead_letter_queue": "wr-ingest-dlq-prod"
+          },
+          {
+            "queue": "wr-dedupe-prod",
+            "max_retries": 3,
+            "dead_letter_queue": "wr-dedupe-dlq-prod"
+          },
+          {
+            "queue": "wr-classify-prod",
+            "max_retries": 3,
+            "dead_letter_queue": "wr-classify-dlq-prod"
+          },
+          {
+            "queue": "wr-route-prod",
+            "max_retries": 3,
+            "dead_letter_queue": "wr-route-dlq-prod"
+          }
+        ],
+        "producers": [
+          { "binding": "DEDUPE_QUEUE", "queue": "wr-dedupe-prod" },
+          { "binding": "CLASSIFY_QUEUE", "queue": "wr-classify-prod" },
+          { "binding": "ROUTE_QUEUE", "queue": "wr-route-prod" }
+        ]
+      }
+    }
+  }
+}

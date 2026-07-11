@@ -1,0 +1,106 @@
+// Wrangler configuration for the Well Regarded API worker (`wr-api-<env>`).
+//
+// !! Bindings are NOT inherited across envs — edit all three sections !!
+// Wrangler environments only inherit a small set of top-level keys (main,
+// compatibility_date, etc.). Every queue/KV/R2/Hyperdrive binding below must be
+// repeated in full inside `env.preview` and `env.prod`. If you add, rename, or
+// remove a binding, update the top-level (local) block AND both env blocks.
+//
+// Environment matrix: see infra/environments.md. Binding names are API surface
+// and are documented in docs/architecture-bindings.md.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  // Top-level config is the LOCAL default (`wrangler dev` with Miniflare
+  // simulators). Local runs never deploy; the name still follows the
+  // `wr-<name>-<env>` convention so logs stay consistent.
+  "name": "wr-api-local",
+  // Worker entrypoint. Kept separate from src/index.ts: workerd only allows
+  // handler/DO exports on the entry module, and unit tests import src/index.ts
+  // under Node.
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Fixed ports so `pnpm dev` can run every worker side by side.
+  "dev": {
+    "port": 8787,
+    "inspector_port": 9229
+  },
+
+  "vars": {
+    "ENVIRONMENT": "local"
+  },
+
+  "queues": {
+    "producers": [
+      // Entry point of the pipeline spine; consumed by wr-pipeline.
+      { "binding": "INGEST_QUEUE", "queue": "wr-ingest" }
+    ]
+  },
+
+  "kv_namespaces": [
+    // Local dev uses Miniflare's KV simulator, which ignores the id.
+    // <TBD>: real namespace (wr-proof-cache-local is never provisioned; only
+    // preview/prod namespaces exist in Cloudflare) — provisioned in Epic #2.
+    { "binding": "PROOF_CACHE", "id": "TBD-provision-in-epic-2" }
+  ],
+
+  "r2_buckets": [
+    // Local dev uses Miniflare's R2 simulator; the bucket is not provisioned.
+    { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-local" }
+  ],
+
+  "hyperdrive": [
+    // Local dev ignores the id and connects via the env var
+    // CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE (a local Postgres
+    // connection string — see .dev.vars.example from the local-dev issue).
+    // <TBD>: real Hyperdrive config id — provisioned in Epic #2.
+    { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
+  ],
+
+  "env": {
+    "preview": {
+      "name": "wr-api-preview",
+      "vars": {
+        "ENVIRONMENT": "preview"
+      },
+      "queues": {
+        "producers": [
+          { "binding": "INGEST_QUEUE", "queue": "wr-ingest-preview" }
+        ]
+      },
+      "kv_namespaces": [
+        // <TBD>: id of KV namespace `wr-proof-cache-preview` — Epic #2.
+        { "binding": "PROOF_CACHE", "id": "TBD-provision-in-epic-2" }
+      ],
+      "r2_buckets": [
+        { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-preview" }
+      ],
+      "hyperdrive": [
+        // <TBD>: id of Hyperdrive config `wr-hyperdrive-preview` — Epic #2.
+        { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
+      ]
+    },
+    "prod": {
+      "name": "wr-api-prod",
+      "vars": {
+        "ENVIRONMENT": "prod"
+      },
+      "queues": {
+        "producers": [{ "binding": "INGEST_QUEUE", "queue": "wr-ingest-prod" }]
+      },
+      "kv_namespaces": [
+        // <TBD>: id of KV namespace `wr-proof-cache-prod` — Epic #2.
+        { "binding": "PROOF_CACHE", "id": "TBD-provision-in-epic-2" }
+      ],
+      "r2_buckets": [
+        { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-prod" }
+      ],
+      "hyperdrive": [
+        // <TBD>: id of Hyperdrive config `wr-hyperdrive-prod` — Epic #2.
+        { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
+      ]
+    }
+  }
+}
