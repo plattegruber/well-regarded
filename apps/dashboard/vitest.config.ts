@@ -9,6 +9,12 @@ export default defineConfig({
   esbuild: {
     jsx: "automatic",
   },
+  resolve: {
+    // Mirror the `~` path alias from tsconfig.json.
+    alias: {
+      "~": new URL("./app", import.meta.url).pathname,
+    },
+  },
   test: {
     environment: "node",
     include: ["app/**/*.test.{ts,tsx}"],
