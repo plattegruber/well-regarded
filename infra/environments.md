@@ -60,6 +60,8 @@ Every pipeline consumer has a dead-letter queue (`max_retries: 3`):
 | R2 bucket (`RAW_ARTIFACTS`) | pipeline                         | `wr-raw-artifacts-local` (Miniflare simulator) | `wr-raw-artifacts-preview` | `wr-raw-artifacts-prod` | **TBD, Epic #2** |
 | Hyperdrive (`HYPERDRIVE`)   | api, jobs, dashboard, pipeline   | env var, see below                           | `wr-hyperdrive-preview`    | `wr-hyperdrive-prod`    | **TBD, Epic #2** |
 | Durable Object (`SYNC_LOCK`) | jobs                            | Miniflare simulator                          | `SyncLock` class, same worker | `SyncLock` class, same worker | n/a (code-backed) |
+| Workers AI (`AI`)           | pipeline, jobs                   | **no simulator** — proxies to the real API (needs a logged-in wrangler; incurs usage) | account-level, no id       | account-level, no id    | n/a (account-level) |
+| Workflow (`EMBEDDING_BACKFILL`) | jobs                         | `wr-embedding-backfill-local` (Miniflare)     | `wr-embedding-backfill-preview` | `wr-embedding-backfill-prod` | n/a (code-backed, `EmbeddingBackfill` class) |
 
 **Nothing is provisioned yet.** All KV namespace ids and Hyperdrive config ids
 in the `wrangler.jsonc` files are the placeholder `TBD-provision-in-epic-2`;
