@@ -41,11 +41,7 @@ describe("getEnv", () => {
   });
 
   it("validates every worker schema with just ENVIRONMENT", () => {
-    for (const schema of [
-      pipelineEnvSchema,
-      jobsEnvSchema,
-      patientEnvSchema,
-    ]) {
+    for (const schema of [pipelineEnvSchema, jobsEnvSchema, patientEnvSchema]) {
       expect(getEnv({ ENVIRONMENT: "preview" }, schema).ENVIRONMENT).toBe(
         "preview",
       );

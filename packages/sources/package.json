@@ -13,10 +13,11 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "lint": "echo \"lint: no linter configured yet (Biome is a separate issue)\"",
+    "lint": "biome check .",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@wellregarded/tsconfig": "workspace:*",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }
