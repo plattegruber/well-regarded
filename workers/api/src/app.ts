@@ -7,11 +7,17 @@
  * route groups land with the API epic.
  */
 
-import { apiEnvSchema, getEnv } from "@wellregarded/core";
+import {
+  apiEnvSchema,
+  createLogger,
+  fallbackRequestId,
+  getEnv,
+} from "@wellregarded/core";
 import { Hono } from "hono";
 
 import type { AppEnv } from "./bindings";
 import { apiKeyAuth } from "./middleware/apiKeyAuth";
+import { requestId } from "./middleware/requestId";
 import { staffAuth } from "./middleware/staffAuth";
 import { withDb } from "./middleware/withDb";
 import { apiKeyRoutes } from "./routes/apiKeys";
@@ -19,9 +25,18 @@ import { clerkWebhook } from "./routes/webhooks/clerk";
 
 export const app = new Hono<AppEnv>();
 
+// First middleware, deliberately (issue #64): everything downstream —
+// including onError — logs with the request id, and every response carries
+// the x-request-id header.
+app.use("*", requestId());
+
 app.onError((error, c) => {
-  // Log server-side, never echo internals to the client.
-  console.error("unhandled error:", error);
+  // Log server-side, never echo internals to the client. The fallback
+  // logger only fires if the error escaped the requestId middleware itself.
+  const log =
+    c.get("logger") ??
+    createLogger({ worker: "api", requestId: fallbackRequestId() });
+  log.error("unhandled error", { error });
   return c.json({ error: "internal" as const }, 500);
 });
 

@@ -37,6 +37,19 @@ export type PipelineStage = (typeof PIPELINE_STAGES)[number];
  * artifact is persisted to R2 (#101) and an `import_runs` row exists (#111).
  * Consumed by the normalize stage (#104).
  */
+/**
+ * Request/trace id propagated across execution contexts (issue #64, Epic
+ * #24): minted at the edge (HTTP middleware) or at the adapter entry for
+ * cron/poll ingestion, then copied forward by every queue producer so one
+ * `requestId` greps a signal's whole journey in Workers Logs.
+ *
+ * Optional ON THE WIRE, deliberately: messages in flight during the deploy
+ * that introduced the field (and any producer not yet migrated) lack it.
+ * `parsePipelineMessage` guarantees consumers a value by falling back to
+ * `unknown-<uuid>` — see {@link TracedPipelineMessageFor}.
+ */
+const requestIdField = z.string().min(1).optional();
+
 export const ingestMessageSchema = z.object({
   /** `import_runs` row this message belongs to (#111). */
   importRunId: z.uuid(),
@@ -44,6 +57,8 @@ export const ingestMessageSchema = z.object({
   rawArtifactKey: z.string().min(1),
   sourceKind: z.enum(SOURCE_KINDS),
   practiceId: z.uuid(),
+  /** See {@link requestIdField}. Producers MUST set it; the parser backfills. */
+  requestId: requestIdField,
 });
 
 export type IngestMessage = z.infer<typeof ingestMessageSchema>;
@@ -56,6 +71,8 @@ const signalStageShape = {
   signalId: z.uuid(),
   practiceId: z.uuid(),
   importRunId: z.uuid(),
+  /** See {@link requestIdField}. Producers MUST set it; the parser backfills. */
+  requestId: requestIdField,
 };
 
 /** `wr-dedupe` — enqueued by normalize once a `signals` row exists. */
@@ -88,6 +105,40 @@ export type PipelineMessageFor<S extends PipelineStage> = z.infer<
 
 /** Union of every pipeline message shape. */
 export type PipelineMessage = PipelineMessageFor<PipelineStage>;
+
+/**
+ * A stage message as delivered to consumers by `parsePipelineMessage`:
+ * identical to the wire shape except `requestId` is guaranteed present
+ * (backfilled with `unknown-<uuid>` for legacy/unmigrated producers).
+ */
+export type TracedPipelineMessageFor<S extends PipelineStage> =
+  PipelineMessageFor<S> & { requestId: string };
+
+/** Prefix marking a requestId that was backfilled, not propagated. */
+export const UNKNOWN_REQUEST_ID_PREFIX = "unknown-";
+
+/**
+ * Mints the fallback requestId used when no propagated id exists (legacy
+ * queue messages, batch-level dispatcher errors). The `unknown-` prefix
+ * keeps backfilled ids distinguishable from edge-minted ones in logs.
+ */
+export function fallbackRequestId(): string {
+  return `${UNKNOWN_REQUEST_ID_PREFIX}${crypto.randomUUID()}`;
+}
+
+/**
+ * Best-effort requestId from an untyped queue body (malformed messages,
+ * DLQ envelopes, platform dead-letters), falling back to
+ * `fallbackRequestId()` — so even failure logs stay traceable when the
+ * body carried an id.
+ */
+export function extractRequestId(body: unknown): string {
+  if (typeof body === "object" && body !== null && "requestId" in body) {
+    const value = (body as { requestId?: unknown }).requestId;
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return fallbackRequestId();
+}
 
 /** What a pipeline queue name identifies: its stage, and main queue vs DLQ. */
 export interface PipelineQueueIdentity {
@@ -143,7 +194,7 @@ export type ParsePipelineMessageResult =
       [S in PipelineStage]: {
         ok: true;
         stage: S;
-        message: PipelineMessageFor<S>;
+        message: TracedPipelineMessageFor<S>;
       };
     }[PipelineStage]
   | { ok: false; error: PipelineMessageError };
@@ -186,10 +237,15 @@ export function parsePipelineMessage(
   }
   // The stage↔schema correlation is guaranteed by the lookup above but not
   // tracked by the compiler across the indexed access, hence the assertion.
+  // requestId is backfilled here (not defaulted in the schema) so the wire
+  // contract stays "additive optional field" while consumers always get one.
   return {
     ok: true,
     stage: identity.stage,
-    message: result.data,
+    message: {
+      ...result.data,
+      requestId: result.data.requestId ?? fallbackRequestId(),
+    },
   } as ParsePipelineMessageResult;
 }
 
@@ -229,6 +285,12 @@ export const dlqForwardEnvelopeSchema = z.object({
   /** The original message body, exactly as it appeared on the main queue. */
   body: z.unknown(),
   occurredAt: z.iso.datetime(),
+  /**
+   * Trace id of the failed message (issue #64) — best-effort for malformed
+   * bodies, so a failure stays greppable by the same requestId as the rest
+   * of the signal's journey. Optional: pre-#64 envelopes lack it.
+   */
+  requestId: requestIdField,
 });
 
 export type DlqForwardEnvelope = z.infer<typeof dlqForwardEnvelopeSchema>;
@@ -239,6 +301,8 @@ export function buildDlqForwardEnvelope(input: {
   reason: "malformed" | "non_retryable";
   error: string;
   body: unknown;
+  /** Trace id of the failed message (issue #64), when known. */
+  requestId?: string;
 }): DlqForwardEnvelope {
   return {
     kind: DLQ_FORWARD_KIND,

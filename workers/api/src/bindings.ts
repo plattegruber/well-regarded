@@ -8,7 +8,7 @@
  *   objects typed here, consumed directly off `c.env`.
  */
 
-import type { ApiKeyActor, StaffActor } from "@wellregarded/core";
+import type { ApiKeyActor, Logger, StaffActor } from "@wellregarded/core";
 import type { Db } from "@wellregarded/db";
 
 /**
@@ -38,5 +38,9 @@ export type AppEnv = {
     actor: StaffActor;
     apiActor: ApiKeyActor;
     db: Db;
+    /** Trace id resolved by the requestId middleware (issue #64). */
+    requestId: string;
+    /** Request-bound structured logger (packages/core/src/log). */
+    logger: Logger;
   };
 };

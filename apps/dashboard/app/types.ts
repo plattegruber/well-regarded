@@ -8,6 +8,7 @@
  * (all three env stanzas!) and running `pnpm --filter @wellregarded/dashboard
  * typegen` to regenerate worker-configuration.d.ts — nothing here changes.
  */
+import type { Logger } from "@wellregarded/core";
 import "react-router";
 
 declare module "react-router" {
@@ -16,6 +17,18 @@ declare module "react-router" {
       env: Env;
       ctx: ExecutionContext;
     };
+    /**
+     * Trace id resolved at the worker edge (issue #64): honored from
+     * inbound `x-request-id`/`cf-ray` or minted, echoed in the response
+     * header. Copy it into any queue message this app ever produces.
+     */
+    requestId: string;
+    /**
+     * Request-bound structured logger (packages/core/src/log) — the only
+     * sanctioned way to log from loaders/actions (Biome bans raw console
+     * in apps/*).
+     */
+    logger: Logger;
   }
 }
 

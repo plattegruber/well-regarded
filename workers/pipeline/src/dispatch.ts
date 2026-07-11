@@ -22,8 +22,14 @@
 
 import {
   buildDlqForwardEnvelope,
+  createLogger,
+  extractRequestId,
+  fallbackRequestId,
   getEnv,
   identifyPipelineQueue,
+  type Logger,
+  type LogLevel,
+  logLevelFor,
   NonRetryableError,
   type PipelineStage,
   parsePipelineMessage,
@@ -64,19 +70,20 @@ export async function handleQueueBatch(
   handlers: StageHandlers = stageHandlers,
 ): Promise<void> {
   // Fail fast on a misconfigured deploy, per the getEnv contract.
-  getEnv(env, pipelineEnvSchema);
+  const vars = getEnv(env, pipelineEnvSchema);
+  const level = logLevelFor(vars.ENVIRONMENT);
 
   const identity = identifyPipelineQueue(batch.queue);
   if (identity === null) {
     // A queue this worker never expected — a topology/config bug, not a bad
     // message. Retry: after max_retries the platform dead-letters it (if the
     // queue has a DLQ), which beats dropping it on the floor here.
-    console.error(
-      JSON.stringify({
-        event: "pipeline.dispatch.unknown_queue",
-        queue: batch.queue,
-      }),
-    );
+    // Batch-level failure: no message context, so the requestId is minted.
+    createLogger({
+      worker: "pipeline",
+      requestId: fallbackRequestId(),
+      level,
+    }).error("pipeline.dispatch.unknown_queue", { queue: batch.queue });
     for (const message of batch.messages) {
       message.retry();
     }
@@ -85,7 +92,7 @@ export async function handleQueueBatch(
 
   for (const message of batch.messages) {
     if (identity.isDlq) {
-      await consumeDlqMessage(identity.stage, message);
+      await consumeDlqMessage(identity.stage, message, level);
     } else {
       await consumeStageMessage(
         identity.stage,
@@ -93,6 +100,7 @@ export async function handleQueueBatch(
         message,
         env,
         handlers,
+        level,
       );
     }
   }
@@ -105,14 +113,40 @@ async function consumeStageMessage(
   message: QueueMessageLike,
   env: PipelineBindings,
   handlers: StageHandlers,
+  level: LogLevel,
 ): Promise<void> {
   const parsed = parsePipelineMessage(queueName, message.body);
   if (!parsed.ok) {
     // Will never parse — retrying is pointless. Forward to the DLQ so it
-    // still lands in failure tracking, then ack on the main queue.
-    await forwardToDlq(stage, "malformed", parsed.error.detail, message, env);
+    // still lands in failure tracking, then ack on the main queue. The
+    // requestId is pulled from the body best-effort so even a malformed
+    // message stays greppable by its trace.
+    const log = createLogger({
+      worker: "pipeline",
+      requestId: extractRequestId(message.body),
+      stage,
+      level,
+    });
+    await forwardToDlq(
+      stage,
+      "malformed",
+      parsed.error.detail,
+      message,
+      env,
+      log,
+    );
     return;
   }
+
+  // The message's requestId (backfilled by the parser for legacy messages)
+  // binds every log line from this hop to the signal's journey.
+  const log = createLogger({
+    worker: "pipeline",
+    requestId: parsed.message.requestId,
+    practiceId: parsed.message.practiceId,
+    stage: parsed.stage,
+    level,
+  });
 
   try {
     // `parsed` is discriminated on `stage`, so the handler receives exactly
@@ -121,20 +155,23 @@ async function consumeStageMessage(
     message.ack();
   } catch (error) {
     if (error instanceof NonRetryableError) {
-      await forwardToDlq(stage, "non_retryable", error.message, message, env);
+      await forwardToDlq(
+        stage,
+        "non_retryable",
+        error.message,
+        message,
+        env,
+        log,
+      );
       return;
     }
     // RetryableError and anything unexpected: might be transient. Queues
     // honors max_retries: 3, then dead-letters to the stage's DLQ.
-    console.error(
-      JSON.stringify({
-        event: "pipeline.dispatch.retry",
-        stage,
-        queue: queueName,
-        messageId: message.id,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    log.error("pipeline.dispatch.retry", {
+      queue: queueName,
+      messageId: message.id,
+      error,
+    });
     message.retry();
   }
 }
@@ -151,26 +188,25 @@ async function forwardToDlq(
   errorMessage: string,
   message: QueueMessageLike,
   env: PipelineBindings,
+  log: Logger,
 ): Promise<void> {
   const envelope = buildDlqForwardEnvelope({
     stage,
     reason,
     error: errorMessage,
     body: message.body,
+    // Producers propagate the trace id (issue #64): the DLQ record stays
+    // greppable by the same requestId as the rest of the signal's journey.
+    requestId: log.requestId,
   });
   try {
     await dlqProducerFor(stage, env).send(envelope);
   } catch (sendError) {
-    console.error(
-      JSON.stringify({
-        event: "pipeline.dispatch.dlq_forward_failed",
-        stage,
-        reason,
-        messageId: message.id,
-        error:
-          sendError instanceof Error ? sendError.message : String(sendError),
-      }),
-    );
+    log.error("pipeline.dispatch.dlq_forward_failed", {
+      reason,
+      messageId: message.id,
+      error: sendError,
+    });
     message.retry();
     return;
   }
@@ -185,18 +221,22 @@ async function forwardToDlq(
 async function consumeDlqMessage(
   stage: PipelineStage,
   message: QueueMessageLike,
+  level: LogLevel,
 ): Promise<void> {
   try {
     await handleDlqMessage(stage, message.body, message.timestamp);
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        event: "pipeline.dlq.record_failed",
-        stage,
-        messageId: message.id,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    // extractRequestId reads the forwarded envelope's requestId (or the
+    // bare body's, for platform dead-letters) so the failure stays traceable.
+    createLogger({
+      worker: "pipeline",
+      requestId: extractRequestId(message.body),
+      stage,
+      level,
+    }).error("pipeline.dlq.record_failed", {
+      messageId: message.id,
+      error,
+    });
   } finally {
     message.ack();
   }

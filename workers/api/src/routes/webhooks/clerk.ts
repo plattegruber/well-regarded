@@ -81,7 +81,7 @@ clerkWebhook.post("/clerk", async (c) => {
     case "organizationMembership.updated": {
       const membership = membershipDataSchema.safeParse(data);
       if (!membership.success) return malformed(c, type);
-      await syncMembership(c.get("db"), membership.data);
+      await syncMembership(c.get("db"), membership.data, c.get("logger"));
       return received();
     }
 
@@ -101,7 +101,9 @@ clerkWebhook.post("/clerk", async (c) => {
 
     default:
       // Unknown event type: ack and log — never a retry loop.
-      console.log(`clerk webhook: ignoring event type ${JSON.stringify(type)}`);
+      c.get("logger").info("clerk webhook: ignoring event type", {
+        eventType: type,
+      });
       return received();
   }
 });
@@ -112,6 +114,8 @@ clerkWebhook.post("/clerk", async (c) => {
  * in the Clerk/svix dashboard instead of silently dropping the sync.
  */
 function malformed(c: Context<AppEnv>, type: string) {
-  console.error(`clerk webhook: malformed ${type} payload`);
+  c.get("logger").error("clerk webhook: malformed payload", {
+    eventType: type,
+  });
   return c.body(null, 400);
 }

@@ -2,6 +2,7 @@
 // in the default node environment on purpose: loaders and actions are
 // server code, and the DOM shims (see settings.practice.test.tsx) replace
 // FormData/Headers with implementations the server runtime never sees.
+import { createLogger } from "@wellregarded/core";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -39,6 +40,12 @@ function actionArgs(fields: Record<string, string>) {
         env: { ENVIRONMENT: "local" } as Env,
         ctx: {} as ExecutionContext,
       },
+      requestId: "test-request-id",
+      logger: createLogger({
+        worker: "dashboard",
+        requestId: "test-request-id",
+        sink: () => {},
+      }),
     },
   };
 }

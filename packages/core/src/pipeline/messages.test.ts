@@ -5,27 +5,34 @@ import {
   classifyMessageSchema,
   DLQ_FORWARD_KIND,
   dedupeMessageSchema,
+  dlqForwardEnvelopeSchema,
+  extractRequestId,
+  fallbackRequestId,
   identifyPipelineQueue,
   ingestMessageSchema,
   interpretDlqMessage,
   parsePipelineMessage,
   routeMessageSchema,
+  UNKNOWN_REQUEST_ID_PREFIX,
 } from "./messages.js";
 
 const uuid = "8a9c1a52-6a54-4d43-9c39-9d5df2bb0e1a";
 const otherUuid = "3f2b6a1e-90cd-4f5e-8a2f-1b0f4a7c9d21";
+const requestId = "5e0f7ad2-3a9f-4a56-8f18-1b2c3d4e5f60";
 
 const validIngest = {
   importRunId: uuid,
   rawArtifactKey: "raw/google/8a9c/sha256-abc123",
   sourceKind: "google",
   practiceId: otherUuid,
+  requestId,
 };
 
 const validSignalStage = {
   signalId: uuid,
   practiceId: otherUuid,
   importRunId: uuid,
+  requestId,
 };
 
 describe("message schemas", () => {
@@ -156,6 +163,80 @@ describe("parsePipelineMessage", () => {
     for (const body of [null, undefined, 42, "text", [], { nested: {} }]) {
       expect(parsePipelineMessage("wr-route", body).ok).toBe(false);
     }
+  });
+});
+
+describe("requestId propagation (issue #64)", () => {
+  it("schemas accept OLD messages without requestId (wire compat)", () => {
+    const { requestId: _dropped, ...legacyIngest } = validIngest;
+    const { requestId: _alsoDropped, ...legacyStage } = validSignalStage;
+    expect(ingestMessageSchema.safeParse(legacyIngest).success).toBe(true);
+    expect(dedupeMessageSchema.safeParse(legacyStage).success).toBe(true);
+    expect(classifyMessageSchema.safeParse(legacyStage).success).toBe(true);
+    expect(routeMessageSchema.safeParse(legacyStage).success).toBe(true);
+  });
+
+  it("rejects an empty-string requestId", () => {
+    expect(
+      dedupeMessageSchema.safeParse({ ...validSignalStage, requestId: "" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("parsePipelineMessage preserves a propagated requestId", () => {
+    const result = parsePipelineMessage("wr-classify", validSignalStage);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.message.requestId).toBe(requestId);
+  });
+
+  it("parsePipelineMessage backfills unknown-<uuid> for legacy messages", () => {
+    const { requestId: _dropped, ...legacyStage } = validSignalStage;
+    const result = parsePipelineMessage("wr-classify", legacyStage);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.message.requestId).toMatch(
+      new RegExp(`^${UNKNOWN_REQUEST_ID_PREFIX}[0-9a-f-]{36}$`),
+    );
+  });
+
+  it("fallbackRequestId mints unique unknown- ids", () => {
+    const a = fallbackRequestId();
+    const b = fallbackRequestId();
+    expect(a.startsWith(UNKNOWN_REQUEST_ID_PREFIX)).toBe(true);
+    expect(a).not.toBe(b);
+  });
+
+  it("extractRequestId pulls a string requestId out of an unknown body", () => {
+    expect(extractRequestId({ requestId, other: 1 })).toBe(requestId);
+  });
+
+  it.each([
+    null,
+    42,
+    "text",
+    {},
+    { requestId: 7 },
+    { requestId: "" },
+  ])("extractRequestId falls back to unknown- for %j", (body) => {
+    expect(extractRequestId(body).startsWith(UNKNOWN_REQUEST_ID_PREFIX)).toBe(
+      true,
+    );
+  });
+
+  it("the DLQ forward envelope carries requestId and accepts old envelopes without it", () => {
+    const envelope = buildDlqForwardEnvelope({
+      stage: "dedupe",
+      reason: "malformed",
+      error: "invalid_message",
+      body: { broken: true },
+      requestId,
+    });
+    expect(envelope.requestId).toBe(requestId);
+    expect(dlqForwardEnvelopeSchema.safeParse(envelope).success).toBe(true);
+
+    const { requestId: _dropped, ...legacyEnvelope } = envelope;
+    expect(dlqForwardEnvelopeSchema.safeParse(legacyEnvelope).success).toBe(
+      true,
+    );
   });
 });
 

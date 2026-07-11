@@ -329,9 +329,8 @@ describe("AnthropicProvider.classify", () => {
   });
 
   it("never fails the call when the cost-log sink throws (best-effort logging)", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
+    // The structured logger (issue #64) emits JSON lines via console.log.
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
       const { provider } = makeProvider(
         [() => toolUseResponse({ sentiment: "positive", confidence: 0.9 })],
@@ -342,14 +341,25 @@ describe("AnthropicProvider.classify", () => {
         },
       );
 
-      const result = await provider.classify(prompt, schema, opts);
+      const result = await provider.classify(prompt, schema, {
+        ...opts,
+        requestId: "trace-ai-1",
+      });
       expect(result.value.sentiment).toBe("positive");
-      expect(consoleError).toHaveBeenCalledWith(
-        expect.stringContaining("cost-log sink failed"),
-        expect.any(Error),
+      const records = consoleLog.mock.calls.map((call) =>
+        JSON.parse(String(call[0])),
       );
+      const sinkLine = records.find(
+        (record) => record.msg === "ai_calls cost-log sink failed",
+      );
+      expect(sinkLine).toMatchObject({
+        level: "error",
+        worker: "ai",
+        requestId: "trace-ai-1",
+        error: { message: "db is down" },
+      });
     } finally {
-      consoleError.mockRestore();
+      consoleLog.mockRestore();
     }
   });
 });

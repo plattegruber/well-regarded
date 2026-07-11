@@ -26,6 +26,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { createLogger } from "@wellregarded/core";
 import type { z } from "zod";
 
 import {
@@ -303,10 +304,13 @@ export class AnthropicProvider implements AiProvider {
         error,
       });
     } catch (sinkError) {
-      console.error(
-        "[@wellregarded/ai] ai_calls cost-log sink failed",
-        sinkError,
-      );
+      createLogger({
+        worker: "ai",
+        // Callers propagate their trace id via opts.requestId (issue #64);
+        // "unbound" marks provider-internal lines with no caller context.
+        requestId: opts.requestId ?? "unbound",
+        practiceId: opts.practiceId ?? undefined,
+      }).error("ai_calls cost-log sink failed", { error: sinkError });
     }
   }
 }

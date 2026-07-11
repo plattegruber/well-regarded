@@ -25,6 +25,15 @@
   "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat"],
 
+  // Workers Logs (issue #64): persist the structured JSON console lines so
+  // one requestId is greppable across workers in the Cloudflare dashboard.
+  // Inheritable key: applies to env.preview/env.prod without repetition.
+  // See docs/observability.md (sampling policy lives there too).
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+
   // Fixed ports so `pnpm dev` can run every worker side by side.
   "dev": {
     "port": 8790,

@@ -28,5 +28,23 @@
     "rules": {
       "preset": "recommended"
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "apps/**",
+        "workers/**",
+        "!**/*.test.ts",
+        "!**/*.test.tsx",
+        "!**/test/**"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "error"
+          }
+        }
+      }
+    }
+  ]
 }

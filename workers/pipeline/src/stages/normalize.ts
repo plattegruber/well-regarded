@@ -1,3 +1,5 @@
+import { createLogger } from "@wellregarded/core";
+
 import type { StageHandler } from "./types";
 
 /**
@@ -10,14 +12,14 @@ import type { StageHandler } from "./types";
  * DedupeMessage per signal on `env.DEDUPE_QUEUE`.
  */
 export const normalize: StageHandler<"ingest"> = async (message, _env) => {
-  console.log(
-    JSON.stringify({
-      event: "pipeline.stage.stub",
-      stage: "ingest",
-      importRunId: message.importRunId,
-      practiceId: message.practiceId,
-      rawArtifactKey: message.rawArtifactKey,
-      sourceKind: message.sourceKind,
-    }),
-  );
+  createLogger({
+    worker: "pipeline",
+    requestId: message.requestId,
+    practiceId: message.practiceId,
+    stage: "ingest",
+  }).info("pipeline.stage.stub", {
+    importRunId: message.importRunId,
+    rawArtifactKey: message.rawArtifactKey,
+    sourceKind: message.sourceKind,
+  });
 };

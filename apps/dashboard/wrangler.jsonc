@@ -30,6 +30,15 @@
   // nodejs_compat: Clerk's SDK needs it once Epic #4 lands.
   "compatibility_flags": ["nodejs_compat"],
 
+  // Workers Logs (issue #64): persist the structured JSON console lines so
+  // one requestId is greppable across workers in the Cloudflare dashboard.
+  // Inheritable key: applies to env.preview/env.prod without repetition.
+  // See docs/observability.md (sampling policy lives there too).
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+
   // Fixed ports so `pnpm dev` can run every worker side by side (see
   // infra/environments.md). The dashboard dev server is Vite, so the port is
   // ALSO pinned in vite.config.ts (`server.port: 8791`) — this block only

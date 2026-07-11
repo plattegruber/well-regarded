@@ -155,6 +155,8 @@ export function staffAuth(): MiddlewareHandler<AppEnv> {
       locationId: row.locationId,
     };
     c.set("actor", actor);
+    // Bind the tenant onto the request logger (issue #64).
+    c.set("logger", c.get("logger").child({ practiceId: actor.practiceId }));
     await next();
   };
 }
