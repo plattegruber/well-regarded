@@ -15,7 +15,7 @@ import { createDb, type Db, type Sql } from "./client.js";
  * harness is a separate issue in Epic #3; until it lands these tests hit the
  * shared local database directly.
  */
-const connectionString = process.env.DATABASE_URL;
+const connectionString = process.env.DATABASE_URL ?? "";
 
 describe.skipIf(!connectionString)("createDb (integration)", () => {
   let db: Db;
@@ -26,7 +26,7 @@ describe.skipIf(!connectionString)("createDb (integration)", () => {
   });
 
   it("connects and runs SELECT 1", async () => {
-    ({ db, sql } = createDb(connectionString!));
+    ({ db, sql } = createDb(connectionString));
     const rows = await sql`SELECT 1 AS one`;
     expect(rows).toEqual([{ one: 1 }]);
   });
