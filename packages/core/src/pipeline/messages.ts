@@ -75,8 +75,25 @@ const signalStageShape = {
   requestId: requestIdField,
 };
 
-/** `wr-dedupe` — enqueued by normalize once a `signals` row exists. */
-export const dedupeMessageSchema = z.object(signalStageShape);
+/**
+ * Why normalize enqueued this dedupe message beyond the normal new-row path.
+ * `conflict_reimport`: the insert hit the `(practice_id, source_kind,
+ * source_id)` unique constraint — the signal already exists, so dedupe
+ * (#106) should treat the message as a *potential update* (re-poll or
+ * re-import of a known signal) and decide whether content changed.
+ */
+export const DEDUPE_REASONS = ["conflict_reimport"] as const;
+
+export type DedupeReason = (typeof DEDUPE_REASONS)[number];
+
+/**
+ * `wr-dedupe` — enqueued by normalize once a `signals` row exists. `reason`
+ * is absent on the normal new-row path; see {@link DEDUPE_REASONS}.
+ */
+export const dedupeMessageSchema = z.object({
+  ...signalStageShape,
+  reason: z.enum(DEDUPE_REASONS).optional(),
+});
 
 export type DedupeMessage = z.infer<typeof dedupeMessageSchema>;
 

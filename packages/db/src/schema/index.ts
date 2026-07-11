@@ -9,6 +9,7 @@ export * from "./apiKeys.js";
 export * from "./audit.js";
 export * from "./consents.js";
 export * from "./derivations.js";
+export * from "./importRuns.js";
 export * from "./pii.js";
 export * from "./proofExcerpts.js";
 export * from "./signals.js";

@@ -92,7 +92,7 @@ export async function handleQueueBatch(
 
   for (const message of batch.messages) {
     if (identity.isDlq) {
-      await consumeDlqMessage(identity.stage, message, level);
+      await consumeDlqMessage(identity.stage, message, env, level);
     } else {
       await consumeStageMessage(
         identity.stage,
@@ -221,10 +221,11 @@ async function forwardToDlq(
 async function consumeDlqMessage(
   stage: PipelineStage,
   message: QueueMessageLike,
+  env: PipelineBindings,
   level: LogLevel,
 ): Promise<void> {
   try {
-    await handleDlqMessage(stage, message.body, message.timestamp);
+    await handleDlqMessage(stage, message.body, message.timestamp, env);
   } catch (error) {
     // extractRequestId reads the forwarded envelope's requestId (or the
     // bare body's, for platform dead-letters) so the failure stays traceable.

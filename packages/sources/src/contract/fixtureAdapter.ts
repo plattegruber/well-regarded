@@ -1,14 +1,16 @@
 /**
  * Test-only reference SourceAdapter (issue #101, requirement 5).
  *
- * A trivial adapter over a fixed JSON shape whose sole purpose is to
+ * A trivial adapter over a fixed JSON shape whose original purpose was to
  * exercise `describeAdapterContract` in this package's own CI, proving the
- * suite runs before any real adapter exists. It is exported from
- * `@wellregarded/sources/testing` only.
+ * suite runs before any real adapter exists. Exported from
+ * `@wellregarded/sources/testing`, and ALSO registered as the interim
+ * `manual` adapter in `../registry.ts` (issue #104) so the normalize stage
+ * has a resolvable kind end-to-end.
  *
  * This is deliberately NOT the manual-entry adapter — that ships with the
- * manual-entry form (issue #138, Epic #8) and normalizes the real form
- * payload. This one exists only so the contract suite has something to bite.
+ * manual-entry form (issue #138, Epic #8), normalizes the real form
+ * payload, and replaces this one in the registry.
  */
 
 import type { EntityHint, NormalizedSignal } from "./normalizedSignal.js";

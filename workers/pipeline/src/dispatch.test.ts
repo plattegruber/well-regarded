@@ -70,6 +70,14 @@ function makeEnv(): FakeEnv {
   });
   return {
     ENVIRONMENT: "local",
+    // Never touched by these tests — the stage handlers are injected fakes.
+    RAW_ARTIFACTS: {
+      head: async () => null,
+      put: async () => undefined,
+      get: async () => null,
+    },
+    // No HYPERDRIVE: the DLQ consumer degrades to its log-only path, which
+    // is exactly what these unit tests assert.
     DEDUPE_QUEUE: producer(),
     CLASSIFY_QUEUE: producer(),
     ROUTE_QUEUE: producer(),
@@ -260,8 +268,11 @@ describe("handler failures", () => {
 });
 
 describe("DLQ consumption", () => {
-  it("persists the failure (via recordPipelineFailure's log seam) and acks", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  // These fake envs bind no HYPERDRIVE, so the DLQ consumer takes its
+  // log-only fallback (createLogger → console.log); the Postgres-backed
+  // recordPipelineFailure path is covered by the pipeline integration suite.
+  it("persists the failure (via the log-only fallback) and acks", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const { message, handlers } = await dispatchOne("wr-dedupe-dlq", {
       kind: DLQ_FORWARD_KIND,
       stage: "dedupe",
@@ -274,7 +285,7 @@ describe("DLQ consumption", () => {
     expect(message.retry).not.toHaveBeenCalled();
     // DLQ messages never reach stage handlers.
     expect(handlers.dedupe).not.toHaveBeenCalled();
-    const logged = errorSpy.mock.calls.map((call) => String(call[0]));
+    const logged = logSpy.mock.calls.map((call) => String(call[0]));
     expect(
       logged.some(
         (line) =>
@@ -284,10 +295,10 @@ describe("DLQ consumption", () => {
   });
 
   it("normalizes a bare platform dead-letter (retries exhausted)", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const { message } = await dispatchOne("wr-route-dlq", validSignalStage);
     expect(message.ack).toHaveBeenCalledOnce();
-    const logged = errorSpy.mock.calls.map((call) => String(call[0]));
+    const logged = logSpy.mock.calls.map((call) => String(call[0]));
     expect(logged.some((line) => line.includes("retries_exhausted"))).toBe(
       true,
     );

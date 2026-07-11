@@ -13,6 +13,7 @@
  */
 
 import type { PipelineStage } from "@wellregarded/core";
+import type { RawArtifactBucket } from "@wellregarded/sources";
 
 /** The one method the dispatcher uses on a queue producer binding. */
 export interface QueueProducer {
@@ -42,13 +43,21 @@ export interface PipelineBindings {
    */
   INGEST_QUEUE?: QueueProducer;
   /**
-   * Postgres via Hyperdrive — the classify stage (#67) re-reads `signals`
-   * and writes `derivations`. Structural (not the workers-types
-   * `Hyperdrive`) so tests can inject `{ connectionString }`; optional in
-   * the type because misconfiguration is handled at the stage (retry →
-   * DLQ), not by crashing the whole dispatcher.
+   * Postgres via Hyperdrive — the normalize stage (#104) writes `signals`
+   * rows and `import_runs` counts, the classify stage (#67) re-reads
+   * `signals` and writes `derivations`, and the DLQ consumer persists
+   * failures (#111). Structural (not the workers-types `Hyperdrive`) so
+   * tests can inject `{ connectionString }`; optional in the type because
+   * misconfiguration is handled at the stage (retry → DLQ) or by the DLQ
+   * consumer's log-only fallback, not by crashing the whole dispatcher.
    */
-  HYPERDRIVE?: { connectionString: string };
+  HYPERDRIVE?: { connectionString: string } | undefined;
+  /**
+   * R2 bucket of immutable raw artifacts (#100), `wr-raw-artifacts-<env>`.
+   * Typed structurally (the subset `getRawArtifact` needs) so tests can
+   * inject `InMemoryRawArtifactBucket`; the real `R2Bucket` satisfies it.
+   */
+  RAW_ARTIFACTS: RawArtifactBucket;
   /** String vars/secrets, validated by `getEnv(env, pipelineEnvSchema)`. */
   [key: string]: unknown;
 }

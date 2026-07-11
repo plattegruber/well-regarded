@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { setupTestDb } from "../../test/harness.js";
 import { isPublishable } from "../queries/consents.js";
+import { getImportRunSummary } from "../queries/importRuns.js";
 import { findContactPoint } from "../queries/patients.js";
 import { consents } from "../schema/consents.js";
 import { derivations } from "../schema/derivations.js";
@@ -23,7 +24,10 @@ import {
   providers,
   staffMembers,
 } from "../schema/tenancy.js";
-import { DEMO_PRACTICE_CLERK_ORG_ID } from "./constants.js";
+import {
+  DEMO_IMPORT_ARTIFACT_KEY,
+  DEMO_PRACTICE_CLERK_ORG_ID,
+} from "./constants.js";
 import { devKeyring } from "./devKeyring.js";
 import {
   LOCATION_FIXTURES,
@@ -248,7 +252,7 @@ describe("runSeed", () => {
       reason: "channel_not_granted",
     });
 
-    // --- CSV provenance: import run id stamped, table lands in Epic #6 ------
+    // --- CSV provenance: import run row + id stamped on every csv signal ----
     const csvRows = await t.db
       .select({ importRunId: signals.importRunId })
       .from(signals)
@@ -257,6 +261,31 @@ describe("runSeed", () => {
     for (const row of csvRows) {
       expect(row.importRunId).toBe(DEMO_IMPORT_RUN_ID);
     }
+    // The run row itself (issue #111): completed, counts matching the CSV
+    // fixture corpus, raw artifact key on record.
+    const runSummary = await getImportRunSummary(
+      t.db,
+      first.practiceId,
+      DEMO_IMPORT_RUN_ID,
+    );
+    expect(runSummary).toBeDefined();
+    expect(runSummary?.run.status).toBe("completed");
+    expect(runSummary?.run.trigger).toBe("manual");
+    expect(runSummary?.run.created).toBe(
+      EXPECTED_SIGNALS_BY_KIND.csv_import ?? 0,
+    );
+    expect(runSummary?.errorCount).toBe(0);
+    expect(runSummary?.run.rawArtifactKeys).toEqual([DEMO_IMPORT_ARTIFACT_KEY]);
+    expect(first.importRuns).toBe(1);
+
+    // --- Every seeded signal is display-ready (terminal pipeline status) ----
+    const [pending] = await t.db
+      .select({ n: count() })
+      .from(signals)
+      .where(
+        sql`${signals.practiceId} = ${first.practiceId} and ${signals.pipelineStatus} <> 'processed'`,
+      );
+    expect(pending?.n).toBe(0);
 
     // --- Proof excerpts: embeddings left NULL (Epic #9 backfills) -----------
     const [nullEmbeddings] = await t.db

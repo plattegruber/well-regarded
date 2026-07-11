@@ -57,7 +57,8 @@ Every pipeline consumer has a dead-letter queue (`max_retries: 3`):
 | --------------------------- | -------------------------------- | -------------------------------------------- | -------------------------- | ----------------------- | ---------------- |
 | KV namespace (`PROOF_CACHE`) | api                             | Miniflare simulator (id ignored)             | `wr-proof-cache-preview`   | `wr-proof-cache-prod`   | **TBD, Epic #2** |
 | R2 bucket (`RAW_IMPORTS`)   | api                              | `wr-raw-imports-local` (Miniflare simulator) | `wr-raw-imports-preview`   | `wr-raw-imports-prod`   | **TBD, Epic #2** |
-| Hyperdrive (`HYPERDRIVE`)   | api, jobs, dashboard             | env var, see below                           | `wr-hyperdrive-preview`    | `wr-hyperdrive-prod`    | **TBD, Epic #2** |
+| R2 bucket (`RAW_ARTIFACTS`) | pipeline                         | `wr-raw-artifacts-local` (Miniflare simulator) | `wr-raw-artifacts-preview` | `wr-raw-artifacts-prod` | **TBD, Epic #2** |
+| Hyperdrive (`HYPERDRIVE`)   | api, jobs, dashboard, pipeline   | env var, see below                           | `wr-hyperdrive-preview`    | `wr-hyperdrive-prod`    | **TBD, Epic #2** |
 | Durable Object (`SYNC_LOCK`) | jobs                            | Miniflare simulator                          | `SyncLock` class, same worker | `SyncLock` class, same worker | n/a (code-backed) |
 
 **Nothing is provisioned yet.** All KV namespace ids and Hyperdrive config ids

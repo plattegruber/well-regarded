@@ -42,11 +42,33 @@ export {
   type ProofExcerpt,
 } from "./queries/hybridSearch.js";
 export {
+  appendImportRunError,
+  type CreateImportRunInput,
+  createImportRun,
+  finalizeImportRun,
+  getImportRunSummary,
+  type ImportRun,
+  type ImportRunCountDelta,
+  type ImportRunPage,
+  type ImportRunSummary,
+  incrementImportRunCounts,
+  type ListImportRunsOptions,
+  listImportRuns,
+} from "./queries/importRuns.js";
+export {
   type ContactPoint,
   findContactPoint,
+  matchOrCreatePatientByContact,
   type Patient,
+  type PatientContactHint,
   type UpsertContactPointInput,
   upsertContactPoint,
 } from "./queries/patients.js";
-export { getSignal, type Signal } from "./queries/signals.js";
+export {
+  getSignal,
+  insertNormalizedSignals,
+  type NormalizedSignalOutcome,
+  type Signal,
+  type SignalInsert,
+} from "./queries/signals.js";
 export * as schema from "./schema/index.js";

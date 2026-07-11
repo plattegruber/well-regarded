@@ -301,6 +301,15 @@ importers:
       '@wellregarded/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@wellregarded/sources':
+        specifier: workspace:*
+        version: link:../../packages/sources
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@cloudflare/workers-types@5.20260711.1)(postgres@3.4.9)
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.12.21
@@ -308,12 +317,18 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^5.20260711.1
         version: 5.20260711.1
+      '@faker-js/faker':
+        specifier: ^10.5.0
+        version: 10.5.0
       '@types/node':
         specifier: ^26.1.1
         version: 26.1.1
       '@wellregarded/tsconfig':
         specifier: workspace:*
         version: link:../../packages/tsconfig
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
       typescript:
         specifier: ^5.9.2
         version: 5.9.3

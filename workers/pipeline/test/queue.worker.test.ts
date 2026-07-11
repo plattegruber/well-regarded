@@ -22,6 +22,8 @@ import {
   DLQ_FORWARD_KIND,
   RetryableError,
 } from "@wellregarded/core";
+import { type NormalizedSignal, putRawArtifact } from "@wellregarded/sources";
+import { fixtureArtifact } from "@wellregarded/sources/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleQueueBatch, type StageHandlers } from "../src/dispatch";
@@ -31,6 +33,10 @@ import {
   type ClassifyStore,
   classifySignal,
 } from "../src/stages/classify";
+import {
+  type NormalizeStore,
+  normalizeArtifact,
+} from "../src/stages/normalize";
 import worker from "../src/worker";
 
 const uuid = "8a9c1a52-6a54-4d43-9c39-9d5df2bb0e1a";
@@ -60,11 +66,10 @@ beforeEach(() => {
 
 describe("worker.queue", () => {
   it("acks a valid message on each stub-stage main queue", async () => {
-    // wr-classify is deliberately absent: since #67 its handler does real
-    // work (Postgres + AI provider) and is exercised with injected deps in
-    // the "classify stage" describe below.
+    // wr-classify and wr-ingest are deliberately absent: since #67/#104
+    // their handlers do real work (Postgres, R2, AI provider) and are
+    // exercised with injected deps in their own describes below.
     const cases = [
-      ["wr-ingest", validIngest],
       ["wr-dedupe", validSignalStage],
       ["wr-route", validSignalStage],
     ] as const;
@@ -145,8 +150,8 @@ describe("worker.queue", () => {
     expect(result.explicitAcks).toEqual([]);
   });
 
-  it("persists and acks a DLQ message via recordPipelineFailure", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("persists and acks a DLQ message via the log-only fallback", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const envelope = buildDlqForwardEnvelope({
       stage: "classify",
       reason: "non_retryable",
@@ -157,11 +162,14 @@ describe("worker.queue", () => {
       { id: "dlq-1", timestamp, attempts: 1, body: envelope },
     ]);
     const ctx = createExecutionContext();
-    await worker.queue(batch, env, ctx);
+    // HYPERDRIVE deliberately unbound: the unit pool must not reach for
+    // Postgres, so this asserts the DLQ consumer's log-only fallback; the
+    // import_runs write is covered by test/poisonMessage.integration.test.ts.
+    await worker.queue(batch, { ...env, HYPERDRIVE: undefined }, ctx);
     const result = await getQueueResult(batch, ctx);
     expect(result.explicitAcks).toEqual(["dlq-1"]);
     expect(result.retryMessages).toEqual([]);
-    const logged = errorSpy.mock.calls.map((call) => String(call[0]));
+    const logged = logSpy.mock.calls.map((call) => String(call[0]));
     expect(
       logged.some(
         (line) =>
@@ -170,6 +178,137 @@ describe("worker.queue", () => {
           line.includes("signal row was purged"),
       ),
     ).toBe(true);
+  });
+});
+
+describe("normalize stage on a real workerd batch (issue #104)", () => {
+  // The real `normalize` handler wires R2 + Postgres off env; here the
+  // dispatcher runs against the real Queues runtime and the real Miniflare
+  // R2 simulator, with persistence behind an injected in-memory
+  // NormalizeStore (no Postgres inside the test pool — the full
+  // Postgres-backed path runs in test/normalize.integration.test.ts).
+
+  function handlersWithStore(store: NormalizeStore): StageHandlers {
+    return {
+      ...stageHandlers,
+      ingest: (message, env) => normalizeArtifact(message, env, { store }),
+    };
+  }
+
+  it("acks after persisting the fixture artifact's signals and enqueueing dedupe messages (conflicts flagged)", async () => {
+    // Store-before-enqueue, for real: the fixture artifact goes into the
+    // Miniflare R2 simulator first, and the message carries the key.
+    const { key } = await putRawArtifact(env.RAW_ARTIFACTS, {
+      practiceId: otherUuid,
+      sourceKind: "manual",
+      content: JSON.stringify(fixtureArtifact),
+    });
+    const persisted: NormalizedSignal[][] = [];
+    const store: NormalizeStore = {
+      persistSignals: async (_message, signals) => {
+        persisted.push(signals);
+        // One pre-existing row (a re-imported entry) plus new rows.
+        return signals.map((signal, index) => ({
+          signalId: `${index}${uuid.slice(1)}`,
+          sourceId: signal.sourceId,
+          outcome: index === 0 ? ("conflict" as const) : ("created" as const),
+        }));
+      },
+    };
+    const dedupeSend = vi.fn().mockResolvedValue(undefined);
+    const message = {
+      importRunId: uuid,
+      rawArtifactKey: key,
+      sourceKind: "manual",
+      practiceId: otherUuid,
+    };
+
+    const batch = createMessageBatch("wr-ingest", [
+      { id: "ingest-1", timestamp, attempts: 1, body: message },
+    ]);
+    const ctx = createExecutionContext();
+    await handleQueueBatch(
+      batch,
+      { ...env, DEDUPE_QUEUE: { send: dedupeSend } },
+      handlersWithStore(store),
+    );
+    const result = await getQueueResult(batch, ctx);
+
+    expect(result.explicitAcks).toEqual(["ingest-1"]);
+    expect(result.retryMessages).toEqual([]);
+    // The adapter saw the artifact's three entries…
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]).toHaveLength(fixtureArtifact.entries.length);
+    // …and every outcome became a dedupe message, the conflict flagged as a
+    // potential update for #106.
+    expect(dedupeSend).toHaveBeenCalledTimes(fixtureArtifact.entries.length);
+    expect(dedupeSend.mock.calls[0]?.[0]).toMatchObject({
+      practiceId: otherUuid,
+      importRunId: uuid,
+      reason: "conflict_reimport",
+    });
+    expect(dedupeSend.mock.calls[1]?.[0]).not.toHaveProperty("reason");
+  });
+
+  it("forwards a missing artifact to the ingest DLQ and acks (store-before-enqueue violation)", async () => {
+    const dlqSend = vi.fn().mockResolvedValue(undefined);
+    const batch = createMessageBatch("wr-ingest", [
+      {
+        id: "ingest-2",
+        timestamp,
+        attempts: 1,
+        body: { ...validIngest, sourceKind: "manual" },
+      },
+    ]);
+    const ctx = createExecutionContext();
+    // Real stage handlers: the artifact miss throws before Postgres is
+    // ever touched, so the wired handler is safe to run in the pool.
+    await worker.queue(batch, { ...env, INGEST_DLQ: { send: dlqSend } }, ctx);
+    const result = await getQueueResult(batch, ctx);
+
+    expect(dlqSend).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        kind: DLQ_FORWARD_KIND,
+        stage: "ingest",
+        reason: "non_retryable",
+        error: expect.stringContaining("Raw artifact not found"),
+      }),
+    );
+    expect(result.explicitAcks).toEqual(["ingest-2"]);
+    expect(result.retryMessages).toEqual([]);
+  });
+
+  it("forwards an unknown sourceKind to the ingest DLQ and acks", async () => {
+    // Artifact exists; what's missing is an adapter for its kind.
+    const { key } = await putRawArtifact(env.RAW_ARTIFACTS, {
+      practiceId: otherUuid,
+      sourceKind: "google",
+      content: JSON.stringify({ some: "page" }),
+    });
+    const dlqSend = vi.fn().mockResolvedValue(undefined);
+    const batch = createMessageBatch("wr-ingest", [
+      {
+        id: "ingest-3",
+        timestamp,
+        attempts: 1,
+        body: { ...validIngest, rawArtifactKey: key },
+      },
+    ]);
+    const ctx = createExecutionContext();
+    await worker.queue(batch, { ...env, INGEST_DLQ: { send: dlqSend } }, ctx);
+    const result = await getQueueResult(batch, ctx);
+
+    expect(dlqSend).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        kind: DLQ_FORWARD_KIND,
+        stage: "ingest",
+        reason: "non_retryable",
+        error: expect.stringContaining(
+          'no SourceAdapter registered for sourceKind "google"',
+        ),
+      }),
+    );
+    expect(result.explicitAcks).toEqual(["ingest-3"]);
   });
 });
 
