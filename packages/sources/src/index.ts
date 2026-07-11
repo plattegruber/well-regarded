@@ -14,3 +14,4 @@ export const PACKAGE_NAME = "@wellregarded/sources";
 export * from "./contract/normalizedSignal.js";
 export * from "./contract/sourceAdapter.js";
 export * from "./rawArtifacts.js";
+export * from "./registry.js";

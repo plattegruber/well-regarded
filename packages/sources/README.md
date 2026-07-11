@@ -66,14 +66,13 @@ historical signals.
 
 ### Bucket naming and bindings (reconciliation note)
 
-Issue #100 names the bucket `wr-raw-artifacts`, bound as `RAW_ARTIFACTS` in
-`workers/api`, `workers/pipeline`, and `workers/jobs`. The settled bindings
-table (`docs/architecture-bindings.md`, issue #28) currently lists only
-`RAW_IMPORTS` → `wr-raw-imports-<env>` (api only, wired in #170 for raw
-uploaded/imported files). These need to be reconciled when the pipeline
-workers are wired up: either `RAW_ARTIFACTS`/`wr-raw-artifacts-<env>` joins
-the bindings table as a new bucket, or the existing `RAW_IMPORTS` bucket is
-designated as the raw-artifact store and #100's naming is amended.
+Reconciled in #104: `RAW_ARTIFACTS` → `wr-raw-artifacts-<env>` is its own
+bucket, bound in `workers/pipeline` (the normalize stage reads artifacts
+from it) and listed in `docs/architecture-bindings.md`. The `RAW_IMPORTS`
+bucket (`workers/api`, #170) remains separate — raw *uploaded files* before
+adapter processing, vs. the content-addressed artifacts here. `workers/api`
+and `workers/jobs` gain the `RAW_ARTIFACTS` binding when their producers
+start calling `putRawArtifact` (Epics #7/#8).
 
 The helpers here are deliberately **binding-name agnostic**: they take an
 injected `RawArtifactBucket` (a structural subset of `R2Bucket`, so
