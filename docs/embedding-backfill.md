@@ -19,9 +19,12 @@ whole corpus matches again — no re-embed tooling exists yet on purpose).
 
 Rows normally get their embedding **inline** in the pipeline's classify
 stage; the backfill exists for the leftovers: embedding failures (rate
-limits, outages), environments without the `AI` binding, and historical
-rows from before the extraction pass existed (the demo seed's excerpts,
-deliberately NULL).
+limits, outages), environments without the `AI` binding — which includes
+**all local pipeline runs**: the pipeline's local wrangler block
+deliberately omits `AI` because the binding always proxies to the real
+API and the workerd unit-test pool boots from that block (CI has no
+Cloudflare credentials) — and historical rows from before the extraction
+pass existed (the demo seed's excerpts, deliberately NULL).
 
 ## Parameters
 
