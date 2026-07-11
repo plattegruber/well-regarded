@@ -31,11 +31,16 @@ if (!connectionString) {
 
 const UNIQUE_VIOLATION = "23505";
 
+/**
+ * Extract the Postgres error code. drizzle-orm wraps driver errors in
+ * DrizzleQueryError with the PostgresError on `cause`, so check both.
+ */
 async function pgErrorCode(promise: Promise<unknown>): Promise<string> {
   try {
     await promise;
   } catch (error) {
-    return (error as { code?: string }).code ?? "";
+    const e = error as { code?: string; cause?: { code?: string } };
+    return e.code ?? e.cause?.code ?? "";
   }
   return "no error thrown";
 }

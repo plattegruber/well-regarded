@@ -36,14 +36,25 @@ const UNIQUE_VIOLATION = "23505";
 /** RAISE EXCEPTION in a plpgsql trigger without an explicit ERRCODE. */
 const RAISE_EXCEPTION = "P0001";
 
+/**
+ * Extract the Postgres error code/message. drizzle-orm wraps driver errors
+ * in DrizzleQueryError with the PostgresError on `cause`, so check both.
+ */
 async function pgError(
   promise: Promise<unknown>,
 ): Promise<{ code: string; message: string }> {
   try {
     await promise;
   } catch (error) {
-    const { code, message } = error as { code?: string; message?: string };
-    return { code: code ?? "", message: message ?? "" };
+    const e = error as {
+      code?: string;
+      message?: string;
+      cause?: { code?: string; message?: string };
+    };
+    return {
+      code: e.code ?? e.cause?.code ?? "",
+      message: [e.message, e.cause?.message].filter(Boolean).join(" | "),
+    };
   }
   return { code: "no error thrown", message: "" };
 }
