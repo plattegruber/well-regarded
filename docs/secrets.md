@@ -51,6 +51,11 @@ then (`TODO(#4-auth-epic)`).
 
 Nothing DB-related appears here by design: workers reach Postgres through the
 Hyperdrive **binding**, so there is no `DATABASE_URL` string var to validate.
+(Locally, wrangler itself routes that binding to the docker compose Postgres
+via `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` in each
+binder's gitignored `.env` — wrangler *process* config, not a worker var, so
+it lives in `.env`/`.env.example`, not `.dev.vars`. See
+[`infra/environments.md`](../infra/environments.md).)
 
 ## Adding a new variable
 

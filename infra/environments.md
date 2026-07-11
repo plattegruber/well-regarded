@@ -74,15 +74,22 @@ Hyperdrive has no Miniflare simulator; locally, wrangler connects the
 `HYPERDRIVE` binding straight to a Postgres connection string taken from:
 
 ```
-CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://user:password@localhost:5432/wellregarded
+CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://wellregarded:wellregarded@localhost:54322/wellregarded
 ```
 
-(The suffix after `..._STRING_` is the binding name. The older
+(The suffix after `..._STRING_` is the binding name; that value is the
+canonical docker compose connection string. The older
 `WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` spelling also works
-but wrangler 4.110+ warns it is deprecated.) The local-dev issue in Epic #1
-documents this in `.dev.vars.example` alongside the docker compose Postgres.
-`wrangler dev` for api/jobs/dashboard requires this env var to be set;
-pipeline and patient have no Hyperdrive binding and boot without it.
+but wrangler 4.110+ warns it is deprecated.)
+
+Wrangler reads this from its **process environment or the worker's `.env`
+file** — *not* from `.dev.vars` (`.dev.vars` entries become worker runtime
+vars; wrangler silently ignores Hyperdrive connection strings there —
+verified on wrangler 4.110). Each Hyperdrive binder (api, jobs, dashboard)
+commits a `.env.example` with this line; `pnpm run setup` copies it to the
+gitignored `.env`. `wrangler dev` for api/jobs/dashboard refuses to boot
+without it; pipeline and patient have no Hyperdrive binding and boot without
+it.
 
 ## Cron triggers
 
