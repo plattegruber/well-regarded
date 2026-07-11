@@ -75,6 +75,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@wellregarded/core':
+        specifier: workspace:*
+        version: link:../core
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@cloudflare/workers-types@5.20260711.1)(postgres@3.4.9)
