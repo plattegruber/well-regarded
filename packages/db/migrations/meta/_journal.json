@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783745150821,
+      "tag": "0001_enable_pgvector_and_pii_schema",
+      "breakpoints": true
+    }
+  ]
+}
