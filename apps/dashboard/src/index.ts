@@ -1,1 +1,1 @@
-export const PACKAGE_NAME =     "@wellregarded/dashboard"
+export const PACKAGE_NAME = "@wellregarded/dashboard";
