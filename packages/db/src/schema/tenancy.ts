@@ -59,6 +59,8 @@ export const practices = pgTable("practices", {
   timezone: text("timezone").notNull().default("America/Chicago"),
   websiteUrl: text("website_url"),
   phone: text("phone"),
+  /** THROWAWAY — negative test (a) for the #55 migration gate; reverted. */
+  driftCanary: text("drift_canary"),
 });
 
 /** A physical practice location. */
