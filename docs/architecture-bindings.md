@@ -13,6 +13,10 @@ TBD, live in [`infra/environments.md`](../infra/environments.md).
 | `DEDUPE_QUEUE`   | queue producer  | pipeline                   | Normalize stage (consumer of `wr-ingest`) feeds the dedupe stage (`wr-dedupe`)                  |
 | `CLASSIFY_QUEUE` | queue producer  | pipeline                   | Dedupe stage feeds the classify stage (`wr-classify`)                                           |
 | `ROUTE_QUEUE`    | queue producer  | pipeline                   | Classify stage feeds the route stage (`wr-route`, terminal)                                     |
+| `INGEST_DLQ`     | queue producer  | pipeline                   | Dead-letter forward path for the ingest stage (`wr-ingest-dlq`): malformed / non-retryable messages (#98) |
+| `DEDUPE_DLQ`     | queue producer  | pipeline                   | Dead-letter forward path for the dedupe stage (`wr-dedupe-dlq`)                                 |
+| `CLASSIFY_DLQ`   | queue producer  | pipeline                   | Dead-letter forward path for the classify stage (`wr-classify-dlq`)                             |
+| `ROUTE_DLQ`      | queue producer  | pipeline                   | Dead-letter forward path for the route stage (`wr-route-dlq`)                                   |
 | `PROOF_CACHE`    | KV namespace    | api                        | Cache of rendered social-proof payloads served by the API                                       |
 | `RAW_IMPORTS`    | R2 bucket       | api                        | Raw uploaded/imported source files (`wr-raw-imports-<env>`)                                     |
 | `HYPERDRIVE`     | Hyperdrive      | api, jobs, dashboard       | Pooled connection to the Postgres database (pgvector)                                           |
@@ -20,7 +24,15 @@ TBD, live in [`infra/environments.md`](../infra/environments.md).
 
 Queue **consumers** (not bindings, but part of the same contract) all live in
 `workers/pipeline`: `wr-ingest`, `wr-dedupe`, `wr-classify`, `wr-route`, each
-with `max_retries: 3` and a `wr-<stage>-dlq` dead-letter queue.
+with `max_retries: 3` and a `wr-<stage>-dlq` dead-letter queue — plus the four
+DLQs themselves, whose consumer persists failures and acks unconditionally
+(#98).
+
+Local-only exception: the pipeline worker's top-level (local) `wrangler.jsonc`
+block additionally binds `INGEST_QUEUE` so the `POST /__local/enqueue/<stage>`
+debug endpoint can feed the spine's front door under `wrangler dev`. It is
+deliberately absent from `env.preview`/`env.prod` — deployed producers to
+`wr-ingest` are api and jobs only.
 
 `apps/patient` intentionally has no bindings beyond `ENVIRONMENT` (minimal
 deps mandate).

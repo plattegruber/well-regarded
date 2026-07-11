@@ -5,6 +5,10 @@ export type { DerivationDimension } from "@wellregarded/core";
 export { type AuditEntry, audit, type Tx } from "./audit.js";
 export { createDb, type Db, type Sql } from "./client.js";
 export {
+  type PipelineFailureRecord,
+  recordPipelineFailure,
+} from "./pipeline.js";
+export {
   type AiCall,
   createAiCallSink,
   logAiCall,

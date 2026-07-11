@@ -1,4 +1,13 @@
 {
   "extends": "@wellregarded/tsconfig/worker.json",
-  "include": ["src"]
+  "compilerOptions": {
+    // cloudflare:test module types (test/) on top of the workers runtime
+    // types; node types for vitest.config.ts.
+    "types": [
+      "@cloudflare/workers-types",
+      "@cloudflare/vitest-pool-workers",
+      "node"
+    ]
+  },
+  "include": ["src", "test", "vitest.config.ts"]
 }

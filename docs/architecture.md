@@ -63,7 +63,7 @@ The load-bearing idea: **facts and judgments live in different tables.** A `sign
 
 ## Ingestion pipeline
 
-Planned: Epic [#6](https://github.com/plattegruber/well-regarded/issues/6) builds this in `workers/pipeline` and `packages/sources`. The canonical stage names:
+Epic [#6](https://github.com/plattegruber/well-regarded/issues/6) builds this in `workers/pipeline` and `packages/sources`. The queue topology, typed message contracts, dispatcher, and DLQ wiring exist ([#98](https://github.com/plattegruber/well-regarded/issues/98)); the stage bodies are stubs until [#104](https://github.com/plattegruber/well-regarded/issues/104)/[#106](https://github.com/plattegruber/well-regarded/issues/106)/[#108](https://github.com/plattegruber/well-regarded/issues/108)/[#67](https://github.com/plattegruber/well-regarded/issues/67) fill them in. The canonical stage names:
 
 ```
 source adapter → raw payload to R2 → queue:ingest (normalize) → queue:dedupe → queue:classify → queue:route
@@ -77,6 +77,39 @@ source adapter → raw payload to R2 → queue:ingest (normalize) → queue:dedu
 6. **`queue:route`** — outcomes: high urgency → `recovery_items`; public review → the review inbox; publishable candidate → a proof suggestion (which is consent-gated before it can ever serve).
 
 Failures go to per-queue DLQs and **must be visible in `import_runs` — never silent.** A batch that partially failed says so in its counts; an operator can always answer "what happened to my import?" from the dashboard.
+
+### Queue topology and consumer mechanics
+
+Built in [#98](https://github.com/plattegruber/well-regarded/issues/98). Four queues (`wr-ingest`, `wr-dedupe`, `wr-classify`, `wr-route`) plus a DLQ each (`wr-<stage>-dlq`), all consumed by `workers/pipeline`; queue names are environment-suffixed per [infra/environments.md](../infra/environments.md), bindings per [architecture-bindings.md](architecture-bindings.md). Message contracts are zod schemas in `packages/core/src/pipeline/messages.ts` — `IngestMessage` carries `{ importRunId, rawArtifactKey, sourceKind, practiceId }`; the downstream messages carry only `{ signalId, practiceId, importRunId }` and re-read the `signals` row, so messages stay small and replayable.
+
+One dispatcher (`workers/pipeline/src/dispatch.ts`) owns ack/retry semantics for every stage; handlers are pure-ish `(message, env) => Promise<void>` functions:
+
+- handler returns → `ack()`; throws `RetryableError` or anything unexpected → `retry()` (`max_retries: 3`, then the platform dead-letters);
+- throws `NonRetryableError`, or the body fails zod parsing → forwarded straight to the stage's DLQ (wrapped in a `DlqForwardEnvelope` that preserves the error next to the original body) and acked — retrying a message that can never succeed only burns the retry budget;
+- messages ack/retry individually, never `ackAll()`, so a poison message doesn't take its batch-mates with it;
+- the DLQ consumer persists every failure through `recordPipelineFailure()` in `packages/db` (log-only until [#111](https://github.com/plattegruber/well-regarded/issues/111) lands `import_runs`) and acks unconditionally — a DLQ consumer must never retry into a loop.
+
+### Running the pipeline locally
+
+Local queues are Miniflare simulators inside `wrangler dev` — no Cloudflare resources. Start the pipeline worker (fixed port 8788):
+
+```
+pnpm --filter @wellregarded/pipeline dev
+```
+
+Locally (and only locally) the worker exposes a debug endpoint that enqueues a raw JSON body onto any stage queue — the deployed entry point (`INGEST_QUEUE` from api/jobs) doesn't exist yet, and sending garbage is exactly how you watch the malformed → DLQ path work:
+
+```
+curl -X POST http://localhost:8788/__local/enqueue/ingest \
+  -d '{"importRunId":"<uuid>","rawArtifactKey":"raw/x","sourceKind":"google","practiceId":"<uuid>"}'
+curl -X POST http://localhost:8788/__local/enqueue/dedupe -d '{"garbage":true}'   # → wr-dedupe-dlq
+```
+
+Consumption is logged as `pipeline.stage.stub` / `pipeline.failure` JSON lines in the dev session. Behavior verified on wrangler 4.110:
+
+- **Same session** (this worker produces and consumes): delivery just works, arriving within `max_batch_timeout` (≤ 5s).
+- **Separate `wrangler dev` sessions on one machine share queues** through wrangler's local dev registry — a producer running in another session (e.g. everything under `pnpm dev`) delivers to this worker's consumers. Verified empirically; older wrangler versions required a single session, so if cross-session delivery misbehaves after a wrangler bump, fall back to one session with multiple configs: `wrangler dev -c workers/api/wrangler.jsonc -c workers/pipeline/wrangler.jsonc`.
+- **Nothing persists.** Local queues are in-memory: a `send()` while no consumer session is running succeeds silently and the message is gone for good (verified — it is not delivered when the consumer starts later), and restarting `wrangler dev` drops anything in flight. Never treat a local queue as a durable buffer.
 
 ## Ethical invariants
 
