@@ -13,6 +13,11 @@ import {
   getQueueResult,
 } from "cloudflare:test";
 import {
+  FakeAiProvider,
+  JUDGMENTS_PROMPT_NAME,
+  type JudgmentDerivation,
+} from "@wellregarded/ai";
+import {
   buildDlqForwardEnvelope,
   DLQ_FORWARD_KIND,
   RetryableError,
@@ -20,6 +25,12 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleQueueBatch, type StageHandlers } from "../src/dispatch";
+import { stageHandlers } from "../src/stages";
+import {
+  type ClassifyDeps,
+  type ClassifyStore,
+  classifySignal,
+} from "../src/stages/classify";
 import worker from "../src/worker";
 
 const uuid = "8a9c1a52-6a54-4d43-9c39-9d5df2bb0e1a";
@@ -45,11 +56,13 @@ beforeEach(() => {
 });
 
 describe("worker.queue", () => {
-  it("acks a valid message on each main queue", async () => {
+  it("acks a valid message on each stub-stage main queue", async () => {
+    // wr-classify is deliberately absent: since #67 its handler does real
+    // work (Postgres + AI provider) and is exercised with injected deps in
+    // the "classify stage" describe below.
     const cases = [
       ["wr-ingest", validIngest],
       ["wr-dedupe", validSignalStage],
-      ["wr-classify", validSignalStage],
       ["wr-route", validSignalStage],
     ] as const;
     for (const [queue, body] of cases) {
@@ -132,6 +145,151 @@ describe("worker.queue", () => {
           line.includes("signal row was purged"),
       ),
     ).toBe(true);
+  });
+});
+
+describe("classify stage on a real workerd batch (issue #67)", () => {
+  // The real `classify` handler wires Postgres + Anthropic off env; here the
+  // dispatcher runs against the real Queues runtime with those two seams
+  // injected (FakeAiProvider + in-memory store), so the assertions cover the
+  // actual ack/retry outcomes the platform records.
+  const classifyFixture = {
+    sentiment: {
+      value: "negative",
+      confidence: 0.95,
+      rationale: "Angry about ongoing pain after an extraction.",
+    },
+    urgency: {
+      value: "critical",
+      confidence: 0.85,
+      rationale: "Acute post-procedure pain happening now.",
+    },
+    response_risk: {
+      value: "high",
+      confidence: 0.8,
+      rationale: "Names a procedure; a reply risks confirming care.",
+    },
+    publication_suitability: {
+      value: "unsuitable",
+      confidence: 0.9,
+      rationale: "Health details the author may regret sharing.",
+    },
+  };
+
+  function makeStore(hasSignal: boolean) {
+    const inserted: (readonly JudgmentDerivation[])[] = [];
+    const store: ClassifyStore = {
+      getSignal: async () =>
+        hasSignal
+          ? {
+              originalText:
+                "Still in severe pain three days after my extraction and nobody calls back.",
+              originalRating: "1.0",
+              retentionState: "active" as const,
+            }
+          : undefined,
+      hasJudgments: async () => false,
+      insertJudgments: async (_message, rows) => {
+        inserted.push(rows);
+      },
+    };
+    return { store, inserted };
+  }
+
+  function handlersWith(deps: ClassifyDeps): StageHandlers {
+    return {
+      ...stageHandlers,
+      classify: (message, env) => classifySignal(message, env, deps),
+    };
+  }
+
+  it("acks after writing four derivations and enqueueing the route message", async () => {
+    const provider = new FakeAiProvider({
+      [JUDGMENTS_PROMPT_NAME]: [classifyFixture],
+    });
+    const { store, inserted } = makeStore(true);
+    const routeSend = vi.fn().mockResolvedValue(undefined);
+
+    const batch = createMessageBatch("wr-classify", [
+      { id: "classify-1", timestamp, attempts: 1, body: validSignalStage },
+    ]);
+    const ctx = createExecutionContext();
+    await handleQueueBatch(
+      batch,
+      { ...env, ROUTE_QUEUE: { send: routeSend } },
+      handlersWith({
+        store,
+        provider,
+        pipelineModel: "claude-haiku-4-5-20251001",
+      }),
+    );
+    const result = await getQueueResult(batch, ctx);
+
+    expect(result.explicitAcks).toEqual(["classify-1"]);
+    expect(result.retryMessages).toEqual([]);
+    expect(provider.calls).toHaveLength(1);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.map((row) => row.dimension)).toEqual([
+      "sentiment",
+      "urgency",
+      "response_risk",
+      "publication_suitability",
+    ]);
+    expect(routeSend).toHaveBeenCalledExactlyOnceWith(validSignalStage);
+  });
+
+  it("forwards to the classify DLQ and acks when the signal row is gone", async () => {
+    const { store } = makeStore(false);
+    const dlqSend = vi.fn().mockResolvedValue(undefined);
+
+    const batch = createMessageBatch("wr-classify", [
+      { id: "classify-2", timestamp, attempts: 1, body: validSignalStage },
+    ]);
+    const ctx = createExecutionContext();
+    await handleQueueBatch(
+      batch,
+      { ...env, CLASSIFY_DLQ: { send: dlqSend } },
+      handlersWith({
+        store,
+        provider: new FakeAiProvider(),
+        pipelineModel: "claude-haiku-4-5-20251001",
+      }),
+    );
+    const result = await getQueueResult(batch, ctx);
+
+    expect(dlqSend).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        kind: DLQ_FORWARD_KIND,
+        stage: "classify",
+        reason: "non_retryable",
+        body: validSignalStage,
+      }),
+    );
+    expect(result.explicitAcks).toEqual(["classify-2"]);
+    expect(result.retryMessages).toEqual([]);
+  });
+
+  it("retries when the provider is unconfigured (missing ANTHROPIC_API_KEY posture)", async () => {
+    const { store, inserted } = makeStore(true);
+
+    const batch = createMessageBatch("wr-classify", [
+      { id: "classify-3", timestamp, attempts: 1, body: validSignalStage },
+    ]);
+    const ctx = createExecutionContext();
+    await handleQueueBatch(
+      batch,
+      env,
+      handlersWith({
+        store,
+        provider: undefined,
+        pipelineModel: "claude-haiku-4-5-20251001",
+      }),
+    );
+    const result = await getQueueResult(batch, ctx);
+
+    expect(result.retryMessages).toEqual([{ msgId: "classify-3" }]);
+    expect(result.explicitAcks).toEqual([]);
+    expect(inserted).toHaveLength(0);
   });
 });
 

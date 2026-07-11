@@ -41,6 +41,14 @@ export interface PipelineBindings {
    * workers/api and workers/jobs.
    */
   INGEST_QUEUE?: QueueProducer;
+  /**
+   * Postgres via Hyperdrive — the classify stage (#67) re-reads `signals`
+   * and writes `derivations`. Structural (not the workers-types
+   * `Hyperdrive`) so tests can inject `{ connectionString }`; optional in
+   * the type because misconfiguration is handled at the stage (retry →
+   * DLQ), not by crashing the whole dispatcher.
+   */
+  HYPERDRIVE?: { connectionString: string };
   /** String vars/secrets, validated by `getEnv(env, pipelineEnvSchema)`. */
   [key: string]: unknown;
 }
