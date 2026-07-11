@@ -273,13 +273,35 @@ importers:
         version: 4.110.0(@cloudflare/workers-types@5.20260711.1)
 
   workers/jobs:
+    dependencies:
+      '@wellregarded/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@wellregarded/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@wellregarded/db':
+        specifier: workspace:*
+        version: link:../../packages/db
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^5.20260711.1
         version: 5.20260711.1
+      '@faker-js/faker':
+        specifier: ^10.5.0
+        version: 10.5.0
+      '@types/node':
+        specifier: ^26.1.1
+        version: 26.1.1
       '@wellregarded/tsconfig':
         specifier: workspace:*
         version: link:../../packages/tsconfig
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@cloudflare/workers-types@5.20260711.1)(postgres@3.4.9)
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
       typescript:
         specifier: ^5.9.2
         version: 5.9.3

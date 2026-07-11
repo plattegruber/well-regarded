@@ -24,6 +24,12 @@ One JSON object per line (`.jsonl`), one file per prompt:
   (issue #67): a glowing review, an acute-pain complaint (the
   safety-critical case the urgency criteria exist for), and a mixed
   multi-topic review with a third-party name.
+- `fixtures/excerpts.jsonl` — the aspect excerpt extraction pass
+  (issue #69): expected spans **by offset** (`start_offset` into
+  `input.text`; every expected `text` is the verbatim slice at that
+  offset — the generator asserted it). A three-aspect review with
+  trailing filler, a typo-laden review (verbatim means the typos stay),
+  and a single-topic long review that must NOT be over-segmented.
 
 ## Adding cases
 

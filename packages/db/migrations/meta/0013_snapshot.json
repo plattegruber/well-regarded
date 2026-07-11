@@ -1,5 +1,5 @@
 {
-  "id": "b3e555ad-4c89-47fa-b234-f89b2ed9df20",
+  "id": "2031c8df-b93b-485a-a3b2-9cf7fd5c4800",
   "prevId": "9be47346-3039-460d-815b-d7f6a1f7e363",
   "version": "7",
   "dialect": "postgresql",
@@ -544,240 +544,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.signal_versions": {
-      "name": "signal_versions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "signal_id": {
-          "name": "signal_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rating": {
-          "name": "rating",
-          "type": "numeric(2, 1)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source_updated_at": {
-          "name": "source_updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "signal_versions_signal_id_created_at_idx": {
-          "name": "signal_versions_signal_id_created_at_idx",
-          "columns": [
-            {
-              "expression": "signal_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "signal_versions_signal_id_signals_id_fk": {
-          "name": "signal_versions_signal_id_signals_id_fk",
-          "tableFrom": "signal_versions",
-          "tableTo": "signals",
-          "columnsFrom": [
-            "signal_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.suspected_duplicates": {
-      "name": "suspected_duplicates",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "practice_id": {
-          "name": "practice_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "signal_id_a": {
-          "name": "signal_id_a",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "signal_id_b": {
-          "name": "signal_id_b",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "similarity": {
-          "name": "similarity",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "suspected_duplicate_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending_review'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "suspected_duplicates_pair_idx": {
-          "name": "suspected_duplicates_pair_idx",
-          "columns": [
-            {
-              "expression": "signal_id_a",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "signal_id_b",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "suspected_duplicates_practice_id_status_idx": {
-          "name": "suspected_duplicates_practice_id_status_idx",
-          "columns": [
-            {
-              "expression": "practice_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "suspected_duplicates_practice_id_practices_id_fk": {
-          "name": "suspected_duplicates_practice_id_practices_id_fk",
-          "tableFrom": "suspected_duplicates",
-          "tableTo": "practices",
-          "columnsFrom": [
-            "practice_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "suspected_duplicates_signal_id_a_signals_id_fk": {
-          "name": "suspected_duplicates_signal_id_a_signals_id_fk",
-          "tableFrom": "suspected_duplicates",
-          "tableTo": "signals",
-          "columnsFrom": [
-            "signal_id_a"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "suspected_duplicates_signal_id_b_signals_id_fk": {
-          "name": "suspected_duplicates_signal_id_b_signals_id_fk",
-          "tableFrom": "suspected_duplicates",
-          "tableTo": "signals",
-          "columnsFrom": [
-            "signal_id_b"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "suspected_duplicates_pair_ordered": {
-          "name": "suspected_duplicates_pair_ordered",
-          "value": "\"suspected_duplicates\".\"signal_id_a\" < \"suspected_duplicates\".\"signal_id_b\""
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.derivations": {
       "name": "derivations",
       "schema": "",
@@ -1319,11 +1085,30 @@
           "primaryKey": false,
           "notNull": true
         },
+        "start_offset": {
+          "name": "start_offset",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "topic_hint": {
+          "name": "topic_hint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "embedding": {
           "name": "embedding",
           "type": "vector(1024)",
           "primaryKey": false,
           "notNull": false
+        },
+        "embedding_model": {
+          "name": "embedding_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'@cf/baai/bge-m3'"
         },
         "tsv": {
           "name": "tsv",
@@ -1542,18 +1327,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "current_version_id": {
-          "name": "current_version_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "embedding": {
-          "name": "embedding",
-          "type": "vector(1024)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "pipeline_status": {
           "name": "pipeline_status",
           "type": "signal_pipeline_status",
@@ -1692,22 +1465,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "signals_embedding_hnsw_idx": {
-          "name": "signals_embedding_hnsw_idx",
-          "columns": [
-            {
-              "expression": "embedding",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last",
-              "opclass": "vector_cosine_ops"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "hnsw",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -1770,19 +1527,6 @@
           "tableTo": "import_runs",
           "columnsFrom": [
             "import_run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "signals_current_version_id_signal_versions_id_fk": {
-          "name": "signals_current_version_id_signal_versions_id_fk",
-          "tableFrom": "signals",
-          "tableTo": "signal_versions",
-          "columnsFrom": [
-            "current_version_id"
           ],
           "columnsTo": [
             "id"
@@ -2337,15 +2081,6 @@
         "patient_link",
         "practice_attested",
         "imported_unknown"
-      ]
-    },
-    "public.suspected_duplicate_status": {
-      "name": "suspected_duplicate_status",
-      "schema": "public",
-      "values": [
-        "pending_review",
-        "confirmed",
-        "dismissed"
       ]
     },
     "public.derivation_basis": {

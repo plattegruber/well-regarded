@@ -1,51 +1,82 @@
 /**
- * Classify stage — consumer of `wr-classify` (issue #67, Epic #9).
+ * Classify stage — consumer of `wr-classify` (issues #67 + #69 + #71,
+ * Epic #9).
  *
- * One Haiku-lane call per signal returns all four judgments (sentiment,
- * urgency, response risk, publication suitability); each becomes a
- * `derivations` row with confidence, rationale, basis `inferred_text`, and
- * the concrete `model_version` from the AI result. The consumer stays thin
- * — fetch signal → call provider → insert rows → enqueue route — with the
- * judgment-shaped logic (prompt, schema, urgency floor, deterministic
- * fallbacks) in `@wellregarded/ai` (src/prompts/judgments.ts).
+ * TWO sequential AI passes per text signal, in one consumer invocation:
+ *
+ * 1. **Judgments** (#67): one Haiku-lane call returns all four judgments
+ *    (sentiment, urgency, response risk, publication suitability); each
+ *    becomes a `derivations` row with confidence, rationale, basis
+ *    `inferred_text`, and the concrete `model_version` from the AI result.
+ * 2. **Excerpts** (#69): a second Haiku-lane call splits multi-topic text
+ *    into aspect-level `proof_excerpts` rows — verbatim substrings ONLY,
+ *    validated server-side (see `@wellregarded/ai` src/prompts/excerpts.ts
+ *    for the tolerance); signals under 15 words skip the model and store
+ *    the whole text as one excerpt. Extraction runs regardless of
+ *    sentiment/suitability — Recovery and Coverage need aspect granularity
+ *    for private/negative signals too; suitability only gates publication.
+ *    New excerpts are then embedded inline (#71, Workers AI bge-m3 via the
+ *    injected `EmbeddingProvider`); an embedding failure never fails the
+ *    message — the vector stays NULL and the backfill Workflow in
+ *    workers/jobs sweeps it up.
+ *
+ * Judgments run first: their output is needed for routing even when the
+ * excerpt pass fails. The judgment/excerpt-shaped logic (prompts, schemas,
+ * urgency floor, substring validator, deterministic fallbacks) lives in
+ * `@wellregarded/ai`; this consumer stays thin.
  *
  * Paths per signal (see `classifySignal`):
- * - **Text** (≥ 3 words): one `provider.classify` call → four rows.
- *   Low-confidence urgency (< 0.5) is floored UP one level
- *   (`applyUrgencyFloor`) — a missed urgent complaint is a patient walking
- *   away in pain; a false alarm costs a human ten seconds.
+ * - **Text** (≥ 3 words): judgments call → four rows; then excerpt pass →
+ *   `proof_excerpts` rows (+ inline embeddings). Low-confidence urgency
+ *   (< 0.5) is floored UP one level (`applyUrgencyFloor`) — a missed
+ *   urgent complaint is a patient walking away in pain; a false alarm
+ *   costs a human ten seconds.
  * - **Rating only** (empty/short text, has a rating): NO model call —
  *   deterministic rows via `ratingOnlyDerivations`, basis
- *   `source_metadata`. Cost matters: a 2,000-review CSV backfill should
- *   not spend 2,000 calls on bare star ratings.
+ *   `source_metadata`, and no excerpts (nothing quotable). Cost matters: a
+ *   2,000-review CSV backfill should not spend 2,000 calls on bare star
+ *   ratings.
  * - **Neither**: nothing to judge; log and move on.
  * Every path ends by enqueueing a RouteMessage — routing decides what the
  * derivations (or their absence) mean.
  *
  * Idempotency: Queues deliver at-least-once, so before calling the model
  * we probe for existing derivations from this model version (the
- * deterministic path probes basis `source_metadata`) and skip the write on
- * redelivery. The route enqueue is deliberately NOT deduplicated — the
- * route stage must be idempotent anyway, and a duplicate RouteMessage is
- * harmless where a missing one is not.
+ * deterministic path probes basis `source_metadata`), and the excerpt pass
+ * probes for existing `proof_excerpts` rows — each pass skips its write
+ * independently on redelivery (a redelivery after judgments-but-no-excerpts
+ * re-runs only the excerpt pass). The route enqueue is deliberately NOT
+ * deduplicated — the route stage must be idempotent anyway, and a duplicate
+ * RouteMessage is harmless where a missing one is not.
  *
- * Cost/backpressure: ~1 Haiku call per text signal. The queue's
+ * Cost/backpressure: ~2 Haiku calls per text signal (judgments + excerpts)
+ * plus one Workers AI embedding call. The queue's
  * `max_batch_size`/`max_retries` (wrangler.jsonc) drain a big import
  * gradually, and `AnthropicProvider`'s 429 backoff (#63) absorbs bursts —
  * this handler adds no throttling of its own. Cost accounting rides the
- * injected `AiCallSink` (purpose `"judgments"`, billed to the signal's
- * practice).
+ * injected `AiCallSink` (purposes `"judgments"` and `"excerpts"`, billed
+ * to the signal's practice).
  */
 
 import {
   type AiProvider,
   AnthropicProvider,
+  countWords,
+  createWorkersAiEmbedder,
+  type EmbeddingProvider,
+  EXCERPT_MIN_MODEL_WORDS,
+  ExcerptsSchema,
+  excerptsPrompt,
+  excerptsRetryPrompt,
   hasClassifiableText,
   type JudgmentDerivation,
   JudgmentsSchema,
   judgmentsPrompt,
   judgmentsToDerivations,
+  type PlannedExcerpt,
   ratingOnlyDerivations,
+  validateExcerpts,
+  wholeTextExcerpt,
 } from "@wellregarded/ai";
 import {
   type ClassifyMessage,
@@ -64,7 +95,10 @@ import {
   type DerivationDimension,
   getSignal,
   insertDerivations,
+  insertProofExcerpts,
+  setProofExcerptEmbeddings,
   signalHasDerivations,
+  signalHasProofExcerpts,
 } from "@wellregarded/db";
 
 import type { PipelineBindings } from "../bindings";
@@ -84,6 +118,19 @@ export type JudgmentSource =
   | { modelVersion: string }
   | { basis: "source_metadata" };
 
+/** An inserted `proof_excerpts` row, as the inline embed pass needs it. */
+export interface StoredExcerpt {
+  id: string;
+  text: string;
+}
+
+/** One inline embedding write. */
+export interface ExcerptEmbeddingUpdate {
+  id: string;
+  embedding: number[];
+  embeddingModel: string;
+}
+
 /**
  * The stage's narrow persistence seam. Production is `createClassifyStore`
  * over the Hyperdrive-backed client; workerd tests inject an in-memory
@@ -96,6 +143,17 @@ export interface ClassifyStore {
     message: ClassifyMessage,
     rows: readonly JudgmentDerivation[],
   ): Promise<void>;
+  /** The excerpt pass's idempotency probe (issue #69 requirement 6). */
+  hasExcerpts(signalId: string): Promise<boolean>;
+  /** One multi-row INSERT; returns ids for the inline embed pass. */
+  insertExcerpts(
+    message: ClassifyMessage,
+    excerpts: readonly PlannedExcerpt[],
+  ): Promise<StoredExcerpt[]>;
+  /** Fill `embedding` + `embedding_model` on freshly inserted rows. */
+  setExcerptEmbeddings(
+    updates: readonly ExcerptEmbeddingUpdate[],
+  ): Promise<void>;
 }
 
 export interface ClassifyDeps {
@@ -107,6 +165,12 @@ export interface ClassifyDeps {
    */
   provider?: AiProvider | undefined;
   /**
+   * Absent when the `AI` binding is not configured (issue #71). Unlike a
+   * missing Anthropic key this does NOT block the message: excerpts are
+   * stored with a NULL embedding and the backfill Workflow sweeps them up.
+   */
+  embedder?: EmbeddingProvider | undefined;
+  /**
    * Concrete pipeline-lane model id (`PIPELINE_MODEL`) — the idempotency
    * probe's model_version. Pin dated ids (the env default is one) so this
    * matches what the API reports back in `usage.model`.
@@ -114,15 +178,27 @@ export interface ClassifyDeps {
   pipelineModel: string;
 }
 
-function log(event: string, message: ClassifyMessage, extra?: object): void {
+function stageLogger(message: ClassifyMessage) {
   // The dispatcher guarantees a requestId on delivered messages (issue
   // #64); the fallback only fires for direct test invocations.
-  createLogger({
+  return createLogger({
     worker: "pipeline",
     requestId: message.requestId ?? fallbackRequestId(),
     practiceId: message.practiceId,
     stage: "classify",
-  }).info(event, {
+  });
+}
+
+function log(event: string, message: ClassifyMessage, extra?: object): void {
+  stageLogger(message).info(event, {
+    signalId: message.signalId,
+    importRunId: message.importRunId,
+    ...extra,
+  });
+}
+
+function warn(event: string, message: ClassifyMessage, extra?: object): void {
+  stageLogger(message).warn(event, {
     signalId: message.signalId,
     importRunId: message.importRunId,
     ...extra,
@@ -159,7 +235,12 @@ export async function classifySignal(
       retentionState: signal.retentionState,
     });
   } else if (hasClassifiableText(signal.originalText)) {
+    // Judgments first (issue #69 note): their output is needed for routing
+    // even when the excerpt pass fails. Each pass has its own idempotency
+    // probe, so a redelivery after judgments-but-no-excerpts re-runs only
+    // the excerpt pass.
     await classifyWithModel(message, signal, deps);
+    await extractExcerpts(message, signal, deps);
   } else {
     const rating = Number(signal.originalRating);
     if (signal.originalRating !== null && Number.isFinite(rating)) {
@@ -242,6 +323,146 @@ async function classifyWithModel(
   });
 }
 
+/**
+ * The excerpt pass (issue #69): split the signal's text into verbatim
+ * aspect-level excerpts, write `proof_excerpts` rows, then embed them
+ * inline (issue #71). Runs for every signal with classifiable text —
+ * sentiment and publication suitability deliberately do NOT gate it
+ * (Recovery/Coverage need aspect granularity for negative and private
+ * signals too).
+ */
+async function extractExcerpts(
+  message: ClassifyMessage,
+  signal: SignalForClassification,
+  deps: ClassifyDeps,
+): Promise<void> {
+  const text = signal.originalText;
+  if (!text) return;
+
+  if (await deps.store.hasExcerpts(message.signalId)) {
+    log("pipeline.classify.excerpts_already_extracted", message);
+    return;
+  }
+
+  let excerpts: readonly PlannedExcerpt[];
+  if (countWords(text) < EXCERPT_MIN_MODEL_WORDS) {
+    // Short-circuit (issue #69 requirement 1): under ~15 words the whole
+    // text is already one quotable aspect — no model call.
+    excerpts = [wholeTextExcerpt(text)];
+  } else {
+    if (!deps.provider) {
+      // Same posture as the judgments pass: replayable once the key exists.
+      throw new RetryableError(
+        "classify: ANTHROPIC_API_KEY is not configured — cannot extract " +
+          "excerpts from signals with text. Set the secret (docs/secrets.md); " +
+          "dead-lettered messages are replayable once it exists.",
+      );
+    }
+    excerpts = await extractExcerptsWithModel(message, text, deps.provider);
+  }
+
+  const stored = await deps.store.insertExcerpts(message, excerpts);
+  log("pipeline.classify.excerpts_extracted", message, {
+    count: stored.length,
+  });
+
+  await embedExcerptsInline(message, stored, deps);
+}
+
+/**
+ * The model-selects-spans call with server-side verbatim enforcement
+ * (issue #69 requirement 4): validate every returned excerpt against the
+ * original text; on any violation retry ONCE with the rejections fed
+ * back; still-invalid excerpts after the retry are skipped with a logged
+ * warning — a fabricated quote is never stored. If nothing valid
+ * survives, fall back to the whole text as one excerpt.
+ */
+async function extractExcerptsWithModel(
+  message: ClassifyMessage,
+  text: string,
+  provider: AiProvider,
+): Promise<PlannedExcerpt[]> {
+  const opts = {
+    purpose: "excerpts",
+    practiceId: message.practiceId,
+    model: "pipeline" as const,
+    requestId: message.requestId,
+  };
+
+  const first = await provider.classify(
+    excerptsPrompt({ text }),
+    ExcerptsSchema,
+    opts,
+  );
+  const firstPass = validateExcerpts(text, first.value);
+  if (firstPass.rejected.length === 0) return firstPass.accepted;
+
+  warn("pipeline.classify.excerpts_rejected_retrying", message, {
+    rejectedCount: firstPass.rejected.length,
+  });
+  const second = await provider.classify(
+    excerptsRetryPrompt({ text }, firstPass.rejected),
+    ExcerptsSchema,
+    opts,
+  );
+  const secondPass = validateExcerpts(text, second.value);
+  if (secondPass.rejected.length > 0) {
+    warn("pipeline.classify.excerpts_skipped_fabricated", message, {
+      skippedCount: secondPass.rejected.length,
+    });
+  }
+
+  // Prefer the retry's verified excerpts; fall back to the first pass's
+  // (it may have had valid ones alongside the fabrications); last resort
+  // is the whole text as one excerpt — never nothing, never fabrication.
+  const best =
+    secondPass.accepted.length > 0 ? secondPass.accepted : firstPass.accepted;
+  if (best.length > 0) return best;
+
+  warn("pipeline.classify.excerpts_whole_text_fallback", message);
+  return [wholeTextExcerpt(text)];
+}
+
+/**
+ * Inline embedding (issue #71 requirement 3). Failure must not fail the
+ * message: log, leave the vectors NULL, and let the backfill Workflow
+ * sweep them up — so this function never throws.
+ */
+async function embedExcerptsInline(
+  message: ClassifyMessage,
+  stored: readonly StoredExcerpt[],
+  deps: ClassifyDeps,
+): Promise<void> {
+  if (stored.length === 0) return;
+  const embedder = deps.embedder;
+  if (!embedder) {
+    warn("pipeline.classify.embedding_skipped_no_binding", message, {
+      count: stored.length,
+    });
+    return;
+  }
+  try {
+    const vectors = await embedder.embed(stored.map((row) => row.text));
+    await deps.store.setExcerptEmbeddings(
+      stored.flatMap((row, index) => {
+        const embedding = vectors[index];
+        return embedding
+          ? [{ id: row.id, embedding, embeddingModel: embedder.model }]
+          : [];
+      }),
+    );
+    log("pipeline.classify.excerpts_embedded", message, {
+      count: stored.length,
+      embeddingModel: embedder.model,
+    });
+  } catch (error) {
+    warn("pipeline.classify.embedding_failed", message, {
+      count: stored.length,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /** The no-model-call path for rating-only signals (cost matters). */
 async function classifyFromRating(
   message: ClassifyMessage,
@@ -286,6 +507,23 @@ export function createClassifyStore(db: Db): ClassifyStore {
         })),
       );
     },
+    hasExcerpts: (signalId) => signalHasProofExcerpts(db, signalId),
+    insertExcerpts: async (message, excerpts) => {
+      const rows = await insertProofExcerpts(
+        db,
+        excerpts.map((excerpt) => ({
+          signalId: message.signalId,
+          practiceId: message.practiceId,
+          excerptText: excerpt.text,
+          startOffset: excerpt.startOffset,
+          topicHint: excerpt.topicHint,
+          // embedding stays NULL here; the inline pass (or the backfill
+          // Workflow) fills it together with embedding_model.
+        })),
+      );
+      return rows.map((row) => ({ id: row.id, text: row.excerptText }));
+    },
+    setExcerptEmbeddings: (updates) => setProofExcerptEmbeddings(db, updates),
   };
 }
 
@@ -319,6 +557,10 @@ export const classify: StageHandler<"classify"> = async (message, env) => {
     await classifySignal(message, env, {
       store: createClassifyStore(db),
       provider,
+      // Workers AI binding for inline bge-m3 embeddings (issue #71).
+      // Absent (e.g. local dev without the binding): excerpts keep a NULL
+      // embedding and the backfill Workflow in workers/jobs sweeps them.
+      embedder: env.AI ? createWorkersAiEmbedder(env.AI) : undefined,
       pipelineModel: cfg.PIPELINE_MODEL,
     });
   } finally {

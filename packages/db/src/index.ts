@@ -83,6 +83,16 @@ export {
   upsertContactPoint,
 } from "./queries/patients.js";
 export {
+  type ExcerptNeedingEmbedding,
+  type ExcerptsNeedingEmbeddingParams,
+  excerptsNeedingEmbedding,
+  insertProofExcerpts,
+  type NewProofExcerpt,
+  type ProofExcerptEmbeddingUpdate,
+  setProofExcerptEmbeddings,
+  signalHasProofExcerpts,
+} from "./queries/proofExcerpts.js";
+export {
   getSignal,
   insertNormalizedSignals,
   type NormalizedSignalOutcome,

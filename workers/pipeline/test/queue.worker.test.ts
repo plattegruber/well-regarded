@@ -13,9 +13,12 @@ import {
   getQueueResult,
 } from "cloudflare:test";
 import {
+  EXCERPTS_PROMPT_NAME,
   FakeAiProvider,
+  FakeEmbeddingProvider,
   JUDGMENTS_PROMPT_NAME,
   type JudgmentDerivation,
+  type PlannedExcerpt,
 } from "@wellregarded/ai";
 import {
   buildDlqForwardEnvelope,
@@ -32,6 +35,7 @@ import {
   type ClassifyDeps,
   type ClassifyStore,
   classifySignal,
+  type ExcerptEmbeddingUpdate,
 } from "../src/stages/classify";
 import {
   type NormalizeStore,
@@ -334,13 +338,18 @@ describe("classify stage on a real workerd batch (issue #67)", () => {
     },
   };
 
-  function makeStore(hasSignal: boolean) {
+  function makeStore(hasSignal: boolean, originalText?: string) {
     const inserted: (readonly JudgmentDerivation[])[] = [];
+    const insertedExcerpts: (readonly PlannedExcerpt[])[] = [];
+    const embeddingUpdates: ExcerptEmbeddingUpdate[] = [];
     const store: ClassifyStore = {
       getSignal: async () =>
         hasSignal
           ? {
               originalText:
+                originalText ??
+                // 13 words: the excerpt pass short-circuits to one
+                // whole-text excerpt with no extraction model call.
                 "Still in severe pain three days after my extraction and nobody calls back.",
               originalRating: "1.0",
               retentionState: "active" as const,
@@ -350,8 +359,19 @@ describe("classify stage on a real workerd batch (issue #67)", () => {
       insertJudgments: async (_message, rows) => {
         inserted.push(rows);
       },
+      hasExcerpts: async () => false,
+      insertExcerpts: async (_message, excerpts) => {
+        insertedExcerpts.push(excerpts);
+        return excerpts.map((excerpt, index) => ({
+          id: `excerpt-${index}`,
+          text: excerpt.text,
+        }));
+      },
+      setExcerptEmbeddings: async (updates) => {
+        embeddingUpdates.push(...updates);
+      },
     };
-    return { store, inserted };
+    return { store, inserted, insertedExcerpts, embeddingUpdates };
   }
 
   function handlersWith(deps: ClassifyDeps): StageHandlers {
@@ -394,6 +414,79 @@ describe("classify stage on a real workerd batch (issue #67)", () => {
       "publication_suitability",
     ]);
     expect(routeSend).toHaveBeenCalledExactlyOnceWith(validSignalStage);
+  });
+
+  it("acks after the second pass writes excerpts and inline embeddings (issues #69/#71)", async () => {
+    const multiTopic =
+      "Dr. Patel was gentle and explained every step of my root canal. " +
+      "The billing office quoted one price and charged me another. " +
+      "The waiting room was spotless and the coffee was free.";
+    const provider = new FakeAiProvider({
+      [JUDGMENTS_PROMPT_NAME]: [classifyFixture],
+      [EXCERPTS_PROMPT_NAME]: [
+        {
+          excerpts: [
+            {
+              text: "Dr. Patel was gentle and explained every step of my root canal.",
+              topic_hint: "provider care",
+            },
+            {
+              text: "The billing office quoted one price and charged me another.",
+              topic_hint: "billing",
+            },
+          ],
+        },
+      ],
+    });
+    const embedder = new FakeEmbeddingProvider();
+    const { store, insertedExcerpts, embeddingUpdates } = makeStore(
+      true,
+      multiTopic,
+    );
+    const routeSend = vi.fn().mockResolvedValue(undefined);
+
+    const batch = createMessageBatch("wr-classify", [
+      { id: "classify-4", timestamp, attempts: 1, body: validSignalStage },
+    ]);
+    const ctx = createExecutionContext();
+    await handleQueueBatch(
+      batch,
+      { ...env, ROUTE_QUEUE: { send: routeSend } },
+      handlersWith({
+        store,
+        provider,
+        embedder,
+        pipelineModel: "claude-haiku-4-5-20251001",
+      }),
+    );
+    const result = await getQueueResult(batch, ctx);
+
+    expect(result.explicitAcks).toEqual(["classify-4"]);
+    expect(provider.calls.map((call) => call.opts.purpose)).toEqual([
+      "judgments",
+      "excerpts",
+    ]);
+    expect(insertedExcerpts).toHaveLength(1);
+    const excerpts = insertedExcerpts[0] ?? [];
+    expect(excerpts.map((excerpt) => excerpt.topicHint)).toEqual([
+      "provider care",
+      "billing",
+    ]);
+    for (const excerpt of excerpts) {
+      // Verbatim slice invariant, straight off the real workerd run.
+      expect(
+        multiTopic.slice(
+          excerpt.startOffset,
+          excerpt.startOffset + excerpt.text.length,
+        ),
+      ).toBe(excerpt.text);
+    }
+    expect(embeddingUpdates).toHaveLength(2);
+    expect(embeddingUpdates.map((update) => update.embeddingModel)).toEqual([
+      "fake-bge-m3",
+      "fake-bge-m3",
+    ]);
+    expect(routeSend).toHaveBeenCalledTimes(1);
   });
 
   it("forwards to the classify DLQ and acks when the signal row is gone", async () => {

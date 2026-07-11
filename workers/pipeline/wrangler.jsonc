@@ -136,6 +136,13 @@
     { "binding": "RAW_ARTIFACTS", "bucket_name": "wr-raw-artifacts-local" }
   ],
 
+  // Workers AI, for inline bge-m3 excerpt embeddings in the classify stage
+  // (#71). NOTE: there is no local AI simulator — under `wrangler dev` the
+  // binding proxies to the real Workers AI API (needs a Cloudflare login and
+  // incurs real usage). Code treats env.AI as optional: without it, excerpt
+  // embeddings stay NULL and the backfill Workflow (workers/jobs) fills them.
+  "ai": { "binding": "AI" },
+
   "hyperdrive": [
     // The normalize stage (#104) writes `signals` + `import_runs`, the
     // classify stage (#67) re-reads `signals` and writes `derivations`, and
@@ -234,6 +241,7 @@
           "bucket_name": "wr-raw-artifacts-preview"
         }
       ],
+      "ai": { "binding": "AI" },
       "hyperdrive": [
         // <TBD>: real Hyperdrive config id — provisioned in Epic #2.
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
@@ -314,6 +322,7 @@
       "r2_buckets": [
         { "binding": "RAW_ARTIFACTS", "bucket_name": "wr-raw-artifacts-prod" }
       ],
+      "ai": { "binding": "AI" },
       "hyperdrive": [
         // <TBD>: real Hyperdrive config id — provisioned in Epic #2.
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
