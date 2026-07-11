@@ -6,7 +6,7 @@ contracts with their shared contract-test suite (issue #101). Every ingestion
 source — Google reviews, CSV imports, manual entry, later Open Dental and
 first-party feedback — flows through this package.
 
-Two entry points:
+Three entry points:
 
 - `@wellregarded/sources` — Workers-runtime clean (Web Crypto + zod only).
   Safe to import from any worker.
@@ -14,6 +14,11 @@ Two entry points:
   (`describeAdapterContract`), the test-only reference adapter, and the
   in-memory bucket fake. Imports `vitest`; **test files only, never worker
   code**.
+- `@wellregarded/sources/google/fake` — the fake Google Business Profile
+  server (issue #130): a Hono app + mutable store for every Epic #7 test,
+  also runnable standalone (`pnpm dev:fake-gbp`). Dev/test only, never
+  deployed; see [`src/google/fake/README.md`](src/google/fake/README.md)
+  for the fidelity contract.
 
 ## Raw artifacts (issue #100)
 

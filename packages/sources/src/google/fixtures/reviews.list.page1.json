@@ -1,0 +1,147 @@
+{
+  "reviews": [
+    {
+      "name": "accounts/1/locations/1/reviews/4",
+      "reviewId": "4",
+      "reviewer": {
+        "displayName": "Elena Gutierrez",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/fake-elena-gutierrez"
+      },
+      "starRating": "TWO",
+      "comment": "Quoted one price at the desk and billed my insurance for something else. Still untangling it a month later.",
+      "reviewReply": {
+        "comment": "We apologize for the billing confusion. Our manager has reached out to help resolve the insurance claim.",
+        "updateTime": "2026-06-12T05:35:36.000Z",
+        "reviewReplyState": "REJECTED",
+        "policyViolation": "Reply removed for policy violation: contains personal health information."
+      },
+      "createTime": "2026-06-11T05:35:36.000Z",
+      "updateTime": "2026-06-12T05:35:36.000Z"
+    },
+    {
+      "name": "accounts/1/locations/1/reviews/9",
+      "reviewId": "9",
+      "reviewer": {
+        "displayName": "Brad Huang",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/fake-brad-huang"
+      },
+      "starRating": "FIVE",
+      "comment": "They took my kids (4 and 7) for their first checkups — patient, funny, zero tears. We found our family dentist.",
+      "createTime": "2026-04-29T11:37:12.000Z",
+      "updateTime": "2026-04-29T11:37:12.000Z"
+    },
+    {
+      "name": "accounts/1/locations/1/reviews/11",
+      "reviewId": "11",
+      "reviewer": {
+        "displayName": "A Google user",
+        "isAnonymous": true
+      },
+      "starRating": "THREE",
+      "comment": "The work itself was solid. Parking downtown is a pain, plan extra time.",
+      "createTime": "2026-04-23T12:06:17.000Z",
+      "updateTime": "2026-04-23T12:06:17.000Z"
+    },
+    {
+      "name": "accounts/1/locations/1/reviews/15",
+      "reviewId": "15",
+      "reviewer": {
+        "displayName": "Derek Marsh",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/fake-derek-marsh"
+      },
+      "starRating": "THREE",
+      "comment": "Cleaning was fine, but I waited about 25 minutes past my appointment time.",
+      "reviewReply": {
+        "comment": "We apologize for the billing confusion. Our manager has reached out to help resolve the insurance claim.",
+        "updateTime": "2026-04-21T12:39:15.000Z",
+        "reviewReplyState": "APPROVED"
+      },
+      "createTime": "2026-04-18T12:39:15.000Z",
+      "updateTime": "2026-04-21T12:39:15.000Z"
+    },
+    {
+      "name": "accounts/1/locations/1/reviews/14",
+      "reviewId": "14",
+      "reviewer": {
+        "displayName": "Scott Okafor",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/fake-scott-okafor"
+      },
+      "starRating": "FOUR",
+      "createTime": "2026-01-09T17:08:15.000Z",
+      "updateTime": "2026-01-09T17:08:15.000Z"
+    },
+    {
+      "name": "accounts/1/locations/1/reviews/6",
+      "reviewId": "6",
+      "reviewer": {
+        "displayName": "Derek Huang",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/fake-derek-huang"
+      },
+      "starRating": "FIVE",
+      "comment": "Best cleaning I've ever had. The hygienist was gentle and explained everything as she went.",
+      "reviewReply": {
+        "comment": "Thank you! Making nervous patients comfortable is exactly what we aim for.",
+        "updateTime": "2025-10-31T11:06:06.000Z",
+        "reviewReplyState": "PENDING"
+      },
+      "createTime": "2025-10-28T11:06:06.000Z",
+      "updateTime": "2025-10-31T11:06:06.000Z"
+    },
+    {
+      "name": "accounts/1/locations/1/reviews/3",
+      "reviewId": "3",
+      "reviewer": {
+        "displayName": "Renee Okafor",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/fake-renee-okafor"
+      },
+      "starRating": "FIVE",
+      "comment": "The whole team remembered my name on the second visit. Little things like that matter.",
+      "reviewReply": {
+        "comment": "We're so glad you had a great visit! Thanks for trusting us with your smile.",
+        "updateTime": "2025-10-01T19:31:17.000Z",
+        "reviewReplyState": "APPROVED"
+      },
+      "createTime": "2025-09-30T19:31:17.000Z",
+      "updateTime": "2025-10-01T19:31:17.000Z"
+    },
+    {
+      "name": "accounts/1/locations/1/reviews/12",
+      "reviewId": "12",
+      "reviewer": {
+        "displayName": "Luis Brandt",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/fake-luis-brandt"
+      },
+      "starRating": "FIVE",
+      "comment": "The whole team remembered my name on the second visit. Little things like that matter.",
+      "createTime": "2025-08-20T03:54:47.000Z",
+      "updateTime": "2025-08-20T03:54:47.000Z"
+    },
+    {
+      "name": "accounts/1/locations/1/reviews/2",
+      "reviewId": "2",
+      "reviewer": {
+        "displayName": "Victor Tran",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/fake-victor-tran"
+      },
+      "starRating": "FIVE",
+      "comment": "Painless root canal. Never thought I'd type those words. Edit: adding a star since they fixed the billing mix-up quickly.",
+      "createTime": "2025-07-25T15:13:43.000Z",
+      "updateTime": "2025-08-02T15:13:43.000Z"
+    },
+    {
+      "name": "accounts/1/locations/1/reviews/8",
+      "reviewId": "8",
+      "reviewer": {
+        "displayName": "Ingrid Marsh",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/fake-ingrid-marsh"
+      },
+      "starRating": "FOUR",
+      "comment": "Dr. Patel fixed my chipped front tooth in one visit and it looks perfect. Couldn't be happier.",
+      "createTime": "2025-06-19T13:43:55.000Z",
+      "updateTime": "2025-06-19T13:43:55.000Z"
+    }
+  ],
+  "nextPageToken": "eyJvIjoxMH0",
+  "totalReviewCount": 15,
+  "averageRating": 4.4
+}

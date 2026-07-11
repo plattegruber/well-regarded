@@ -1,0 +1,97 @@
+{
+  "name": "locations/1",
+  "title": "Cedar Ridge Dental — Downtown",
+  "storefrontAddress": {
+    "regionCode": "US",
+    "languageCode": "en",
+    "postalCode": "49503",
+    "administrativeArea": "MI",
+    "locality": "Grand Rapids",
+    "addressLines": [
+      "412 Cedar Ridge Ave, Suite 200"
+    ]
+  },
+  "phoneNumbers": {
+    "primaryPhone": "+16165550142"
+  },
+  "categories": {
+    "primaryCategory": {
+      "name": "categories/gcid:dentist",
+      "displayName": "Dentist"
+    },
+    "additionalCategories": [
+      {
+        "name": "categories/gcid:cosmetic_dentist",
+        "displayName": "Cosmetic dentist"
+      },
+      {
+        "name": "categories/gcid:dental_hygienist",
+        "displayName": "Dental hygienist"
+      }
+    ]
+  },
+  "websiteUri": "https://cedarridgedental.example.com/downtown",
+  "regularHours": {
+    "periods": [
+      {
+        "openDay": "MONDAY",
+        "openTime": {
+          "hours": 8
+        },
+        "closeDay": "MONDAY",
+        "closeTime": {
+          "hours": 17
+        }
+      },
+      {
+        "openDay": "TUESDAY",
+        "openTime": {
+          "hours": 8
+        },
+        "closeDay": "TUESDAY",
+        "closeTime": {
+          "hours": 17
+        }
+      },
+      {
+        "openDay": "WEDNESDAY",
+        "openTime": {
+          "hours": 8
+        },
+        "closeDay": "WEDNESDAY",
+        "closeTime": {
+          "hours": 17
+        }
+      },
+      {
+        "openDay": "THURSDAY",
+        "openTime": {
+          "hours": 8
+        },
+        "closeDay": "THURSDAY",
+        "closeTime": {
+          "hours": 19
+        }
+      },
+      {
+        "openDay": "FRIDAY",
+        "openTime": {
+          "hours": 8
+        },
+        "closeDay": "FRIDAY",
+        "closeTime": {
+          "hours": 14
+        }
+      }
+    ]
+  },
+  "profile": {
+    "description": "Family and cosmetic dentistry: cleanings, crowns, implants, Invisalign, and same-day emergency visits. New patients welcome."
+  },
+  "metadata": {
+    "hasVoiceOfMerchant": true,
+    "placeId": "fake-place-1",
+    "mapsUri": "https://maps.google.com/?cid=fake-1",
+    "newReviewUri": "https://search.google.com/local/writereview?placeid=fake-place-1"
+  }
+}

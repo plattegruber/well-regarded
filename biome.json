@@ -1,7 +1,12 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.3/schema.json",
   "files": {
-    "includes": ["**", "!**/migrations/meta", "!**/worker-configuration.d.ts"]
+    "includes": [
+      "**",
+      "!**/migrations/meta",
+      "!**/worker-configuration.d.ts",
+      "!packages/sources/src/google/fixtures"
+    ]
   },
   "vcs": {
     "enabled": true,

@@ -35,3 +35,14 @@ ENVIRONMENT=local
 # not be rotated casually — rotating it orphans every stored value_hash.
 PII_ENCRYPTION_KEYS={"1":"JB0/YtR2n0wh265yN8SRYBs45Lp0yt7sE2m+Ty6LOaE="}
 PII_HASH_KEY=JKTMICa0vU/Ori8626X0AqH4D+At4aJ3cPg5JQBKqwI=
+
+# Google Business Profile base URLs (Epic #7). Unset = future code uses the
+# real Google hosts. For local dev point ALL of them at the fake GBP server
+# (issue #130): `pnpm dev:fake-gbp` serves every host from one origin on
+# port 8799 and prints ready-to-use credentials. These become real entries
+# in apiEnvSchema when #118 lands; until then they document the pattern.
+# GOOGLE_OAUTH_TOKEN_URL=http://localhost:8799/oauth/token
+# GOOGLE_ACCOUNT_MGMT_BASE_URL=http://localhost:8799
+# GOOGLE_BUSINESS_INFO_BASE_URL=http://localhost:8799
+# GOOGLE_VERIFICATIONS_BASE_URL=http://localhost:8799
+# GOOGLE_MYBUSINESS_V4_BASE_URL=http://localhost:8799
