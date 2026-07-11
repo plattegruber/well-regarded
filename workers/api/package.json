@@ -6,13 +6,15 @@
   "scripts": {
     "build": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "echo \"lint: no linter configured yet (Biome is a separate issue)\"",
+    "lint": "biome check .",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@wellregarded/core": "workspace:*"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260711.1",
+    "@wellregarded/tsconfig": "workspace:*",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }

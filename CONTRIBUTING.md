@@ -29,12 +29,15 @@ Ground rules that hold at every level:
 
 ## Lint and format
 
-Biome for both lint and format — no ESLint, no Prettier. The setup lands with [#27](https://github.com/plattegruber/well-regarded/issues/27); until then `pnpm lint` is a placeholder. Once it lands:
+Biome for both lint and format — no ESLint, no Prettier ([#27](https://github.com/plattegruber/well-regarded/issues/27)):
 
 ```sh
-pnpm lint       # check
-pnpm lint:fix   # auto-fix
+pnpm lint       # check (per workspace, via turbo)
+pnpm lint:fix   # auto-fix + format
+pnpm format     # format only
 ```
+
+Run `pnpm lint:fix` before pushing. TypeScript compiler options live in the shared [`packages/tsconfig`](packages/tsconfig) package (`base.json`, `worker.json`, `react.json`) — every workspace extends one of those; do not add per-workspace strictness overrides.
 
 ## Issue workflow
 

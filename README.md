@@ -19,9 +19,11 @@ pnpm i          # install all workspace dependencies
 pnpm dev        # run dev tasks via turbo (no workspace defines one yet)
 pnpm build      # build all workspaces
 pnpm test       # run every workspace's Vitest suite
-pnpm lint       # lint pipeline (placeholder until Biome lands in #27)
+pnpm lint       # biome check per workspace, via turbo
 pnpm typecheck  # tsc --noEmit in every workspace, no build required
 ```
+
+Biome replaces ESLint + Prettier; run `pnpm lint:fix` before pushing.
 
 That is the whole flow today — the repo is a scaffold, so `pnpm dev` has nothing persistent to run yet. The one-command local environment (`pnpm setup` → `pnpm dev` bringing up dashboard, API, pipeline, and Postgres with pgvector via docker compose, plus the local port table) is coming in [#29](https://github.com/plattegruber/well-regarded/issues/29). Until it lands, `pnpm i && pnpm test && pnpm typecheck` is the verification loop.
 
@@ -40,6 +42,7 @@ A pnpm + Turborepo monorepo. Workspaces live under `apps/*`, `workers/*`, and `p
 | `packages/core` | Domain types, zod schemas, permission matrix, consent logic, env validation |
 | `packages/ai` | Claude client wrapper, prompts, structured-output schemas, model routing, eval harness — placeholder |
 | `packages/sources` | `SourceAdapter` implementations: google, csv, manual, opendental, firstparty — placeholder |
+| `packages/tsconfig` | Shared strict TypeScript config (`base.json`, `worker.json`, `react.json`) that every workspace extends |
 | `infra/` | wrangler configs, environment matrix, deploy scripts — planned: [#28](https://github.com/plattegruber/well-regarded/issues/28) |
 | `docs/` | Architecture doc, ADRs, runbooks |
 

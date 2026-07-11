@@ -1,11 +1,7 @@
 {
+  "extends": "@wellregarded/tsconfig/base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "isolatedModules": true,
-    "skipLibCheck": true,
+    "noEmit": false,
     "declaration": true,
     "rootDir": "src",
     "outDir": "dist"
