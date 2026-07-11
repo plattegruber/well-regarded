@@ -1,4 +1,4 @@
-import type { StaffRole } from "../staff";
+import type { StaffRole } from "../staff.js";
 
 /**
  * The authenticated staff member asking to act. This is the same shape the

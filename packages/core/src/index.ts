@@ -1,12 +1,16 @@
 export const PACKAGE_NAME = "@wellregarded/core";
 
-export * from "./audit";
-export * from "./consent";
-export * from "./crypto/fieldEncryption";
-export * from "./derivations";
-export * from "./env";
-export * from "./patients";
-export * from "./patientTokens";
-export * from "./permissions";
-export * from "./signals";
-export * from "./staff";
+// Extensionful specifiers (already the convention in packages/db, and
+// load-bearing here): tsc emits these paths verbatim, and plain Node ESM —
+// which runs the compiled dist directly for the seed CLI (#32) — resolves
+// only fully specified paths. Bundlers (vitest, wrangler) accept either.
+export * from "./audit.js";
+export * from "./consent.js";
+export * from "./crypto/fieldEncryption.js";
+export * from "./derivations.js";
+export * from "./env.js";
+export * from "./patients.js";
+export * from "./patientTokens.js";
+export * from "./permissions/index.js";
+export * from "./signals.js";
+export * from "./staff.js";

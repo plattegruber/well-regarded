@@ -85,6 +85,66 @@ fixed by a new corrective migration, never by editing the old file.
 `devDependencies` and **must never be imported by Worker code** — nothing
 under `src/` may import it, so it is never bundled.
 
+## Demo seed
+
+`pnpm seed` (root) or `pnpm --filter @wellregarded/db seed` wipes and
+recreates the demo practice — **Cedar Ridge Dental**, the practice from
+the design mockup (`design/README.md`). `pnpm run setup` runs it
+automatically. The seed lives in `src/seed/` (entrypoint `src/seed/cli.ts`,
+fixture data in `src/seed/fixtures/`) and connects via `DATABASE_URL`,
+defaulting to the canonical local compose string.
+
+What the dataset contains:
+
+- **1 practice** (Cedar Ridge Dental, slug `cedar-ridge-dental`),
+  **2 locations** (Main Street, North), **4 providers** (Dr. Aldana,
+  Dr. Patel, Dr. Kim, and Dr. Shah — the newer associate whose only
+  evidence is recent, private, and unconsented), **5 staff members**,
+  **10 patients** with encrypted contact points.
+- **80 signals** across every source kind (44 Google, 12 CSV import,
+  12 first-party, 7 email, 5 manual), rating-skewed like a real corpus,
+  spread over ~2 years, including two `deleted_at_source` and the
+  mockup's narrative threads (the two-star billing complaint, the
+  Tuesday-wait cluster at North, implant anxiety relief, the dated
+  Invisalign proof gap).
+- **Derivations** with all four bases (`source_metadata`, `manual`,
+  `inferred_text`, `inferred_related`), varied confidence, and
+  `model_version = 'seed-fixture'` for inferred rows.
+- **Consents in every state**: active `patient_link` grants, a superseded
+  (narrowed) chain, `practice_attested`, `imported_unknown`, one revoked,
+  one expired — and no consent row at all for ~69 of 80 signals (the
+  common case; publication must refuse for these).
+- **Proof excerpts with `embedding = NULL`** — the embedding backfill is
+  Epic #9's job; the seed never fakes vectors.
+- Every `csv_import` signal carries the deterministic demo
+  `import_run_id`; the `import_runs` row itself lands with Epic #6 (the
+  table does not exist yet). `recovery_items` likewise arrive with
+  Epic #15.
+
+Rules and properties:
+
+- **Deterministic** (issue #32): fixed faker seed (`SEED_FAKER_SEED = 32`
+  in `src/seed/constants.ts`; narratives are hand-committed fixture data),
+  all timestamps computed from the hardcoded `SEED_ANCHOR`
+  (2026-07-10 — the mockup's screen date), and stable primary keys via
+  `seedId(name)` hashing. Two caveats, inherent to routing through the
+  domain helpers: consent and contact-point row ids are
+  database-generated, and `value_encrypted` differs per run (fresh
+  AES-GCM IV) while decrypting to identical plaintexts — `value_hash` is
+  deterministic.
+- **Idempotent, wipe-and-recreate, scoped to the demo practice only** —
+  it finds the practice by `clerk_org_id` and never touches other rows.
+- **Guarded**: refuses when `ENVIRONMENT=prod` (no override) and refuses
+  non-loopback `DATABASE_URL`s unless `--force` is passed.
+- **Domain logic is never bypassed**: consents go through `grantConsent`
+  / `revokeConsent`, contact points through `upsertContactPoint` with the
+  committed dev-only keyring (`src/seed/devKeyring.ts`, matching every
+  `.dev.vars.example` — never a production key).
+- **`SEED_VERSION` (currently 1): changing the seed data is a breaking
+  change for E2E** (Epic #25 runs against exactly this dataset). Bump the
+  constant in `src/seed/constants.ts` with any dataset change and call it
+  out in the PR description.
+
 ## PII & field encryption
 
 Patient identity lives in the isolated `pii` Postgres schema

@@ -1,5 +1,5 @@
-import type { StaffRole } from "../staff";
-import type { Action } from "./actions";
+import type { StaffRole } from "../staff.js";
+import type { Action } from "./actions.js";
 
 /**
  * One cell of the permission matrix:

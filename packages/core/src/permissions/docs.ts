@@ -1,6 +1,6 @@
-import { STAFF_ROLES } from "../staff";
-import { ACTIONS } from "./actions";
-import { PERMISSION_MATRIX } from "./matrix";
+import { STAFF_ROLES } from "../staff.js";
+import { ACTIONS } from "./actions.js";
+import { PERMISSION_MATRIX } from "./matrix.js";
 
 /**
  * Renders `docs/permissions.md` from the permission matrix data, so the
