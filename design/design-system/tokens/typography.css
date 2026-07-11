@@ -1,0 +1,30 @@
+:root {
+  /* Families */
+  --font-display: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", Menlo, monospace;
+
+  /* Scale — display */
+  --text-display-xl: 500 60px/1.02 var(--font-display);  /* hero */
+  --text-display-lg: 500 42px/1.06 var(--font-display);  /* page hero */
+  --text-display-md: 500 30px/1.15 var(--font-display);  /* section */
+  --text-display-sm: 500 22px/1.25 var(--font-display);  /* card feature */
+
+  /* Scale — UI */
+  --text-title: 600 16px/1.35 var(--font-sans);       /* screen/card titles */
+  --text-body: 400 15px/1.55 var(--font-sans);        /* default body */
+  --text-body-strong: 600 15px/1.55 var(--font-sans);
+  --text-small: 400 13px/1.5 var(--font-sans);        /* secondary, meta */
+
+  /* Mono — labels, data, review excerpts */
+  --text-label: 500 11px/1.4 var(--font-mono);        /* uppercase + tracked */
+  --text-data: 500 13px/1.5 var(--font-mono);         /* table values, metrics meta */
+  --text-quote: 400 14px/1.7 var(--font-mono);        /* review excerpts read like logs */
+
+  /* Letterspacing */
+  --tracking-display: -0.03em;
+  --tracking-label: 0.08em;
+
+  /* Numerals in metrics use tabular figures */
+  --numeric: "tnum" 1; /* @kind other */
+}
