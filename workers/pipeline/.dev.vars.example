@@ -1,0 +1,9 @@
+# Local env for `wrangler dev` in workers/pipeline. Copy to `.dev.vars` (done
+# for you by `pnpm setup`); `.dev.vars` is gitignored and never committed.
+# Keep in sync with `pipelineEnvSchema` in packages/core/src/env.ts and docs/secrets.md.
+
+# Which environment this isolate believes it is in ("local" | "preview" | "prod").
+ENVIRONMENT=local
+
+# No Hyperdrive binding here: the pipeline worker talks to queues only, so it
+# needs no local Postgres connection string.

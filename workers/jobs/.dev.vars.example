@@ -1,0 +1,9 @@
+# Local env for `wrangler dev` in workers/jobs. Copy to `.dev.vars` (done for
+# you by `pnpm setup`); `.dev.vars` is gitignored and never committed.
+# Keep in sync with `jobsEnvSchema` in packages/core/src/env.ts and docs/secrets.md.
+
+# Which environment this isolate believes it is in ("local" | "preview" | "prod").
+ENVIRONMENT=local
+
+# The local Hyperdrive->Postgres connection string does NOT go here — wrangler
+# ignores it in .dev.vars. It lives in this directory's `.env` (see .env.example).

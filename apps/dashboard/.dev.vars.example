@@ -1,0 +1,14 @@
+# Local env for `wrangler dev` in apps/dashboard. Copy to `.dev.vars` (done
+# for you by `pnpm setup`); `.dev.vars` is gitignored and never committed.
+# Keep in sync with `dashboardEnvSchema` in packages/core/src/env.ts and docs/secrets.md.
+
+# Which environment this isolate believes it is in ("local" | "preview" | "prod").
+ENVIRONMENT=local
+
+# The local Hyperdrive->Postgres connection string does NOT go here — wrangler
+# ignores it in .dev.vars. It lives in this directory's `.env` (see .env.example).
+
+# Clerk credentials — optional until Epic #4 lands auth; uncomment and fill in
+# real test-instance keys to exercise authenticated flows locally.
+# CLERK_SECRET_KEY=sk_test_placeholder
+# CLERK_PUBLISHABLE_KEY=pk_test_placeholder

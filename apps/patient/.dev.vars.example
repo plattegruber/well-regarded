@@ -1,0 +1,9 @@
+# Local env for `wrangler dev` in apps/patient. Copy to `.dev.vars` (done for
+# you by `pnpm setup`); `.dev.vars` is gitignored and never committed.
+# Keep in sync with `patientEnvSchema` in packages/core/src/env.ts and docs/secrets.md.
+
+# Which environment this isolate believes it is in ("local" | "preview" | "prod").
+ENVIRONMENT=local
+
+# No Hyperdrive binding here: patient pages stay minimal-dependency by design,
+# so this worker needs no local Postgres connection string.
