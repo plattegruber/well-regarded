@@ -1,0 +1,52 @@
+// Wrangler configuration for the Well Regarded patient app (`wr-patient-<env>`).
+//
+// !! Bindings are NOT inherited across envs — edit all three sections !!
+// The patient app deliberately has NO platform bindings yet (its "minimal
+// deps" mandate) — only vars. When bindings are eventually added, remember
+// wrangler environments do not inherit them: repeat each binding in the
+// top-level (local) block AND both env blocks.
+//
+// React Router v7 wiring (`@cloudflare/vite-plugin` consumes this file) lands
+// in Epic #5.
+//
+// Environment matrix: see infra/environments.md. Binding names are API surface
+// and are documented in docs/architecture-bindings.md.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  // Top-level config is the LOCAL default (`wrangler dev` with Miniflare
+  // simulators). Local runs never deploy; the name still follows the
+  // `wr-<name>-<env>` convention so logs stay consistent.
+  "name": "wr-patient-local",
+  // Worker entrypoint. Kept separate from src/index.ts: workerd only allows
+  // handler/DO exports on the entry module, and unit tests import src/index.ts
+  // under Node.
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Fixed ports so `pnpm dev` can run every worker side by side.
+  "dev": {
+    "port": 8790,
+    "inspector_port": 9232
+  },
+
+  "vars": {
+    "ENVIRONMENT": "local"
+  },
+
+  "env": {
+    "preview": {
+      "name": "wr-patient-preview",
+      "vars": {
+        "ENVIRONMENT": "preview"
+      }
+    },
+    "prod": {
+      "name": "wr-patient-prod",
+      "vars": {
+        "ENVIRONMENT": "prod"
+      }
+    }
+  }
+}

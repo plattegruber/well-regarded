@@ -8,7 +8,13 @@
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": [
+        "CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_*",
+        "WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_*",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN"
+      ]
     },
     "test": {
       "dependsOn": ["^build"]
