@@ -15,6 +15,7 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "typecheck": "turbo run typecheck",
+    "gen:docs": "pnpm --filter @wellregarded/core gen:docs",
     "db:generate": "pnpm --filter @wellregarded/db db:generate",
     "db:migrate": "pnpm --filter @wellregarded/db db:migrate",
     "db:studio": "pnpm --filter @wellregarded/db db:studio"
