@@ -18,12 +18,21 @@
  *
  * Content addressing & immutability
  * ---------------------------------
- * Keys are `{practiceId}/{sourceKind}/{sha256(content)}.json`, hashed over
+ * Keys are `{practiceId}/{context}/{sha256(content)}.{ext}`, hashed over
  * the exact bytes written. Same content ⇒ same key, so writes are naturally
  * idempotent and it is impossible by construction to write different content
  * to an existing key — that is the reason for the scheme, not an accident of
- * it. Artifacts are never overwritten or mutated; `putRawArtifact` skips the
+ * it. Artifacts are never overwritten or mutated; the put helpers skip the
  * write entirely when the key already exists (idempotent re-import).
+ *
+ * Two contexts share this one storage path (issue #133 — do NOT fork a
+ * second one):
+ * - adapter payloads: `{practiceId}/{sourceKind}/{sha256}.json`
+ *   ({@link putRawArtifact}), where `context` is a `SourceKind`;
+ * - uploaded CSV imports: `{practiceId}/imports/{sha256}.csv`
+ *   ({@link putRawImportArtifact}), where `context` is the literal
+ *   `imports` segment ({@link RAW_IMPORT_CONTEXT} — reserved, not a
+ *   `SourceKind`, so the two can never collide).
  *
  * Retention
  * ---------
@@ -167,4 +176,114 @@ export async function getRawArtifact(
     throw new ArtifactNotFoundError(key);
   }
   return JSON.parse(await object.text());
+}
+
+// ---------------------------------------------------------------------------
+// The `imports` context (issue #133, Epic #8) — uploaded CSV files.
+// ---------------------------------------------------------------------------
+
+/**
+ * The key segment for uploaded import files, sitting where a `SourceKind`
+ * sits for adapter payloads: `{practiceId}/imports/{sha256}.csv`. Reserved:
+ * `"imports"` must never be added to `SOURCE_KINDS`, or the two contexts
+ * would collide in one namespace.
+ */
+export const RAW_IMPORT_CONTEXT = "imports";
+
+/**
+ * What {@link putRawImportArtifact} and the preview read need from the
+ * bucket, over and above {@link RawArtifactBucket}: a ranged `get` (the
+ * preview reads only the head of a possibly-50MB object) whose result
+ * carries the full object `size` (so callers can tell a truncated read
+ * from a short file) and raw bytes. The real `R2Bucket` satisfies this —
+ * the compile-time assertion in `rawArtifacts.test.ts` keeps that true.
+ * Note: R2 semantics — `size` is the TOTAL object size even for a ranged
+ * read; `arrayBuffer()` returns only the requested range.
+ */
+export interface RawImportBucket extends RawArtifactBucket {
+  get(
+    key: string,
+    options?: { range?: { offset: number; length: number } },
+  ): Promise<{
+    size: number;
+    arrayBuffer(): Promise<ArrayBuffer>;
+    text(): Promise<string>;
+  } | null>;
+}
+
+export interface RawImportRef {
+  practiceId: string;
+  /**
+   * The exact uploaded bytes. Bytes, not a string, on purpose: a CSV is
+   * user-supplied binary until proven otherwise, and decoding it to a
+   * string before hashing would both risk lossy transcoding and double
+   * the memory (UTF-16) of a large upload.
+   */
+  bytes: Uint8Array;
+}
+
+/**
+ * Derives `{practiceId}/imports/{sha256(bytes)}.csv` without writing.
+ * Deterministic, same contract as {@link computeRawArtifactKey}.
+ */
+export async function computeRawImportKey({
+  practiceId,
+  bytes,
+}: RawImportRef): Promise<string> {
+  const hash = await sha256Hex(bytes);
+  return `${practiceId}/${RAW_IMPORT_CONTEXT}/${hash}.csv`;
+}
+
+/**
+ * Stores an uploaded CSV under its content-addressed key and returns the
+ * key. Same rules as {@link putRawArtifact}: await it before persisting
+ * anything that references the key (store-before-reference), idempotent
+ * on re-upload of identical bytes. Written with `contentType: text/csv`
+ * and custom metadata (`practiceId`, `context`, `storedAt`).
+ */
+export async function putRawImportArtifact(
+  bucket: RawImportBucket,
+  { practiceId, bytes }: RawImportRef,
+): Promise<{ key: string }> {
+  const hash = await sha256Hex(bytes);
+  const key = `${practiceId}/${RAW_IMPORT_CONTEXT}/${hash}.csv`;
+
+  const existing = await bucket.head(key);
+  if (existing !== null) {
+    // Idempotent re-upload: same bytes ⇒ same key ⇒ nothing to do.
+    return { key };
+  }
+
+  await bucket.put(key, bytes, {
+    httpMetadata: { contentType: "text/csv" },
+    customMetadata: {
+      practiceId,
+      context: RAW_IMPORT_CONTEXT,
+      storedAt: new Date().toISOString(),
+    },
+  });
+
+  return { key };
+}
+
+/**
+ * Reads the first `maxBytes` of a stored import via a ranged get — the
+ * preview path (issue #133 req. 2) that must never materialize the whole
+ * file. Throws {@link ArtifactNotFoundError} on a missing key.
+ * `truncated` is true when the object continues past the returned bytes
+ * (callers then drop the final partial CSV row).
+ */
+export async function getRawImportHead(
+  bucket: RawImportBucket,
+  key: string,
+  maxBytes: number,
+): Promise<{ bytes: Uint8Array; truncated: boolean }> {
+  const object = await bucket.get(key, {
+    range: { offset: 0, length: maxBytes },
+  });
+  if (object === null) {
+    throw new ArtifactNotFoundError(key);
+  }
+  const bytes = new Uint8Array(await object.arrayBuffer());
+  return { bytes, truncated: object.size > bytes.byteLength };
 }

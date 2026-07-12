@@ -1,7 +1,7 @@
-// Settings (#132): a section list instead of an EmptyState — six cards,
-// one per settings area. Practice profile is live (the #141 reference
-// page); the rest are placeholders that later epics activate (API keys via
-// Epic #14, integrations via Epics #7/#8).
+// Settings (#132): a section list instead of an EmptyState — one card per
+// settings area. Practice profile (the #141 reference page) and Imports
+// (#133) are live; the rest are placeholders that later epics activate
+// (API keys via Epic #14, integrations via Epics #7/#8).
 import { Link } from "react-router";
 
 import { PageHeader } from "~/components/shell/page-header";
@@ -33,6 +33,11 @@ export const SETTINGS_SECTIONS: Section[] = [
   {
     title: "Integrations",
     description: "Google Business Profile and other feedback sources.",
+  },
+  {
+    title: "Imports",
+    description: "Bring past reviews in from another system's CSV export.",
+    to: "/settings/imports",
   },
   {
     title: "API keys",

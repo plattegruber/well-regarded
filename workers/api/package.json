@@ -17,8 +17,10 @@
     "@clerk/backend": "^3.11.4",
     "@wellregarded/core": "workspace:*",
     "@wellregarded/db": "workspace:*",
+    "@wellregarded/sources": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.29",
+    "papaparse": "^5.5.4",
     "svix": "^1.96.1",
     "zod": "^4.4.3"
   },
@@ -26,6 +28,7 @@
     "@cloudflare/workers-types": "^5.20260711.1",
     "@faker-js/faker": "^10.5.0",
     "@types/node": "^26.1.1",
+    "@types/papaparse": "^5.5.2",
     "@wellregarded/tsconfig": "workspace:*",
     "jose": "^6.2.3",
     "postgres": "^3.4.9",

@@ -49,7 +49,10 @@
   },
 
   "vars": {
-    "ENVIRONMENT": "local"
+    "ENVIRONMENT": "local",
+    // Browser-visible origin of the api worker (wr-api-<env>) — the CSV
+    // import screen (#133) uploads straight from the browser to it.
+    "API_URL": "http://localhost:8787"
   },
 
   "hyperdrive": [
@@ -64,7 +67,9 @@
     "preview": {
       "name": "wr-dashboard-preview",
       "vars": {
-        "ENVIRONMENT": "preview"
+        "ENVIRONMENT": "preview",
+        // <TBD>: the wr-api-preview public origin — provisioned in Epic #2.
+        "API_URL": "TBD-provision-in-epic-2"
       },
       "hyperdrive": [
         // <TBD>: id of Hyperdrive config `wr-hyperdrive-preview` — Epic #2.
@@ -74,7 +79,9 @@
     "prod": {
       "name": "wr-dashboard-prod",
       "vars": {
-        "ENVIRONMENT": "prod"
+        "ENVIRONMENT": "prod",
+        // <TBD>: the wr-api-prod public origin — provisioned in Epic #2.
+        "API_URL": "TBD-provision-in-epic-2"
       },
       "hyperdrive": [
         // <TBD>: id of Hyperdrive config `wr-hyperdrive-prod` — Epic #2.

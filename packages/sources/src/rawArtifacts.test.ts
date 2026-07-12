@@ -4,18 +4,25 @@ import { describe, expect, it } from "vitest";
 import {
   ArtifactNotFoundError,
   computeRawArtifactKey,
+  computeRawImportKey,
   getRawArtifact,
+  getRawImportHead,
   putRawArtifact,
+  putRawImportArtifact,
   type RawArtifactBucket,
+  type RawImportBucket,
 } from "./rawArtifacts.js";
 import { InMemoryRawArtifactBucket } from "./testing/inMemoryBucket.js";
 
-// Compile-time: the real R2 binding satisfies the injected interface, so
+// Compile-time: the real R2 binding satisfies the injected interfaces, so
 // workers can pass `env.<BUCKET>` straight to the helpers. (Checked by
 // `pnpm typecheck`, which includes test files.)
 const _realBindingSatisfiesInterface: RawArtifactBucket =
   undefined as unknown as R2Bucket;
 void _realBindingSatisfiesInterface;
+const _realBindingSatisfiesImportInterface: RawImportBucket =
+  undefined as unknown as R2Bucket;
+void _realBindingSatisfiesImportInterface;
 
 const PRACTICE_A = "6f2f9d4e-6a2b-4c8e-9a51-000000000001";
 const PRACTICE_B = "6f2f9d4e-6a2b-4c8e-9a51-000000000002";
@@ -167,5 +174,106 @@ describe("getRawArtifact", () => {
       name: "ArtifactNotFoundError",
       key: missing,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The `imports` context (issue #133)
+// ---------------------------------------------------------------------------
+
+const csvBytes = new TextEncoder().encode(
+  "Date,Rating,Review\n2024-01-02,5,Great cleaning\n",
+);
+
+describe("computeRawImportKey / putRawImportArtifact", () => {
+  it("derives {practiceId}/imports/{sha256}.csv — same path, distinct context", async () => {
+    const key = await computeRawImportKey({
+      practiceId: PRACTICE_A,
+      bytes: csvBytes,
+    });
+    expect(key).toMatch(
+      new RegExp(`^${PRACTICE_A}/imports/[0-9a-f]{64}\\.csv$`),
+    );
+  });
+
+  it("writes the exact bytes with text/csv and imports-context metadata", async () => {
+    const bucket = new InMemoryRawArtifactBucket();
+    const { key } = await putRawImportArtifact(bucket, {
+      practiceId: PRACTICE_A,
+      bytes: csvBytes,
+    });
+
+    expect(key).toBe(
+      await computeRawImportKey({ practiceId: PRACTICE_A, bytes: csvBytes }),
+    );
+    const stored = bucket.objects.get(key);
+    expect(stored?.body).toEqual(csvBytes);
+    expect(stored?.contentType).toBe("text/csv");
+    expect(stored?.customMetadata?.practiceId).toBe(PRACTICE_A);
+    expect(stored?.customMetadata?.context).toBe("imports");
+  });
+
+  it("is idempotent: re-uploading identical bytes writes once", async () => {
+    const bucket = new InMemoryRawArtifactBucket();
+    const ref = { practiceId: PRACTICE_A, bytes: csvBytes };
+    const first = await putRawImportArtifact(bucket, ref);
+    const second = await putRawImportArtifact(bucket, { ...ref });
+    expect(second.key).toBe(first.key);
+    expect(bucket.writeCount).toBe(1);
+  });
+
+  it("keys are tenant-scoped like adapter artifacts", async () => {
+    const a = await computeRawImportKey({
+      practiceId: PRACTICE_A,
+      bytes: csvBytes,
+    });
+    const b = await computeRawImportKey({
+      practiceId: PRACTICE_B,
+      bytes: csvBytes,
+    });
+    expect(a).not.toBe(b);
+  });
+});
+
+describe("getRawImportHead", () => {
+  it("returns the whole object untruncated when it fits the window", async () => {
+    const bucket = new InMemoryRawArtifactBucket();
+    const { key } = await putRawImportArtifact(bucket, {
+      practiceId: PRACTICE_A,
+      bytes: csvBytes,
+    });
+
+    const head = await getRawImportHead(bucket, key, 1024);
+    expect(head.bytes).toEqual(csvBytes);
+    expect(head.truncated).toBe(false);
+  });
+
+  it("reads only the requested range of a larger object and flags truncation", async () => {
+    const bucket = new InMemoryRawArtifactBucket();
+    const big = new Uint8Array(10_000).fill(97); // 'a' × 10k
+    const { key } = await putRawImportArtifact(bucket, {
+      practiceId: PRACTICE_A,
+      bytes: big,
+    });
+
+    const head = await getRawImportHead(bucket, key, 256);
+    expect(head.bytes.byteLength).toBe(256);
+    expect(head.truncated).toBe(true);
+    // The read was ranged — the whole object was never fetched.
+    expect(bucket.gets.at(-1)).toEqual({
+      key,
+      range: { offset: 0, length: 256 },
+    });
+  });
+
+  it("throws ArtifactNotFoundError on a missing key", async () => {
+    const bucket = new InMemoryRawArtifactBucket();
+    await expect(
+      getRawImportHead(
+        bucket,
+        `${PRACTICE_A}/imports/${"0".repeat(64)}.csv`,
+        256,
+      ),
+    ).rejects.toBeInstanceOf(ArtifactNotFoundError);
   });
 });
