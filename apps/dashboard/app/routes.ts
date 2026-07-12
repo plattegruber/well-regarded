@@ -16,6 +16,8 @@ export default [
     // Signal detail (#90): provenance, derivations, consent, related items.
     route("signals/:signalId", "routes/signals.$signalId.tsx"),
     route("reviews", "routes/reviews.tsx"),
+    // Review detail (#77): honest derivations, attribution, response seam.
+    route("reviews/:signalId", "routes/reviews.$signalId.tsx"),
     route("recovery", "routes/recovery.tsx"),
     route("proof", "routes/proof.tsx"),
     route("coverage", "routes/coverage.tsx"),

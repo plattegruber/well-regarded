@@ -19,6 +19,7 @@ export * from "./patientTokens.js";
 export * from "./permissions/index.js";
 export * from "./pipeline/index.js";
 export * from "./practiceProfile.js";
+export * from "./reviews.js";
 export * from "./signals.js";
 export * from "./sourceConnections.js";
 export * from "./staff.js";
