@@ -36,6 +36,7 @@
 
 import { faker } from "@faker-js/faker";
 import type { Keyring } from "@wellregarded/core";
+import { STARTER_RESPONSE_TEMPLATES } from "@wellregarded/core";
 import { eq } from "drizzle-orm";
 
 import type { Tx } from "../audit.js";
@@ -49,6 +50,7 @@ import { importRuns } from "../schema/importRuns.js";
 import { contactPoints, patients } from "../schema/pii.js";
 import { proofExcerpts } from "../schema/proofExcerpts.js";
 import { responses } from "../schema/responses.js";
+import { responseTemplates } from "../schema/responseTemplates.js";
 import { signals } from "../schema/signals.js";
 import {
   locations,
@@ -97,6 +99,7 @@ export interface SeedSummary {
   importRuns: number;
   /** Imported pre-existing Google owner replies (#214). */
   responses: number;
+  responseTemplates: number;
 }
 
 export interface RunSeedOptions {
@@ -153,6 +156,7 @@ export async function runSeed(
       practiceId,
       signalIds,
     );
+    const templateCount = await insertResponseTemplates(tx, practiceId);
 
     return {
       practiceId,
@@ -167,6 +171,7 @@ export async function runSeed(
       proofExcerpts: excerptCount,
       importRuns: importRunCount,
       responses: responseCount,
+      responseTemplates: templateCount,
     };
   });
 }
@@ -203,6 +208,9 @@ async function upsertPractice(tx: Tx): Promise<string> {
 
   const practiceId = existing.id;
   // Children first — order respects every FK into and out of each table.
+  await tx
+    .delete(responseTemplates)
+    .where(eq(responseTemplates.practiceId, practiceId));
   await tx
     .delete(proofExcerpts)
     .where(eq(proofExcerpts.practiceId, practiceId));
@@ -622,6 +630,31 @@ async function insertConsents(
     }
   }
   return count;
+}
+
+/**
+ * The four starter response templates (issue #83 requirement 5): copy from
+ * `STARTER_RESPONSE_TEMPLATES` in `@wellregarded/core` (asserted safe
+ * against the deterministic privacy layer in packages/ai's tests), with
+ * deterministic ids so E2E can select against them. Runtime practice
+ * creation seeds the same set through `seedStarterTemplates` in
+ * ../queries/responseTemplates.ts; the demo seed inserts directly like
+ * every other plain table (the wipe just emptied the practice).
+ */
+async function insertResponseTemplates(
+  tx: Tx,
+  practiceId: string,
+): Promise<number> {
+  await tx.insert(responseTemplates).values(
+    STARTER_RESPONSE_TEMPLATES.map((template) => ({
+      id: seedId(`template:${template.key}`),
+      practiceId,
+      name: template.name,
+      body: template.body,
+      tone: template.tone,
+    })),
+  );
+  return STARTER_RESPONSE_TEMPLATES.length;
 }
 
 async function insertProofExcerpts(

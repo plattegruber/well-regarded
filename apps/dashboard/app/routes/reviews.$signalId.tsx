@@ -24,8 +24,9 @@ import {
   isNegativeReview,
   reviewStatusFromResponseState,
 } from "@wellregarded/core";
-import { getReviewDetail } from "@wellregarded/db";
+import { getReviewDetail, listResponseTemplates } from "@wellregarded/db";
 import { data, Link } from "react-router";
+import { ResponseComposer } from "~/components/responses/response-composer";
 import { ResponseWorkflowPanel } from "~/components/responses/response-workflow-panel";
 import {
   REVIEW_SOURCE_TITLES,
@@ -184,6 +185,49 @@ export async function loader({ params, context }: Route.LoaderArgs) {
             sentiment: (sentimentValue as Sentiment | undefined) ?? null,
           }),
           action: `/reviews/${params.signalId}/responses`,
+        };
+      })(),
+      // The composer (#79 + #83): shown when there is something to draft —
+      // no response yet, or the latest one is back in draft. Hidden for
+      // reviews deleted at the source (nothing can publish) and for
+      // viewers without draft_response (hidden, not disabled — and the
+      // action re-checks). Templates are the ACTIVE ones only (#83);
+      // reviewer display names aren't captured from any source yet, so
+      // `{reviewer_name}` follows the anonymous path on insert.
+      composer: await (async () => {
+        const latest = detail.responses[0];
+        const canDraft = can(ctx.actor, "draft_response", {
+          practiceId,
+          locationId: detail.signal.locationId,
+        });
+        const drafting = !latest || latest.status === "draft";
+        if (
+          !canDraft ||
+          !drafting ||
+          signal.availability === "deleted_at_source"
+        ) {
+          return null;
+        }
+        const templates = await listResponseTemplates(db, practiceId, {
+          activeOnly: true,
+        });
+        return {
+          draft:
+            latest && latest.status === "draft"
+              ? {
+                  id: latest.id,
+                  body: latest.body,
+                  rejectionComment: latest.rejectionComment,
+                }
+              : null,
+          templates: templates.map((template) => ({
+            id: template.id,
+            name: template.name,
+            tone: template.tone,
+            body: template.body,
+          })),
+          reviewerName: null,
+          practiceName: ctx.practiceName,
         };
       })(),
       // Honesty note for sources that hold replies we do not capture yet
@@ -352,16 +396,29 @@ export default function ReviewDetail({ loaderData }: Route.ComponentProps) {
           <ResponseThreadSlot
             entries={d.responses}
             sourceNote={d.responseSourceNote}
-            // The workflow panel (#80/#82) mounts in the composer seam;
-            // #79's compose form joins it here when it lands.
+            // The composer seam (#77): while there's something to draft,
+            // the #79 composer owns the slot (it carries the draft-state
+            // affordances — rejection comment, save, submit — itself);
+            // otherwise the #80/#82 workflow panel renders the actions for
+            // the latest response's state.
             composer={
-              <ResponseWorkflowPanel
-                latest={d.workflow.latest}
-                canDraft={d.workflow.canDraft}
-                canApprove={d.workflow.canApprove}
-                reviewIsNegative={d.workflow.reviewIsNegative}
-                action={d.workflow.action}
-              />
+              d.composer ? (
+                <ResponseComposer
+                  action={d.workflow.action}
+                  draft={d.composer.draft}
+                  templates={d.composer.templates}
+                  reviewerName={d.composer.reviewerName}
+                  practiceName={d.composer.practiceName}
+                />
+              ) : (
+                <ResponseWorkflowPanel
+                  latest={d.workflow.latest}
+                  canDraft={d.workflow.canDraft}
+                  canApprove={d.workflow.canApprove}
+                  reviewIsNegative={d.workflow.reviewIsNegative}
+                  action={d.workflow.action}
+                />
+              )
             }
           />
         </div>

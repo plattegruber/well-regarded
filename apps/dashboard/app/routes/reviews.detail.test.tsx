@@ -91,6 +91,18 @@ function loaderData(overrides: Record<string, unknown> = {}) {
       reviewIsNegative: true,
       action: "/reviews/8b0d3f8e-0000-4000-8000-000000000000/responses",
     },
+    // The composer seam (#79): null = nothing to draft (or no permission).
+    composer: null as null | {
+      draft: null;
+      templates: Array<{
+        id: string;
+        name: string;
+        tone: string;
+        body: string;
+      }>;
+      reviewerName: null;
+      practiceName: string;
+    },
     ...overrides,
   };
 }
@@ -165,6 +177,36 @@ describe("review detail rendering", () => {
     expect(html).toContain('data-testid="response-thread"');
     expect(html).toContain("No response recorded yet");
     expect(html).toContain("not captured yet");
+  });
+
+  it("mounts the composer in the thread slot when there's something to draft", () => {
+    const html = render(
+      loaderData({
+        composer: {
+          draft: null,
+          templates: [
+            {
+              id: "11111111-0000-4000-8000-000000000001",
+              name: "Positive review",
+              tone: "warm",
+              body: "Thanks, {reviewer_name}.",
+            },
+          ],
+          reviewerName: null,
+          practiceName: "Cedar Ridge Dental",
+        },
+      }),
+    );
+    expect(html).toContain('data-testid="response-composer"');
+    expect(html).toContain("Draft with AI");
+    expect(html).toContain("Positive review · warm");
+    // Static tone hint (#79 req 6) rendered with the field.
+    expect(html).toContain("confirm they were a patient");
+  });
+
+  it("keeps the composer out for viewers without draft rights (composer: null)", () => {
+    const html = render(loaderData());
+    expect(html).not.toContain('data-testid="response-composer"');
   });
 
   it("renders the deleted-at-source notice when set", () => {

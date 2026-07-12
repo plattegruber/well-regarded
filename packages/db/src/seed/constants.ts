@@ -24,8 +24,13 @@
  * seeded as imported `responses` rows (`origin = 'source_import'`,
  * `status = 'published'`) — they surface as "responded" in the review
  * inbox.
+ *
+ * v4 (issue #83): the four starter response templates
+ * (`STARTER_RESPONSE_TEMPLATES` in `@wellregarded/core`) are seeded with
+ * deterministic ids (`template:<key>`); the wipe also clears
+ * `response_templates`.
  */
-export const SEED_VERSION = 3;
+export const SEED_VERSION = 4;
 
 /**
  * Fixed faker seed (issue #32 requirement 2). Narrative content is

@@ -44,6 +44,7 @@ import { importRuns } from "../src/schema/importRuns.js";
 import { patients } from "../src/schema/pii.js";
 import { proofExcerpts } from "../src/schema/proofExcerpts.js";
 import { responses } from "../src/schema/responses.js";
+import { responseTemplates } from "../src/schema/responseTemplates.js";
 import { signals } from "../src/schema/signals.js";
 import { sourceConnections } from "../src/schema/sourceConnections.js";
 import {
@@ -95,6 +96,7 @@ type DerivationInsert = typeof derivations.$inferInsert;
 type PatientInsert = typeof patients.$inferInsert;
 type ProofExcerptInsert = typeof proofExcerpts.$inferInsert;
 type ResponseInsert = typeof responses.$inferInsert;
+type ResponseTemplateInsert = typeof responseTemplates.$inferInsert;
 
 export async function practice(
   db: Db,
@@ -433,6 +435,30 @@ export async function response(
     })
     .returning();
   return must(row, "response");
+}
+
+/**
+ * Inserts a `response_templates` row (issue #83). Creates the practice on
+ * demand. Tests exercising the save-time safety gate go through the
+ * dashboard action, not this factory — factories set up state.
+ */
+export async function responseTemplate(
+  db: Db,
+  overrides: Partial<ResponseTemplateInsert> = {},
+): Promise<typeof responseTemplates.$inferSelect> {
+  const n = nextSeq();
+  const practiceId = overrides.practiceId ?? (await practice(db)).id;
+  const [row] = await db
+    .insert(responseTemplates)
+    .values({
+      name: `Template ${n}`,
+      body: "Thank you for the feedback, {reviewer_name} — the {practice_name} team.",
+      tone: "neutral",
+      ...overrides,
+      practiceId,
+    })
+    .returning();
+  return must(row, "response template");
 }
 
 /**

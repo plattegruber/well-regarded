@@ -25,3 +25,4 @@ export * from "./reviews.js";
 export * from "./signals.js";
 export * from "./sourceConnections.js";
 export * from "./staff.js";
+export * from "./templates.js";

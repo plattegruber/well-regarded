@@ -5,7 +5,11 @@
  * harness.
  */
 
-import { decryptField, hashField } from "@wellregarded/core";
+import {
+  decryptField,
+  hashField,
+  STARTER_RESPONSE_TEMPLATES,
+} from "@wellregarded/core";
 import { count, eq, isNull, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
@@ -18,6 +22,7 @@ import { derivations } from "../schema/derivations.js";
 import { contactPoints, patients } from "../schema/pii.js";
 import { proofExcerpts } from "../schema/proofExcerpts.js";
 import { responses } from "../schema/responses.js";
+import { responseTemplates } from "../schema/responseTemplates.js";
 import { signals } from "../schema/signals.js";
 import {
   locations,
@@ -130,6 +135,12 @@ async function tableCounts(summary: SeedSummary) {
         .select({ n: count() })
         .from(responses)
         .where(eq(responses.practiceId, practiceId)),
+    ),
+    responseTemplates: await one(
+      t.db
+        .select({ n: count() })
+        .from(responseTemplates)
+        .where(eq(responseTemplates.practiceId, practiceId)),
     ),
   };
 }
@@ -290,6 +301,17 @@ describe("runSeed", () => {
     expect(runSummary?.errorCount).toBe(0);
     expect(runSummary?.run.rawArtifactKeys).toEqual([DEMO_IMPORT_ARTIFACT_KEY]);
     expect(first.importRuns).toBe(1);
+
+    // --- Starter response templates (issue #83): four, deterministic ids ----
+    expect(counts.responseTemplates).toBe(STARTER_RESPONSE_TEMPLATES.length);
+    const [positiveTemplate] = await t.db
+      .select()
+      .from(responseTemplates)
+      .where(eq(responseTemplates.id, seedId("template:positive")));
+    expect(positiveTemplate?.name).toBe("Positive review");
+    expect(positiveTemplate?.tone).toBe("warm");
+    expect(positiveTemplate?.active).toBe(true);
+    expect(positiveTemplate?.body).toContain("{reviewer_name}");
 
     // --- Every seeded signal is display-ready (terminal pipeline status) ----
     const [pending] = await t.db

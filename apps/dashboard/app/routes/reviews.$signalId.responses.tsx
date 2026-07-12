@@ -1,31 +1,51 @@
-// Response workflow for one review (issues #80/#82, Epic #10): the
-// response thread plus every workflow mutation — submit-for-approval,
-// approve (with the fresh safety gate), reject-with-comment, and
-// retry-publish.
+// Response workflow for one review (issues #79/#80/#82, Epic #10): the
+// response thread plus every mutation in the drafting-and-approval loop —
+// the composer's draft-with-ai / safety-check / save-draft intents (#79),
+// submit-for-approval (now with the compose-side safety gate), approve
+// (with the fresh safety gate), reject-with-comment, and retry-publish.
 //
 // INTEGRATION: this route is THE action endpoint for the workflow. The
 // review detail page (#77, /reviews/:signalId) mounts
-// `<ResponseWorkflowPanel>` in its `ResponseThreadSlot` composer seam and
-// its fetcher forms POST here — the detail page needs no action plumbing
-// of its own. The composer (#79) wires its submit button to the
-// `submit-for-approval` / `submit-and-approve` intents. The minimal page
-// below remains as a focused workflow surface (full history + per-row
-// actions via `<ResponseThread>`); the detail page is the primary UI.
+// `<ResponseComposer>` (#79) and `<ResponseWorkflowPanel>` (#80/#82) in
+// its `ResponseThreadSlot` composer seam and their fetcher forms POST
+// here — the detail page needs no action plumbing of its own. The minimal
+// page below remains as a focused workflow surface (full history +
+// per-row actions via `<ResponseThread>`); the detail page is the primary
+// UI.
 //
 // Action recipe per #141: permission check first, parse-don't-throw,
-// mutate + audit in one transaction (`transitionResponse` owns both), then
-// flash + redirect — except the approve bounce (fresh safety findings),
-// which returns 422 data so the fetcher can render findings + the
-// acknowledgment checkbox in place. State-machine denials map:
-// conflict/invalid transition → 409, permission → 403, safety → 422,
-// missing comment → 400.
-import { checkResponseSafety, type SafetyResult } from "@wellregarded/ai";
+// mutate + audit in one transaction (`transitionResponse` /
+// `createResponseDraft` / `updateResponseDraftBody` own both), then flash
+// + redirect — except the fetcher-shaped composer intents and the safety
+// bounces (422 data so findings + the acknowledgment checkbox render in
+// place). State-machine denials map: conflict/invalid transition → 409,
+// permission → 403, safety → 422, missing comment → 400.
+//
+// SAFETY, TWICE, ON PURPOSE (#79 requirement 5 / #80 requirement 6): the
+// submit-for-approval edge re-runs `checkResponseSafety` on the text
+// being submitted (the composer's disabled button is not the
+// enforcement), and the approve edge re-runs it again on the text being
+// approved. Findings are never persisted — stored findings go stale; only
+// the draft text persists.
+import {
+  AiRequestError,
+  AiResponseError,
+  AiValidationError,
+  checkResponseSafety,
+  RESPONSE_DRAFT_PURPOSE,
+  ResponseDraftSchema,
+  responseDraftPrompt,
+  type SafetyResult,
+} from "@wellregarded/ai";
 import {
   can,
+  GBP_REPLY_MAX_BYTES,
   type PublishResponseMessage,
   type ResponseTransitionDenialCode,
+  utf8ByteLength,
 } from "@wellregarded/core";
 import {
+  createResponseDraft,
   getResponse,
   getResponseReviewContext,
   listResponsesForSignal,
@@ -33,6 +53,7 @@ import {
   type ReviewResponse,
   type TransitionResponseResult,
   transitionResponse,
+  updateResponseDraftBody,
 } from "@wellregarded/db";
 import { data, Link, redirect } from "react-router";
 import { z } from "zod";
@@ -51,6 +72,7 @@ import {
   type PracticeContext,
   requirePracticeContext,
 } from "~/lib/practice-context.server";
+import { type ComposerSafetyResult, textHash } from "~/lib/safety-spans";
 import type { Route } from "./+types/reviews.$signalId.responses";
 
 const UUID_RE =
@@ -123,18 +145,45 @@ export async function loader({ params, context }: Route.LoaderArgs) {
 // Action
 // ---------------------------------------------------------------------------
 
-const intentSchema = z.object({
-  intent: z.enum([
-    "submit-for-approval",
-    "submit-and-approve",
-    "approve",
-    "reject",
-    "retry-publish",
-  ]),
-  responseId: z.string().uuid(),
-  comment: z.string().optional(),
-  acknowledgeWarnings: z.literal("yes").optional(),
-});
+// One discriminated union instead of a flat shape: the composer intents
+// (#79) carry a body and may not have a responseId yet; the workflow
+// intents (#80/#82) always act on an existing row.
+const intentSchema = z.discriminatedUnion("intent", [
+  z.object({ intent: z.literal("draft-with-ai") }),
+  z.object({ intent: z.literal("safety-check"), body: z.string() }),
+  z.object({
+    intent: z.literal("save-draft"),
+    body: z.string(),
+    responseId: z.string().uuid().optional(),
+  }),
+  z.object({
+    intent: z.literal("submit-for-approval"),
+    // Optional pair: the composer sends body (creating the row on first
+    // submit if needed); the workflow panel sends only responseId.
+    responseId: z.string().uuid().optional(),
+    body: z.string().optional(),
+    acknowledgeWarnings: z.literal("yes").optional(),
+  }),
+  z.object({
+    intent: z.literal("submit-and-approve"),
+    responseId: z.string().uuid(),
+    acknowledgeWarnings: z.literal("yes").optional(),
+  }),
+  z.object({
+    intent: z.literal("approve"),
+    responseId: z.string().uuid(),
+    acknowledgeWarnings: z.literal("yes").optional(),
+  }),
+  z.object({
+    intent: z.literal("reject"),
+    responseId: z.string().uuid(),
+    comment: z.string().optional(),
+  }),
+  z.object({
+    intent: z.literal("retry-publish"),
+    responseId: z.string().uuid(),
+  }),
+]);
 
 /** HTTP status for each state-machine denial (see canTransition's doc). */
 const DENIAL_STATUS: Record<
@@ -177,6 +226,43 @@ function toSafetyNotice(
       level: finding.level,
     })),
   };
+}
+
+/**
+ * The composer-facing serialization: spans preserved (the highlight
+ * overlay needs them) plus `checkedHash` of the exact text checked so the
+ * client can discard stale results (#79 implementation notes).
+ */
+function toComposerSafety(
+  safety: SafetyResult,
+  checkedText: string,
+): ComposerSafetyResult {
+  return {
+    level: safety.level,
+    checkedHash: textHash(checkedText),
+    findings: safety.findings.map((finding) => ({
+      span: finding.span,
+      code: finding.code,
+      reason: finding.reason,
+      suggestion: finding.suggestion,
+      level: finding.level,
+    })),
+  };
+}
+
+/** Body validation shared by save and submit: non-empty, under the GBP cap. */
+function bodyFieldErrors(body: string): Record<string, string[]> | null {
+  if (body.trim() === "") {
+    return { body: ["Write a reply before saving."] };
+  }
+  if (utf8ByteLength(body) > GBP_REPLY_MAX_BYTES) {
+    return {
+      body: [
+        `Google caps replies at ${GBP_REPLY_MAX_BYTES} bytes — trim the reply.`,
+      ],
+    };
+  }
+  return null;
 }
 
 /** Best-effort enqueue: the binding is optional in local dev — an approved
@@ -225,41 +311,235 @@ export async function action({ request, params, context }: Route.ActionArgs) {
     if (!parsed.ok) {
       return data({ fieldErrors: parsed.fieldErrors }, { status: 422 });
     }
-    const { intent, responseId } = parsed.data;
+    const { intent } = parsed.data;
 
-    const response = await getResponse(db, ctx.practiceId, responseId);
-    if (!response || response.signalId !== params.signalId) {
-      throw data(null, { status: 404 });
-    }
+    // Every intent acts within one review — load it from the URL so the
+    // composer intents (no responseId yet) are scoped exactly like the
+    // workflow ones. Missing/cross-practice/private read the same: 404.
     const review = await getResponseReviewContext(
       db,
       ctx.practiceId,
-      response.signalId,
+      params.signalId,
     );
-    if (!review) {
+    if (review?.visibility !== "public") {
       throw data(null, { status: 404 });
     }
     const staff = staffFor(ctx, review);
 
     // Permission check in the action, always — hidden affordances are not a
     // security boundary. (canTransition re-checks; this is the early 403.)
-    const needsApprove = intent !== "submit-for-approval";
+    const draftSide =
+      intent === "draft-with-ai" ||
+      intent === "safety-check" ||
+      intent === "save-draft" ||
+      intent === "submit-for-approval";
     if (
-      needsApprove
-        ? !staff.permissions.approveResponse
-        : !staff.permissions.draftResponse
+      draftSide
+        ? !staff.permissions.draftResponse
+        : !staff.permissions.approveResponse
     ) {
       throw data(null, { status: 403 });
     }
 
+    // Gated (#75): the practice kill switch / budget cap turns the Layer-2
+    // call into an AiRequestError — safety checks degrade honestly to
+    // deterministic-only, drafting surfaces the friendly paused message.
+    const provider = getAiProvider(context.cloudflare.env, db, {
+      practiceId: ctx.practiceId,
+    });
+
+    /** Full two-layer safety check for `body`, in this review's context. */
+    const runSafety = (body: string) =>
+      checkResponseSafety(
+        body,
+        {
+          text: review.text,
+          rating: review.rating,
+          visibility: review.visibility,
+        },
+        {
+          provider,
+          practiceId: ctx.practiceId,
+          requestId: context.requestId,
+        },
+      );
+
+    /** Load + signal-scope-check a response id (404 on any mismatch). */
+    const requireResponse = async (responseId: string) => {
+      const row = await getResponse(db, ctx.practiceId, responseId);
+      if (!row || row.signalId !== params.signalId) {
+        throw data(null, { status: 404 });
+      }
+      return row;
+    };
+
     switch (intent) {
+      // --- Composer intents (#79) -----------------------------------------
+      case "draft-with-ai": {
+        // Sonnet via the drafting lane; inputs are the review text, its
+        // rating, and the practice name — NEVER private context (see the
+        // prompt module's input contract). The fresh draft's full safety
+        // verdict rides back in the same response, so findings render the
+        // moment the draft lands.
+        try {
+          const result = await provider.classify(
+            responseDraftPrompt({
+              reviewText: review.text,
+              rating: review.rating,
+              practiceName: ctx.practiceName,
+            }),
+            ResponseDraftSchema,
+            {
+              purpose: RESPONSE_DRAFT_PURPOSE,
+              practiceId: ctx.practiceId,
+              model: "drafting",
+              requestId: context.requestId,
+            },
+          );
+          const safety = await runSafety(result.value.draft);
+          return data({
+            draft: result.value.draft,
+            safety: toComposerSafety(safety, result.value.draft),
+          });
+        } catch (error) {
+          // Budget/kill-switch/config errors (#75) surface as a friendly
+          // inline message — never a broken button. Drafting is optional;
+          // writing a reply by hand is not.
+          if (
+            error instanceof AiRequestError ||
+            error instanceof AiResponseError ||
+            error instanceof AiValidationError
+          ) {
+            context.logger?.warn("responses.ai_draft_unavailable", {
+              signalId: params.signalId,
+              reason: error.name,
+            });
+            return data({
+              aiUnavailable:
+                "AI drafting is paused — you can still write a reply.",
+            });
+          }
+          throw error;
+        }
+      }
+
+      case "safety-check": {
+        // The composer's debounced full check; #80's approve re-check uses
+        // the same runSafety. Findings are returned, never persisted.
+        const safety = await runSafety(parsed.data.body);
+        return data({
+          safety: toComposerSafety(safety, parsed.data.body),
+        });
+      }
+
+      case "save-draft": {
+        const fieldErrors = bodyFieldErrors(parsed.data.body);
+        if (fieldErrors) return data({ fieldErrors }, { status: 422 });
+
+        if (parsed.data.responseId) {
+          await requireResponse(parsed.data.responseId);
+          const saved = await updateResponseDraftBody(db, {
+            practiceId: ctx.practiceId,
+            responseId: parsed.data.responseId,
+            body: parsed.data.body,
+            actor: ctx.auditActor,
+          });
+          if (!saved) {
+            // No longer a draft — someone submitted/approved meanwhile.
+            return data(
+              {
+                error:
+                  "This draft was already submitted — reload to see where it stands.",
+              },
+              { status: 409 },
+            );
+          }
+          return data({ saved: { responseId: saved.id, body: saved.body } });
+        }
+
+        const created = await createResponseDraft(db, {
+          practiceId: ctx.practiceId,
+          signalId: params.signalId,
+          authorId: ctx.actor.staffId,
+          body: parsed.data.body,
+          actor: ctx.auditActor,
+        });
+        return data({ saved: { responseId: created.id, body: created.body } });
+      }
+
       case "submit-for-approval": {
+        // Persist-then-check-then-transition. What gets checked is exactly
+        // what was persisted; the composer's disabled button is UX, THIS is
+        // the enforcement (#79 requirement 5, defense in depth).
+        let response =
+          parsed.data.responseId !== undefined
+            ? await requireResponse(parsed.data.responseId)
+            : undefined;
+
+        const body = parsed.data.body ?? response?.body ?? "";
+        const fieldErrors = bodyFieldErrors(body);
+        if (fieldErrors) return data({ fieldErrors }, { status: 422 });
+
+        if (!response) {
+          response = await createResponseDraft(db, {
+            practiceId: ctx.practiceId,
+            signalId: params.signalId,
+            authorId: ctx.actor.staffId,
+            body,
+            actor: ctx.auditActor,
+          });
+        } else if (
+          parsed.data.body !== undefined &&
+          parsed.data.body !== response.body
+        ) {
+          const saved = await updateResponseDraftBody(db, {
+            practiceId: ctx.practiceId,
+            responseId: response.id,
+            body,
+            actor: ctx.auditActor,
+          });
+          if (!saved) {
+            return data(
+              {
+                error:
+                  "This draft was already submitted — reload to see where it stands.",
+              },
+              { status: 409 },
+            );
+          }
+          response = saved;
+        }
+
+        // The compose-side safety gate: block stops submission outright
+        // (no waiver in the composer — blocks are edited away); warn
+        // demands the explicit acknowledgment, same as the approve side.
+        const acknowledged = parsed.data.acknowledgeWarnings === "yes";
+        const safety = await runSafety(response.body);
+        if (
+          safety.level === "block" ||
+          (safety.level === "warn" && !acknowledged)
+        ) {
+          return data(
+            {
+              safety: toComposerSafety(safety, response.body),
+              saved: { responseId: response.id, body: response.body },
+            },
+            { status: 422 },
+          );
+        }
+
         const result = await transitionResponse(db, {
           practiceId: ctx.practiceId,
-          responseId,
+          responseId: response.id,
           to: "pending_approval",
           actor: ctx.auditActor,
           staff,
+          // Recorded in the transition's audit row — the submit-side
+          // verdict is part of the trail even though findings never persist.
+          auditPayload: {
+            safetyLevel: safety.level,
+            warningsAcknowledged: acknowledged,
+          },
         });
         if (!result.ok) return denialResponse(result);
         return redirectWithFlash(context, params.signalId, {
@@ -268,13 +548,17 @@ export async function action({ request, params, context }: Route.ActionArgs) {
         });
       }
 
+      // --- Workflow intents (#80/#82) --------------------------------------
       case "submit-and-approve": {
         // The non-negative fast path (#80 req 5): one click, still recorded
         // as two audited transitions. On a negative review the approve half
         // is structurally denied and the response stays pending_approval.
+        // The approve half runs the fresh safety check, so the text is
+        // gated exactly once on this path.
+        const response = await requireResponse(parsed.data.responseId);
         const submitted = await transitionResponse(db, {
           practiceId: ctx.practiceId,
-          responseId,
+          responseId: response.id,
           to: "pending_approval",
           actor: ctx.auditActor,
           staff,
@@ -292,7 +576,8 @@ export async function action({ request, params, context }: Route.ActionArgs) {
         );
       }
 
-      case "approve":
+      case "approve": {
+        const response = await requireResponse(parsed.data.responseId);
         return approve(
           db,
           context,
@@ -303,8 +588,10 @@ export async function action({ request, params, context }: Route.ActionArgs) {
           staff,
           parsed.data.acknowledgeWarnings === "yes",
         );
+      }
 
       case "reject": {
+        const response = await requireResponse(parsed.data.responseId);
         const comment = parsed.data.comment?.trim() ?? "";
         if (comment === "") {
           return data(
@@ -314,7 +601,7 @@ export async function action({ request, params, context }: Route.ActionArgs) {
         }
         const result = await transitionResponse(db, {
           practiceId: ctx.practiceId,
-          responseId,
+          responseId: response.id,
           to: "draft",
           actor: ctx.auditActor,
           staff,
@@ -328,16 +615,17 @@ export async function action({ request, params, context }: Route.ActionArgs) {
       }
 
       case "retry-publish": {
+        const response = await requireResponse(parsed.data.responseId);
         const result = await transitionResponse(db, {
           practiceId: ctx.practiceId,
-          responseId,
+          responseId: response.id,
           to: "approved",
           actor: ctx.auditActor,
           staff,
         });
         if (!result.ok) return denialResponse(result);
         const enqueued = await enqueuePublish(context, {
-          responseId,
+          responseId: response.id,
           practiceId: ctx.practiceId,
           requestId: context.requestId,
         });

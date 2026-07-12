@@ -2,6 +2,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  renderTemplate,
+  STARTER_RESPONSE_TEMPLATES,
+  TEMPLATE_SAFETY_DUMMY_REVIEWER,
+} from "@wellregarded/core";
 import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 
@@ -768,5 +773,25 @@ describe("labeled examples (evals/fixtures/safety.jsonl) through the full detect
       const needsLlm = llmJudgments[fixture.id] !== undefined;
       expect(deterministicLevel || needsLlm).toBe(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Starter templates (issue #83): a template is a response waiting to
+// happen, so every starter body must pass Layer 1 clean — with dummy
+// placeholder values substituted, exactly as the save-time gate renders it.
+// ---------------------------------------------------------------------------
+
+describe("starter response templates pass the deterministic layer", () => {
+  it.each(
+    STARTER_RESPONSE_TEMPLATES.map((template) => [template.name, template]),
+  )("%s", (_name, template) => {
+    const rendered = renderTemplate(template.body, {
+      reviewer_name: TEMPLATE_SAFETY_DUMMY_REVIEWER,
+      practice_name: "Cedar Ridge Dental",
+    });
+    const findings = deterministicSafetyChecks(rendered);
+    expect(findings.filter((f) => f.level === "block")).toEqual([]);
+    expect(findings.filter((f) => f.level === "warn")).toEqual([]);
   });
 });

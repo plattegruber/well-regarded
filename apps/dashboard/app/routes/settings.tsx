@@ -31,6 +31,11 @@ export const SETTINGS_SECTIONS: Section[] = [
     description: "Who is on the account, and what they can do.",
   },
   {
+    title: "Response templates",
+    description: "Reusable reply shapes for the review composer.",
+    to: "/settings/templates",
+  },
+  {
     title: "Integrations",
     description: "Google Business Profile and other feedback sources.",
     to: "/settings/integrations",

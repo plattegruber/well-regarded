@@ -30,6 +30,7 @@ import {
   listResponsesForSignal,
   listResponsesPendingApproval,
   transitionResponse,
+  updateResponseDraftBody,
   upsertImportedResponse,
 } from "./responses.js";
 
@@ -97,6 +98,60 @@ describe("responses (integration)", () => {
       actorId: authorId,
       practiceId,
     });
+  });
+
+  it("updateResponseDraftBody edits drafts only, audited; non-drafts refuse", async () => {
+    const s = await reviewSignal();
+    const draft = await createResponseDraft(t.db, {
+      practiceId,
+      signalId: s.id,
+      authorId,
+      body: "First pass.",
+      actor: authorActor,
+    });
+
+    // The composer's save path: body changes, audit row lands with it.
+    const saved = await updateResponseDraftBody(t.db, {
+      practiceId,
+      responseId: draft.id,
+      body: "Second pass — thank you for the feedback.",
+      actor: authorActor,
+    });
+    expect(saved?.body).toBe("Second pass — thank you for the feedback.");
+    expect(await latestAudit(draft.id)).toMatchObject({
+      action: "response.draft_saved",
+      payload: { signalId: s.id },
+    });
+
+    // Autosave twice: two audit rows, still ONE response row (no dupes).
+    await updateResponseDraftBody(t.db, {
+      practiceId,
+      responseId: draft.id,
+      body: "Third pass.",
+      actor: authorActor,
+    });
+    const rows = await listResponsesForSignal(t.db, practiceId, s.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.body).toBe("Third pass.");
+
+    // Once submitted, the body belongs to the workflow — the guarded
+    // UPDATE refuses and the text stays put.
+    await transitionResponse(t.db, {
+      practiceId,
+      responseId: draft.id,
+      to: "pending_approval",
+      actor: authorActor,
+      staff: { staffId: authorId, permissions: ALL_PERMISSIONS },
+    });
+    const refused = await updateResponseDraftBody(t.db, {
+      practiceId,
+      responseId: draft.id,
+      body: "Sneaky post-submit edit.",
+      actor: authorActor,
+    });
+    expect(refused).toBeUndefined();
+    const after = await listResponsesForSignal(t.db, practiceId, s.id);
+    expect(after[0]?.body).toBe("Third pass.");
   });
 
   it("walks the happy path draft → pending_approval → approved with audits", async () => {

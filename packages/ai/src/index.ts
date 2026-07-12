@@ -100,6 +100,15 @@ export {
   URGENCY_CONFIDENCE_FLOOR,
 } from "./prompts/judgments.js";
 export {
+  RESPONSE_DRAFT_MAX_CHARS,
+  RESPONSE_DRAFT_PROMPT_NAME,
+  RESPONSE_DRAFT_PURPOSE,
+  type ResponseDraft,
+  type ResponseDraftPromptInput,
+  ResponseDraftSchema,
+  responseDraftPrompt,
+} from "./prompts/response-draft.js";
+export {
   SAFETY_LLM_CATEGORIES,
   SAFETY_PROMPT_NAME,
   type SafetyJudgment,

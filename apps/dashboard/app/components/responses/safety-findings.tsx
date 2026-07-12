@@ -22,12 +22,16 @@ export interface SafetyNotice {
 
 export function SafetyFindingsList({
   findings,
+  id,
 }: {
   findings: SafetyFindingView[];
+  /** Optional element id — the composer points aria-describedby here. */
+  id?: string | undefined;
 }) {
   if (findings.length === 0) return null;
   return (
     <ul
+      id={id}
       className="m-0 flex list-none flex-col gap-2 p-0"
       data-testid="safety-findings"
     >
