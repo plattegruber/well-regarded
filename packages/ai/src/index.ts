@@ -7,7 +7,9 @@
  * logging), the deterministic `FakeAiProvider` all tests use, and the
  * embedding seam (`EmbeddingProvider` over Workers AI bge-m3, #71, with
  * `FakeEmbeddingProvider` for tests). Prompts live in src/prompts/ —
- * judgments (#67) and excerpts (#69) are here; safety (#72) follows.
+ * judgments (#67), excerpts (#69), and safety (#72). The privacy
+ * disclosure detector (`checkResponseSafety` / `deterministicSafetyChecks`)
+ * lives in src/safety.ts.
  */
 
 export {
@@ -79,6 +81,15 @@ export {
   sentimentFromRating,
   URGENCY_CONFIDENCE_FLOOR,
 } from "./prompts/judgments.js";
+export {
+  SAFETY_LLM_CATEGORIES,
+  SAFETY_PROMPT_NAME,
+  type SafetyJudgment,
+  SafetyJudgmentSchema,
+  type SafetyLlmCategory,
+  type SafetyPromptInput,
+  safetyPrompt,
+} from "./prompts/safety.js";
 export type {
   AiCallRecord,
   AiCallSink,
@@ -89,4 +100,27 @@ export type {
   ClassifyPrompt,
   LogicalModel,
 } from "./provider.js";
+export {
+  checkResponseSafety,
+  deterministicSafetyChecks,
+  quoteToSpan,
+  SAFETY_PURPOSE,
+  type SafetyCheckDeps,
+} from "./safety.js";
+export {
+  type ReviewContext,
+  SAFETY_REASON_CODES,
+  type SafetyFinding,
+  type SafetyFindingLevel,
+  type SafetyLevel,
+  type SafetyReasonCode,
+  type SafetyResult,
+  type SafetyRule,
+} from "./safety-types.js";
+export {
+  CARE_CONTEXT_TERMS,
+  INSURANCE_CARRIERS,
+  INSURANCE_TERMS,
+  PROCEDURE_TERMS,
+} from "./safety-vocab.js";
 export { zodToToolInputSchema } from "./toolSchema.js";

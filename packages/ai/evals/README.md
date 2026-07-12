@@ -14,8 +14,8 @@ One JSON object per line (`.jsonl`), one file per prompt:
 |---|---|
 | `id` | stable, human-readable case name |
 | `prompt` | the prompt version the labels were written against (e.g. `judgments/v1` — see `JUDGMENTS_PROMPT_NAME` in `src/prompts/judgments.ts`) |
-| `input` | what the prompt template consumes (for judgments: `{ text, rating }`, mirroring a `signals` row) |
-| `expected` | the labeled values per dimension — **raw model expectations**, i.e. before post-processing like `applyUrgencyFloor` |
+| `input` | what the prompt template consumes (for judgments: `{ text, rating }`, mirroring a `signals` row; for safety: `{ draft, review }`) |
+| `expected` | the labeled values per dimension — **raw model expectations**, i.e. before post-processing like `applyUrgencyFloor` (for safety: the **overall detector level**, since the deterministic layer is part of the contract; `must_block: true` marks the zero-tolerance cases per #73) |
 | `notes` | why the labels are what they are; which failure the case guards against |
 
 ## Fixtures
@@ -30,6 +30,14 @@ One JSON object per line (`.jsonl`), one file per prompt:
   offset — the generator asserted it). A three-aspect review with
   trailing filler, a typo-laden review (verbatim means the typos stay),
   and a single-topic long review that must NOT be over-segmented.
+- `fixtures/safety.jsonl` — the privacy-disclosure detector
+  (issue #72): the issue's 15+ labeled draft replies plus near-misses on
+  each deterministic rule. `expected.level` is the verdict of the FULL
+  two-layer detector (`checkResponseSafety`) — a live-model eval run
+  scores the deterministic layer and the Haiku judgment together;
+  `must_block: true` cases are zero-tolerance (#73). The same fixtures
+  run in `src/safety.test.ts` with `FakeAiProvider` supplying the
+  Layer-2 judgments.
 
 ## Adding cases
 
