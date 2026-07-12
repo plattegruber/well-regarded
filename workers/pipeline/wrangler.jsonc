@@ -136,6 +136,17 @@
     { "binding": "RAW_ARTIFACTS", "bucket_name": "wr-raw-artifacts-local" }
   ],
 
+  // Workers AI (`AI` binding, inline bge-m3 excerpt embeddings, #71) is
+  // DELIBERATELY absent from this local block: there is no local AI
+  // simulator — the binding always proxies to the real Workers AI API, and
+  // the workerd unit-test pool (vitest-pool-workers boots from this block)
+  // would try to start that remote proxy session and fail in CI, where no
+  // Cloudflare credentials exist. Code treats env.AI as optional: locally,
+  // excerpt embeddings stay NULL and the backfill Workflow in workers/jobs
+  // (whose local block DOES bind AI — jobs tests never boot workerd from
+  // its config) fills them in; see docs/embedding-backfill.md.
+  // env.preview/env.prod bind AI below.
+
   "hyperdrive": [
     // The normalize stage (#104) writes `signals` + `import_runs`, the
     // classify stage (#67) re-reads `signals` and writes `derivations`, and
@@ -234,6 +245,7 @@
           "bucket_name": "wr-raw-artifacts-preview"
         }
       ],
+      "ai": { "binding": "AI" },
       "hyperdrive": [
         // <TBD>: real Hyperdrive config id — provisioned in Epic #2.
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
@@ -314,6 +326,7 @@
       "r2_buckets": [
         { "binding": "RAW_ARTIFACTS", "bucket_name": "wr-raw-artifacts-prod" }
       ],
+      "ai": { "binding": "AI" },
       "hyperdrive": [
         // <TBD>: real Hyperdrive config id — provisioned in Epic #2.
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }

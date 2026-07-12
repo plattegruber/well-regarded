@@ -139,7 +139,10 @@ export async function hybridSearch(
            pe.signal_id,
            pe.practice_id,
            pe.excerpt_text,
+           pe.start_offset,
+           pe.topic_hint,
            pe.embedding,
+           pe.embedding_model,
            pe.tsv,
            pe.topics,
            pe.created_at,
@@ -169,12 +172,15 @@ export async function hybridSearch(
         signalId: r.signal_id as string,
         practiceId: r.practice_id as string,
         excerptText: r.excerpt_text as string,
+        startOffset: (r.start_offset as number | null) ?? null,
+        topicHint: (r.topic_hint as string | null) ?? null,
         // postgres-js has no parser for pgvector's wire format; it arrives
         // as the string "[0.1,0.2,...]", which is valid JSON.
         embedding:
           r.embedding == null
             ? null
             : (JSON.parse(r.embedding as string) as number[]),
+        embeddingModel: r.embedding_model as string,
         tsv: (r.tsv as string | null) ?? null,
         topics: (r.topics as string[] | null) ?? null,
         createdAt:

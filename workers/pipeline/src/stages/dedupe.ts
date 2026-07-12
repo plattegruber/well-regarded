@@ -37,13 +37,15 @@
  * proceeds to classify NORMALLY: both records stay fully visible.
  *
  * Embeddings come through the `EmbeddingProvider` seam in
- * `@wellregarded/ai` (one function: `embedText`). The production
- * implementation is Workers AI `@cf/baai/bge-m3` (issue #71, Epic #9);
- * until it lands, the wired handler has no provider and the fuzzy path is
- * SKIPPED with a structured log line — interim posture, never a fake
- * vector, never a merge. Tests inject the deterministic
- * `FakeEmbeddingProvider`. A computed embedding is stored on the signal
- * (requirement 8) so classify and coverage reuse it.
+ * `@wellregarded/ai` (this stage uses the single-text `embedText` shape).
+ * The production implementation is Workers AI `@cf/baai/bge-m3` behind
+ * the `AI` binding (issue #71, Epic #9) — bound in preview/prod; the
+ * local wrangler block deliberately omits it (no local simulator, and the
+ * workerd unit-test pool boots from that block), so locally the fuzzy
+ * path is SKIPPED with a structured log line — never a fake vector, never
+ * a merge. Tests inject the deterministic `FakeEmbeddingProvider`. A
+ * computed embedding is stored on the signal (requirement 8) so classify
+ * and coverage reuse it.
  *
  * Persistence hides behind the `DedupeStore` seam (the normalize/classify
  * pattern): workerd tests drive the real dispatcher with an in-memory
@@ -52,7 +54,10 @@
  * row writes they describe (#111 helpers).
  */
 
-import type { EmbeddingProvider } from "@wellregarded/ai";
+import {
+  createWorkersAiEmbedder,
+  type EmbeddingProvider,
+} from "@wellregarded/ai";
 import {
   type ClassifyMessage,
   createLogger,
@@ -367,9 +372,10 @@ async function handleFuzzyCandidates(
   }
 
   if (!deps.embedder) {
-    // Interim until issue #71 wires Workers AI bge-m3 (see module doc).
+    // No AI binding in this environment (e.g. local dev — see module doc);
+    // skip loudly, never fake a vector.
     log("warn", "pipeline.dedupe.fuzzy_skipped_no_embedder", message, {
-      reason: "EmbeddingProvider not wired yet (issue #71)",
+      reason: "AI binding not configured — Workers AI bge-m3 unavailable",
     });
     return;
   }
@@ -479,15 +485,16 @@ export function createDedupeStore(db: Db): DedupeStore {
 }
 
 /**
- * Resolves the production embedding provider. Deliberately `undefined`
- * until issue #71 (Epic #9) wires Workers AI `@cf/baai/bge-m3` behind the
- * `EmbeddingProvider` seam in `@wellregarded/ai` — this function is the ONE
- * place #71 plugs into this stage.
+ * Resolves the production embedding provider (issue #71): Workers AI
+ * `@cf/baai/bge-m3` over the `AI` binding, shared with the classify
+ * stage's inline excerpt embedding. `undefined` when the binding is
+ * absent — preview/prod bind it; the local wrangler block deliberately
+ * does not (see wrangler.jsonc), so the fuzzy path skips loudly there.
  */
 function resolveEmbeddingProvider(
-  _env: PipelineBindings,
+  env: PipelineBindings,
 ): EmbeddingProvider | undefined {
-  return undefined;
+  return env.AI ? createWorkersAiEmbedder(env.AI) : undefined;
 }
 
 /**

@@ -12,6 +12,7 @@
  * workers/api.
  */
 
+import type { WorkersAiBinding } from "@wellregarded/ai";
 import type { PipelineStage } from "@wellregarded/core";
 import type { RawArtifactBucket } from "@wellregarded/sources";
 
@@ -58,6 +59,14 @@ export interface PipelineBindings {
    * inject `InMemoryRawArtifactBucket`; the real `R2Bucket` satisfies it.
    */
   RAW_ARTIFACTS: RawArtifactBucket;
+  /**
+   * Workers AI, for inline bge-m3 excerpt embeddings in the classify stage
+   * (issue #71). Typed structurally (the `run` subset the embedder calls)
+   * so tests inject plain fakes. Optional because a missing binding only
+   * degrades embeddings to NULL (backfill sweeps them) — it never blocks
+   * the message.
+   */
+  AI?: WorkersAiBinding | undefined;
   /** String vars/secrets, validated by `getEnv(env, pipelineEnvSchema)`. */
   [key: string]: unknown;
 }

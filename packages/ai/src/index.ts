@@ -4,9 +4,10 @@
  * Infrastructure: the `AiProvider` seam, the production
  * `AnthropicProvider` (forced tool-use structured output, zod validation
  * with one feedback retry, backoff on 429/5xx/overloaded, injected cost
- * logging), and the deterministic `FakeAiProvider` all tests use. Prompts
- * live in src/prompts/ — judgments (#67) is here; excerpts (#69) and
- * safety (#72) follow.
+ * logging), the deterministic `FakeAiProvider` all tests use, and the
+ * embedding seam (`EmbeddingProvider` over Workers AI bge-m3, #71, with
+ * `FakeEmbeddingProvider` for tests). Prompts live in src/prompts/ —
+ * judgments (#67) and excerpts (#69) are here; safety (#72) follows.
  */
 
 export {
@@ -23,9 +24,18 @@ export {
   isRetryableStatus,
 } from "./backoff.js";
 export {
+  BGE_M3_EMBEDDING_MODEL,
+  createWorkersAiEmbedder,
+  EMBEDDING_BATCH_SIZE,
   EMBEDDING_DIMENSIONS,
+  EmbeddingDimensionError,
   type EmbeddingProvider,
+  FAKE_EMBEDDING_MODEL,
   FakeEmbeddingProvider,
+  type FakeEmbeddingProviderOptions,
+  fakeEmbed,
+  type WorkersAiBinding,
+  type WorkersAiEmbedderOptions,
 } from "./embedding.js";
 export {
   AiError,
@@ -39,6 +49,21 @@ export {
   FakeAiProviderError,
 } from "./fake.js";
 export { type ModelConfig, resolveModel } from "./models.js";
+export {
+  countWords,
+  EXCERPT_MIN_MODEL_WORDS,
+  EXCERPTS_PROMPT_NAME,
+  type Excerpts,
+  type ExcerptsPromptInput,
+  ExcerptsSchema,
+  type ExcerptValidation,
+  excerptsPrompt,
+  excerptsRetryPrompt,
+  locateExcerpt,
+  type PlannedExcerpt,
+  validateExcerpts,
+  wholeTextExcerpt,
+} from "./prompts/excerpts.js";
 export {
   applyUrgencyFloor,
   hasClassifiableText,

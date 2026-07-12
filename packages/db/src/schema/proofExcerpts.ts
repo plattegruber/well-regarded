@@ -29,6 +29,7 @@ import { sql } from "drizzle-orm";
 import {
   customType,
   index,
+  integer,
   pgTable,
   text,
   timestamp,
@@ -61,10 +62,36 @@ export const proofExcerpts = pgTable(
     practiceId: uuid("practice_id")
       .notNull()
       .references(() => practices.id),
-    /** The aspect-level slice of the parent signal's original text. */
+    /**
+     * The aspect-level slice of the parent signal's original text —
+     * ALWAYS verbatim: `original_text.slice(start_offset, start_offset +
+     * excerpt_text.length) === excerpt_text` (enforced server-side by the
+     * extraction pass, issue #69; a fabricated quote is never stored).
+     */
     excerptText: text("excerpt_text").notNull(),
+    /**
+     * Character offset of `excerpt_text` in the parent signal's
+     * `original_text` (issue #69). Nullable: rows written before the
+     * extraction pass existed (seed data) have no recorded offset.
+     */
+    startOffset: integer("start_offset"),
+    /**
+     * Free-text aspect label from the extraction pass, for debugging and
+     * evals only (issue #69) — topics are emergent via embeddings, never
+     * an enum. Null for whole-text fallback rows and pre-extraction rows.
+     */
+    topicHint: text("topic_hint"),
     /** bge-m3 embedding; null until the embedding job (Epic #9) fills it. */
     embedding: vector("embedding", { dimensions: 1024 }),
+    /**
+     * Which model produced `embedding` (issue #71) — set alongside the
+     * vector; the default documents the current model for rows whose
+     * embedding is still NULL. A future model migration is a re-embed job
+     * filtering `WHERE embedding IS NULL OR embedding_model != $current`.
+     */
+    embeddingModel: text("embedding_model")
+      .notNull()
+      .default("@cf/baai/bge-m3"),
     tsv: tsvector("tsv").generatedAlwaysAs(
       (): ReturnType<typeof sql> => sql`to_tsvector('english', "excerpt_text")`,
     ),
