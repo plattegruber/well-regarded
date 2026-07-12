@@ -133,6 +133,26 @@ export {
   setSignalAssociation,
 } from "./queries/reclassify.js";
 export {
+  auditPublishAttempt,
+  type CreateResponseDraftInput,
+  countPendingApprovals,
+  createResponseDraft,
+  type FailedPublish,
+  getResponse,
+  getResponseReviewContext,
+  listFailedPublishes,
+  listResponsesForSignal,
+  listResponsesPendingApproval,
+  type PendingApprovalCard,
+  type ResponsePublishPatch,
+  type ResponseReviewContext,
+  type ResponseThreadRow,
+  type ReviewResponse,
+  type TransitionResponseInput,
+  type TransitionResponseResult,
+  transitionResponse,
+} from "./queries/responses.js";
+export {
   countReviewInboxStatuses,
   decodeReviewsCursor,
   getReviewDetail,

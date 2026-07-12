@@ -12,11 +12,10 @@
  * {@link latestResponseStatusExpr} is the SQL source of the latest
  * `responses.status` per signal, and the CASE in
  * {@link responseStatusExpr} mirrors `reviewStatusFromResponseState`
- * (`@wellregarded/core`) onto the inbox vocabulary. The `responses` table
- * is #80's work and does not exist yet, so the latest status is a constant
- * `NULL` and every review resolves through the documented fallback: **no
- * response recorded → `needs_response`**. When #80 lands, only
- * `latestResponseStatusExpr` changes (see its TODO for the join shape).
+ * (`@wellregarded/core`) onto the inbox vocabulary. The status reads the
+ * newest `responses` row per signal (#80's table); a review with no
+ * response rows resolves through the documented fallback: **no response
+ * recorded → `needs_response`**.
  *
  * **Needs-attention-first ordering** (#76, the default sort) is a SQL CASE
  * tier plus a per-tier direction:
@@ -44,6 +43,8 @@
 
 import {
   REVIEW_SOURCE_KINDS,
+  type ResponseErrorDetail,
+  type ResponseModerationState,
   type ReviewResponseStatus,
   type ReviewSourceKind,
   reviewStatusFromResponseState,
@@ -54,12 +55,14 @@ import { and, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import type { Tx } from "../audit.js";
 import type { Db } from "../client.js";
 import { signalVersions } from "../schema/dedupe.js";
+import { responses } from "../schema/responses.js";
 import { signals } from "../schema/signals.js";
 import { locations, providers } from "../schema/tenancy.js";
 import {
   type CurrentDerivations,
   getCurrentDerivations,
 } from "./derivations.js";
+import { listResponsesForSignal } from "./responses.js";
 import type { Signal } from "./signals.js";
 import {
   currentDimensionSubquery,
@@ -171,21 +174,22 @@ export function decodeReviewsCursor(
 }
 
 /**
- * The latest `responses.status` for each signal — THE seam for #80.
- *
- * TODO(#80): when the `responses` table lands, replace this constant with
- * a lateral / `DISTINCT ON (signal_id) ... ORDER BY created_at DESC`
- * subquery over `responses` (left-joined on `signal_id`), exactly like
- * `currentDimensionSubquery` resolves derivations. Nothing else in this
- * module changes: filtering, tiering, and counting all read through
- * {@link responseStatusExpr}.
- *
- * Until then no responses exist, so the latest status is NULL for every
- * signal and the status CASE resolves to the documented fallback,
- * `needs_response` ("no response recorded").
+ * The latest `responses.status` for each signal — the #80 seam, now over
+ * the real table: a correlated newest-first pick of the signal's
+ * `responses` rows (`created_at DESC, id DESC` — the same order the #77
+ * thread renders), NULL when no response exists so the status CASE
+ * resolves to the documented fallback, `needs_response`. Everything else
+ * in this module reads through {@link responseStatusExpr} unchanged.
+ * Correlated-per-row is fine at inbox page size (25 rows); the
+ * `responses_signal_id_created_at_idx` index serves the pick.
  */
 function latestResponseStatusExpr(): SQL<string | null> {
-  return sql<string | null>`NULL::text`;
+  return sql<string | null>`(
+    SELECT r.status::text FROM ${responses} r
+    WHERE r.signal_id = ${signals.id}
+    ORDER BY r.created_at DESC, r.id DESC
+    LIMIT 1
+  )`;
 }
 
 /**
@@ -463,19 +467,28 @@ export async function countReviewInboxStatuses(
 /**
  * One entry of the response thread, as the detail view renders it. This is
  * the UI-side contract for the seam: #80's `responses` table populates it
- * (newest first), #79's composer appends to it. Until the table lands the
- * thread is always empty — "no response recorded".
+ * (newest first), #79's composer appends to it. Beyond the display fields,
+ * it carries what the workflow surface (#80/#82) needs to render actions:
+ * the author id (self-approval rules), the reject comment, and the stored
+ * publish failure.
  */
 export interface ReviewResponseThreadEntry {
   id: string;
   /** #80's `responses.status` vocabulary (draft … published/failed). */
   status: string;
   body: string;
+  authorId: string | null;
   authorName: string | null;
   createdAt: Date;
   publishedAt: Date | null;
   /** Where the published reply lives at the source, when known. */
   publishedUrl: string | null;
+  /** Latest "changes requested" comment, for rejected drafts. */
+  rejectionComment: string | null;
+  /** Stored publish failure (#82's error_detail contract). */
+  errorDetail: ResponseErrorDetail | null;
+  /** GBP reply moderation state, for published rows (#117 spike). */
+  moderationState: ResponseModerationState | null;
 }
 
 export interface ReviewDetail {
@@ -538,13 +551,27 @@ export async function getReviewDetail(
   if (!head) return undefined;
   const { signal } = head;
 
-  // Parallel assembly seam: when #80's `responses` table lands, its
-  // newest-first select for this signal joins this Promise.all and feeds
-  // both `responses` and the status resolution below.
-  const [currentDerivations] = await Promise.all([
+  // Parallel assembly: derivations and the newest-first response thread
+  // (feeding both the thread and the status resolution below).
+  const [currentDerivations, responseRows] = await Promise.all([
     getCurrentDerivations(db, signalId),
+    listResponsesForSignal(db, practiceId, signalId),
   ]);
-  const responses: ReviewResponseThreadEntry[] = [];
+  const responses: ReviewResponseThreadEntry[] = responseRows.map((row) => ({
+    id: row.id,
+    status: row.status,
+    body: row.body,
+    authorId: row.authorId,
+    authorName: row.authorName,
+    createdAt: row.createdAt,
+    publishedAt: row.publishedAt,
+    // The reply's canonical home is the review it hangs off (the GBP PUT
+    // returns no per-reply URL — see #127's contract).
+    publishedUrl: row.publishedAt !== null ? signal.sourceUrl : null,
+    rejectionComment: row.rejectionComment,
+    errorDetail: row.errorDetail,
+    moderationState: row.moderationState,
+  }));
 
   const hasVersion = signal.currentVersionId !== null;
   return {

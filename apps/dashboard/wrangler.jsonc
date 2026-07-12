@@ -88,6 +88,16 @@
     }
   ],
 
+  "queues": {
+    "producers": [
+      // Publish-response queue (issue #82): the approve and retry actions
+      // enqueue approved responses; workers/jobs consumes. Code treats the
+      // binding as optional (an approved row without a queue stays
+      // approved; the Retry action re-enqueues once configured).
+      { "binding": "PUBLISH_RESPONSE_QUEUE", "queue": "wr-publish-response" }
+    ]
+  },
+
   "env": {
     "preview": {
       "name": "wr-dashboard-preview",
@@ -114,7 +124,15 @@
           "class_name": "CsvImport",
           "script_name": "wr-jobs-preview"
         }
-      ]
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "PUBLISH_RESPONSE_QUEUE",
+            "queue": "wr-publish-response-preview"
+          }
+        ]
+      }
     },
     "prod": {
       "name": "wr-dashboard-prod",
@@ -138,7 +156,15 @@
           "class_name": "CsvImport",
           "script_name": "wr-jobs-prod"
         }
-      ]
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "PUBLISH_RESPONSE_QUEUE",
+            "queue": "wr-publish-response-prod"
+          }
+        ]
+      }
     }
   }
 }

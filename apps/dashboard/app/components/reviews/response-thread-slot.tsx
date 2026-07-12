@@ -4,13 +4,13 @@
 // Contract, so the three issues compose without rework:
 //
 // - `entries` is the read-only history: all `responses` rows for the
-//   signal, newest first, already formatted by the loader. The `responses`
-//   table is #80's work; until it lands the loader passes `[]` and this
-//   component renders the honest empty state ("no response recorded") —
-//   never a fake draft or a disabled form.
-// - `composer` is #79's slot: the compose form mounts BELOW the history,
-//   inside this component, by being passed as this prop. Nothing else in
-//   the detail route moves when it arrives.
+//   signal (#80's table), newest first, already formatted by the loader.
+//   With no rows this component renders the honest empty state ("no
+//   response recorded") — never a fake draft or a disabled form.
+// - `composer` is the interactive seam BELOW the history: the workflow
+//   panel (#80/#82, `ResponseWorkflowPanel`) mounts here today, and #79's
+//   compose form joins it via the same prop. Nothing else in the detail
+//   route moves when it arrives.
 // - `sourceNote` carries source-specific honesty copy (e.g. Google replies
 //   made outside Well Regarded are not captured yet — see the route's
 //   loader for the finding on `sourceMetadata.existingReply`).

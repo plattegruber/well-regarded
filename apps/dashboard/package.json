@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.2",
+    "@wellregarded/ai": "workspace:*",
     "@wellregarded/core": "workspace:*",
     "@wellregarded/db": "workspace:*",
     "@wellregarded/sources": "workspace:*",

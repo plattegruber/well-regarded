@@ -13,13 +13,17 @@ const listUrgentSignals = vi.hoisted(() => vi.fn());
 const listNegativeReviewsNeedingResponse = vi.hoisted(() => vi.fn());
 const listFailedImports = vi.hoisted(() => vi.fn());
 const listRunningImports = vi.hoisted(() => vi.fn());
+const listFailedPublishes = vi.hoisted(() => vi.fn());
+const listResponsesPendingApproval = vi.hoisted(() => vi.fn());
 const requirePracticeContext = vi.hoisted(() => vi.fn());
 
 vi.mock("@wellregarded/db", () => ({
   TODAY_SECTION_LIMIT: 5,
   listFailedImports,
+  listFailedPublishes,
   listNegativeReviewsNeedingResponse,
   listReauthConnections,
+  listResponsesPendingApproval,
   listRunningImports,
   listUrgentSignals,
 }));
@@ -126,6 +130,34 @@ function seedEverything() {
     ],
     total: 1,
   });
+  listFailedPublishes.mockResolvedValue({
+    items: [
+      {
+        responseId: "resp-failed",
+        signalId: "sig-review",
+        body: "Thank you for the kind words!",
+        errorDetail: {
+          kind: "needs_reauth",
+          at: "2026-07-10T00:00:00.000Z",
+        },
+        failedAt: new Date("2026-07-10T00:00:00Z"),
+        sourceUrl: "https://maps.example/r/1",
+      },
+    ],
+    total: 1,
+  });
+  listResponsesPendingApproval.mockResolvedValue({
+    items: [
+      {
+        responseId: "resp-pending",
+        signalId: "sig-review-2",
+        body: "We appreciate the feedback.",
+        authorName: "Jordan Michaels",
+        submittedAt: new Date("2026-07-09T00:00:00Z"),
+      },
+    ],
+    total: 3,
+  });
 }
 
 beforeEach(() => {
@@ -136,6 +168,8 @@ beforeEach(() => {
   listNegativeReviewsNeedingResponse.mockResolvedValue(empty);
   listFailedImports.mockResolvedValue(empty);
   listRunningImports.mockResolvedValue(empty);
+  listFailedPublishes.mockResolvedValue(empty);
+  listResponsesPendingApproval.mockResolvedValue(empty);
 });
 
 describe("today loader", () => {
@@ -146,12 +180,38 @@ describe("today loader", () => {
       "reauth",
       "urgent",
       "failed-imports",
+      "failed-publishes",
+      "pending-approvals",
       "negative-reviews",
       "running-imports",
     ]);
 
     // Each card is one clear action into the owning surface.
-    const [reauth, urgent, failed, negative, running] = data.sections;
+    const [
+      reauth,
+      urgent,
+      failed,
+      failedPublish,
+      pendingApproval,
+      negative,
+      running,
+    ] = data.sections;
+    expect(failedPublish?.cards[0]).toMatchObject({
+      tag: "Publish failed",
+      tone: "negative",
+      cta: "Review & retry",
+      to: "/reviews/sig-review",
+    });
+    // The auth error class reads as a re-auth pointer, not a raw code.
+    expect(failedPublish?.cards[0]?.meta).toContain("re-authorization");
+    expect(pendingApproval?.cards[0]).toMatchObject({
+      tag: "Awaiting approval",
+      cta: "Review & approve",
+      to: "/reviews/sig-review-2",
+    });
+    expect(pendingApproval?.cards[0]?.meta).toContain("Jordan Michaels");
+    // Accurate "N more": 3 pending, 1 shown.
+    expect(pendingApproval?.more).toMatchObject({ count: 2 });
     expect(reauth?.cards[0]).toMatchObject({
       cta: "Reconnect",
       to: "/settings/integrations",
@@ -196,10 +256,24 @@ describe("today loader", () => {
       "urgent",
       "negative-reviews",
     ]);
-    // The gated queries are never even fired.
+    // The gated queries are never even fired — approve_response gates
+    // the publish/approval sections (#82 req 5), denied for marketing.
     expect(listReauthConnections).not.toHaveBeenCalled();
     expect(listFailedImports).not.toHaveBeenCalled();
     expect(listRunningImports).not.toHaveBeenCalled();
+    expect(listFailedPublishes).not.toHaveBeenCalled();
+    expect(listResponsesPendingApproval).not.toHaveBeenCalled();
+  });
+
+  it("excludes the viewer's own drafts from the approval section", async () => {
+    await loader(args);
+    expect(listResponsesPendingApproval).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      {
+        practiceId: PRACTICE_ID,
+        excludeAuthorId: "3f9619ff-8b86-4d01-b42d-00cf4fc964ff",
+      },
+    );
   });
 
   it("passes the viewer's private-feedback gate into the urgent query", async () => {
