@@ -27,7 +27,6 @@
 
 import { sql } from "drizzle-orm";
 import {
-  customType,
   index,
   integer,
   pgTable,
@@ -39,17 +38,9 @@ import {
 
 import { signals } from "./signals.js";
 import { practices } from "./tenancy.js";
-
-/**
- * Postgres `tsvector`, which drizzle-orm has no built-in column type for.
- * Only ever read/written by Postgres itself (generated column + GIN index);
- * the string data type exists for row-type completeness.
- */
-const tsvector = customType<{ data: string }>({
-  dataType() {
-    return "tsvector";
-  },
-});
+// tsvector: shared custom column type (see ./tsvector.ts) — Postgres owns
+// the value (generated column + GIN index); drizzle only needs the type.
+import { tsvector } from "./tsvector.js";
 
 export const proofExcerpts = pgTable(
   "proof_excerpts",

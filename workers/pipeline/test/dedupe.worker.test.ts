@@ -72,6 +72,8 @@ function signalRecord(
     originalRating: "5.0",
     currentVersionId: null,
     embedding: null,
+    // Postgres-owned stored generated column (issue #88) — never read here.
+    tsv: null,
     pipelineStatus: "pending_dedupe",
     visibility: "private",
     availability: "available",

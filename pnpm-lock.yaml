@@ -23,6 +23,9 @@ importers:
       '@wellregarded/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@wellregarded/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

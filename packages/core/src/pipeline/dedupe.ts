@@ -51,3 +51,14 @@ export const SUSPECTED_DUPLICATE_STATUSES = [
 
 export type SuspectedDuplicateStatus =
   (typeof SUSPECTED_DUPLICATE_STATUSES)[number];
+
+/**
+ * The human verdicts the review flow (issue #90) accepts for a pending
+ * link: `same` → `confirmed`, `different` → `dismissed`. Vocabulary lives
+ * here so the dashboard form and `resolveSuspectedDuplicate` in
+ * `@wellregarded/db` share one list.
+ */
+export const SUSPECTED_DUPLICATE_RESOLUTIONS = ["same", "different"] as const;
+
+export type SuspectedDuplicateResolution =
+  (typeof SUSPECTED_DUPLICATE_RESOLUTIONS)[number];

@@ -12,6 +12,7 @@ actions, Hono API middleware, and (in rendered-disabled form) UI.
 | view_patient_identity | allow | allow | scoped | deny | deny | allow | deny |
 | view_private_feedback | allow | allow | scoped | allow | scoped | allow | deny |
 | assign_recovery | allow | allow | scoped | deny | deny | allow | deny |
+| resolve_duplicates | allow | allow | scoped | deny | deny | allow | deny |
 | draft_response | allow | allow | scoped | allow | deny | allow | allow |
 | approve_response | allow | allow | deny | deny | deny | allow | deny |
 | publish_public | allow | allow | deny | allow | deny | allow | deny |
