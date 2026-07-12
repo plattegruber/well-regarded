@@ -52,7 +52,10 @@
     // Local dev uses Miniflare's KV simulator, which ignores the id.
     // <TBD>: real namespace (wr-proof-cache-local is never provisioned; only
     // preview/prod namespaces exist in Cloudflare) — provisioned in Epic #2.
-    { "binding": "PROOF_CACHE", "id": "TBD-provision-in-epic-2" }
+    { "binding": "PROOF_CACHE", "id": "TBD-provision-in-epic-2" },
+    // Single-use OAuth state/PKCE-verifier records for the Google connect
+    // flow (issue #118). <TBD>: real namespace — provisioned in Epic #2.
+    { "binding": "OAUTH_STATE", "id": "TBD-provision-in-epic-2" }
   ],
 
   "r2_buckets": [
@@ -81,7 +84,9 @@
       },
       "kv_namespaces": [
         // <TBD>: id of KV namespace `wr-proof-cache-preview` — Epic #2.
-        { "binding": "PROOF_CACHE", "id": "TBD-provision-in-epic-2" }
+        { "binding": "PROOF_CACHE", "id": "TBD-provision-in-epic-2" },
+        // <TBD>: id of KV namespace `wr-oauth-state-preview` — Epic #2.
+        { "binding": "OAUTH_STATE", "id": "TBD-provision-in-epic-2" }
       ],
       "r2_buckets": [
         { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-preview" }
@@ -101,7 +106,9 @@
       },
       "kv_namespaces": [
         // <TBD>: id of KV namespace `wr-proof-cache-prod` — Epic #2.
-        { "binding": "PROOF_CACHE", "id": "TBD-provision-in-epic-2" }
+        { "binding": "PROOF_CACHE", "id": "TBD-provision-in-epic-2" },
+        // <TBD>: id of KV namespace `wr-oauth-state-prod` — Epic #2.
+        { "binding": "OAUTH_STATE", "id": "TBD-provision-in-epic-2" }
       ],
       "r2_buckets": [
         { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-prod" }

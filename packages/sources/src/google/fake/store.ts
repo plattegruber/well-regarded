@@ -104,6 +104,24 @@ export type AddReviewOverrides = Partial<GbpReview> & {
   location?: string;
 };
 
+export interface IssueAuthCodeOptions {
+  /**
+   * S256 PKCE challenge recorded on the code (as the authorization endpoint
+   * does). When set, the exchange must present the matching verifier.
+   */
+  codeChallenge?: string;
+  /**
+   * Whether the exchange returns a refresh token. Default true. `false`
+   * models Google's repeat-consent-without-`prompt=consent` behavior.
+   */
+  withRefreshToken?: boolean;
+}
+
+interface IssuedAuthCode {
+  codeChallenge?: string;
+  withRefreshToken: boolean;
+}
+
 export class FakeGbpStore {
   accessTokenTtlSeconds: number;
   initialReplyState: ReviewReplyState;
@@ -112,7 +130,7 @@ export class FakeGbpStore {
   private locations: LocationRecord[] = [];
   private reviews = new Map<string, GbpReview>();
 
-  private authCodes = new Set<string>();
+  private authCodes = new Map<string, IssuedAuthCode>();
   private refreshTokens = new Set<string>();
   private accessTokens = new Map<string, number>(); // token -> expiresAt (ms)
 
@@ -409,29 +427,62 @@ export class FakeGbpStore {
   // OAuth
   // -------------------------------------------------------------------------
 
-  /** Mint a single-use authorization code, as if consent just completed. */
-  issueAuthCode(): string {
+  /**
+   * Mint a single-use authorization code, as if consent just completed.
+   * `codeChallenge` (the S256 challenge from the authorization request)
+   * arms PKCE verification on the exchange; `withRefreshToken: false`
+   * simulates Google withholding the refresh token (repeat consent without
+   * `access_type=offline` + `prompt=consent` — #118's error path).
+   */
+  issueAuthCode(options: IssueAuthCodeOptions = {}): string {
     this.counters.code += 1;
     const code = `fake-auth-code-${this.counters.code}`;
-    this.authCodes.add(code);
+    const issued: IssuedAuthCode = {
+      withRefreshToken: options.withRefreshToken ?? true,
+    };
+    if (options.codeChallenge !== undefined) {
+      issued.codeChallenge = options.codeChallenge;
+    }
+    this.authCodes.set(code, issued);
     return code;
   }
 
-  /** Consume an auth code. Returns tokens, or undefined (→ invalid_grant). */
+  /**
+   * Consume an auth code. Returns tokens, or undefined (→ invalid_grant) —
+   * including when the code was armed with a PKCE challenge and
+   * `derivedCodeChallenge` (S256 of the presented `code_verifier`, computed
+   * by the app) is missing or wrong.
+   */
   exchangeAuthCode(
     code: string,
+    verification: { derivedCodeChallenge?: string } = {},
   ):
-    | { accessToken: string; refreshToken: string; expiresIn: number }
+    | { accessToken: string; refreshToken?: string; expiresIn: number }
     | undefined {
-    if (!this.authCodes.delete(code)) return undefined;
-    this.counters.refreshToken += 1;
-    const refreshToken = `fake-refresh-token-${this.counters.refreshToken}`;
-    this.refreshTokens.add(refreshToken);
-    return {
+    const issued = this.authCodes.get(code);
+    if (!issued) return undefined;
+    this.authCodes.delete(code); // single-use even when PKCE fails
+    if (
+      issued.codeChallenge !== undefined &&
+      verification.derivedCodeChallenge !== issued.codeChallenge
+    ) {
+      return undefined;
+    }
+    const granted: {
+      accessToken: string;
+      refreshToken?: string;
+      expiresIn: number;
+    } = {
       accessToken: this.issueAccessToken(),
-      refreshToken,
       expiresIn: this.accessTokenTtlSeconds,
     };
+    if (issued.withRefreshToken) {
+      this.counters.refreshToken += 1;
+      const refreshToken = `fake-refresh-token-${this.counters.refreshToken}`;
+      this.refreshTokens.add(refreshToken);
+      granted.refreshToken = refreshToken;
+    }
+    return granted;
   }
 
   /** Refresh grant. Returns a new access token, or undefined (→ invalid_grant). */
@@ -479,6 +530,21 @@ export class FakeGbpStore {
    */
   revokeRefreshToken(refreshToken: string): void {
     this.refreshTokens.delete(refreshToken);
+  }
+
+  /** True when the refresh token is still honored (disconnect assertions). */
+  isValidRefreshToken(refreshToken: string): boolean {
+    return this.refreshTokens.has(refreshToken);
+  }
+
+  /**
+   * The `/oauth/revoke` behavior (#118's disconnect path): accepts either
+   * token type; revoking an access token also drops it. Returns whether the
+   * token was known.
+   */
+  revokeToken(token: string): boolean {
+    if (this.refreshTokens.delete(token)) return true;
+    return this.accessTokens.delete(token);
   }
 
   // -------------------------------------------------------------------------

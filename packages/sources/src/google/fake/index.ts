@@ -36,5 +36,6 @@ export {
   type FailNextOptions,
   FakeGbpStore,
   type FakeGbpStoreOptions,
+  type IssueAuthCodeOptions,
 } from "./store.js";
 export * from "./types.js";

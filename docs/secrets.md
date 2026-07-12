@@ -54,9 +54,28 @@ files contain placeholder values only, and secrets never go in `vars` in
 | `ANTHROPIC_API_KEY` | **Yes** | pipeline (classify stage, Epic #9); other AI callers add it when their paths land | `workers/pipeline/.dev.vars` (no dev value — leave unset until needed) | `wrangler secret put ANTHROPIC_API_KEY --env preview\|prod` |
 | `PIPELINE_MODEL` | No | pipeline | `.dev.vars` (optional — defaults to `claude-haiku-4-5-20251001` in the schema) | `vars` in `wrangler.jsonc` (only to override the default) |
 | `DRAFTING_MODEL` | No | pipeline | `.dev.vars` (optional — defaults to `claude-sonnet-5` in the schema) | `vars` in `wrangler.jsonc` (only to override the default) |
+| `GOOGLE_CLIENT_ID` | No (public identifier) | api (Google connect flow, #118) | `workers/api/.dev.vars` (placeholder — the fake GBP server ignores it) | `vars` in `wrangler.jsonc` |
+| `GOOGLE_CLIENT_SECRET` | **Yes** | api | `workers/api/.dev.vars` (placeholder) | `wrangler secret put GOOGLE_CLIENT_SECRET --env preview\|prod` |
+| `GOOGLE_OAUTH_STATE_SECRET` | **Yes** | api (signs the OAuth `state` param, #118) | `workers/api/.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put GOOGLE_OAUTH_STATE_SECRET --env preview\|prod` |
+| `GOOGLE_OAUTH_AUTH_URL`, `GOOGLE_OAUTH_TOKEN_URL`, `GOOGLE_OAUTH_REVOKE_URL` | No | api | `workers/api/.dev.vars`, pointed at the fake GBP server (`http://localhost:8799/...`, #130) | leave unset — the schema defaults are the real Google endpoints |
+| `GOOGLE_OAUTH_REDIRECT_URL` | No | api | leave unset (derived from the request origin) | `vars` only when the worker sits behind a rewriting proxy |
+| `DASHBOARD_ORIGIN` | No | api (OAuth callback redirect target) | leave unset (defaults to `http://localhost:5173`) | `vars` in `wrangler.jsonc` (all env stanzas) |
 
 Every `CLERK_*` var is **optional in the schemas until the real Clerk
 application exists** — see the next section for the exact flip.
+
+`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_OAUTH_STATE_SECRET`
+are **optional in the schemas until the real Google Cloud OAuth client
+exists** (`TODO(#7-gbp-epic)` in `packages/core/src/env.ts`; provisioning is
+the human-gated Track 2 in ADR 0002 Appendix C) — the connect route checks
+at request time and fails with an actionable message. Generate
+`GOOGLE_OAUTH_STATE_SECRET` with `openssl rand -base64 32`; it signs the
+anti-CSRF `state` parameter of the Google connect flow (#118). The
+`GOOGLE_OAUTH_*_URL` vars exist so local dev and tests hit the fake GBP
+server instead of real Google; refresh tokens themselves are stored
+AES-GCM-encrypted in `source_connections.encrypted_credentials` using the
+`PII_ENCRYPTION_KEYS` keyring (the shared field-encryption util — no second
+key or implementation).
 
 `ANTHROPIC_API_KEY` is **optional in the schemas until the classify stage
 (#67) goes live** (`TODO(#9-ai-epic)` in `packages/core/src/env.ts`) — no

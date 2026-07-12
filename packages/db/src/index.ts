@@ -121,6 +121,14 @@ export {
   type SignalViewerPermissions,
 } from "./queries/signalsInbox.js";
 export {
+  disconnectSourceConnection,
+  getSourceConnection,
+  markSourceConnectionNeedsReauth,
+  type SourceConnection,
+  type UpsertSourceConnectionInput,
+  upsertSourceConnection,
+} from "./queries/sourceConnections.js";
+export {
   getPracticeByClerkOrgId,
   getStaffMemberByRole,
   type Practice,

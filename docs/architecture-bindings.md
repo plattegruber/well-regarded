@@ -18,6 +18,7 @@ TBD, live in [`infra/environments.md`](../infra/environments.md).
 | `CLASSIFY_DLQ`   | queue producer  | pipeline                   | Dead-letter forward path for the classify stage (`wr-classify-dlq`)                             |
 | `ROUTE_DLQ`      | queue producer  | pipeline                   | Dead-letter forward path for the route stage (`wr-route-dlq`)                                   |
 | `PROOF_CACHE`    | KV namespace    | api                        | Cache of rendered social-proof payloads served by the API                                       |
+| `OAUTH_STATE`    | KV namespace    | api                        | Single-use OAuth state/PKCE-verifier records for the Google connect flow (#118): `{ verifier, practiceId, staffId }` under the state nonce, 10-minute TTL, deleted on callback read (`wr-oauth-state-<env>`) |
 | `RAW_IMPORTS`    | R2 bucket       | api                        | Raw uploaded/imported source files (`wr-raw-imports-<env>`)                                     |
 | `RAW_ARTIFACTS`  | R2 bucket       | pipeline                   | Immutable content-addressed raw source artifacts (#100), read by the normalize stage (`wr-raw-artifacts-<env>`) |
 | `HYPERDRIVE`     | Hyperdrive      | api, jobs, dashboard, pipeline | Pooled connection to the Postgres database (pgvector)                                       |

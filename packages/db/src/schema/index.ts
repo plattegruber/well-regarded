@@ -15,4 +15,5 @@ export * from "./importRuns.js";
 export * from "./pii.js";
 export * from "./proofExcerpts.js";
 export * from "./signals.js";
+export * from "./sourceConnections.js";
 export * from "./tenancy.js";

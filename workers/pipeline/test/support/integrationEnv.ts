@@ -8,6 +8,7 @@
 
 import { vi } from "vitest";
 
+import { TEST_KEYRING_INPUT } from "../../../../packages/db/test/factories.js";
 import {
   requireDatabaseUrl,
   withDatabase,
@@ -16,13 +17,14 @@ import type { PipelineBindings, QueueProducer } from "../../src/bindings";
 import type { QueueMessageLike } from "../../src/dispatch";
 
 /**
- * Test-only PII keyring material — the same committed values as
- * `TEST_KEYRING` in packages/db/test/factories.ts, in env-var form so the
- * wired normalize handler builds its keyring exactly as production does.
+ * Test-only PII keyring material — `TEST_KEYRING_INPUT` from
+ * packages/db/test/factories.ts (the one source of truth), in env-var form
+ * so the wired normalize handler builds its keyring exactly as production
+ * does.
  */
 export const TEST_PII_ENV = {
-  PII_ENCRYPTION_KEYS: '{"1":"3l4Zg1nkiYyIDvi2rL9BW6BpAgLE0za88AGB98s8xIo="}',
-  PII_HASH_KEY: "H0M2t0Cyp0kWt3pWn4E2G9dY0aQx8bH4bBqkYb7t0eE=",
+  PII_ENCRYPTION_KEYS: JSON.stringify(TEST_KEYRING_INPUT.encryptionKeys),
+  PII_HASH_KEY: TEST_KEYRING_INPUT.hashKey,
 } as const;
 
 export interface RecordingProducer extends QueueProducer {

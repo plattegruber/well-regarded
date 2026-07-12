@@ -27,6 +27,21 @@ export interface ApiBindings {
    * `InMemoryRawArtifactBucket`; the real `R2Bucket` satisfies it.
    */
   RAW_IMPORTS: RawImportBucket;
+  /**
+   * KV for single-use OAuth state records (issue #118): the Google connect
+   * flow stores `{ verifier, practiceId, staffId }` under the state nonce
+   * with a 10-minute TTL; the callback deletes on read. Only the three
+   * methods the flow uses are typed — tests inject a Map-backed fake.
+   */
+  OAUTH_STATE: {
+    get(key: string): Promise<string | null>;
+    put(
+      key: string,
+      value: string,
+      options?: { expirationTtl?: number },
+    ): Promise<void>;
+    delete(key: string): Promise<void>;
+  };
   /** String vars/secrets, validated by `getEnv(c.env, apiEnvSchema)`. */
   [key: string]: unknown;
 }

@@ -259,6 +259,9 @@ importers:
       '@faker-js/faker':
         specifier: ^10.5.0
         version: 10.5.0
+      '@hono/node-server':
+        specifier: ^1.19.0
+        version: 1.19.14(hono@4.12.29)
       '@types/node':
         specifier: ^26.1.1
         version: 26.1.1
