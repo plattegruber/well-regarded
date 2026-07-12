@@ -113,6 +113,13 @@
       "when": 1783820681969,
       "tag": "0016_signals_fts_tsv",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1783821166650,
+      "tag": "0017_source_connections",
+      "breakpoints": true
     }
   ]
 }

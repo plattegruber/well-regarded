@@ -3,7 +3,9 @@
  *
  * A Hono app mimicking the exact API surface ADR 0002 §2 documents:
  *
- * - `POST /oauth/token`                                — oauth2.googleapis.com
+ * - `GET  /o/oauth2/v2/auth`                           — accounts.google.com (auto-approving consent, #118)
+ * - `POST /oauth/token`                                — oauth2.googleapis.com (PKCE-verifying)
+ * - `POST /oauth/revoke`                               — oauth2.googleapis.com
  * - `GET  /v1/accounts`                                — Account Management v1
  * - `GET  /v1/accounts/{a}/locations`                  — Business Information v1
  * - `GET  /v1/locations/{l}`                           — Business Information v1
@@ -100,6 +102,66 @@ export function createFakeGbp(
   });
 
   // ---------------------------------------------------------------------
+  // OAuth authorization endpoint (real host:
+  // accounts.google.com/o/oauth2/v2/auth). Auto-approves: no consent
+  // screen, just parameter validation → 302 back to redirect_uri with a
+  // single-use code, exactly what a browser driving #118's connect flow
+  // needs. Fidelity choices:
+  // - refresh token granted only with `access_type=offline` AND
+  //   `prompt=consent` — models Google's repeat-consent behavior (ADR 0002
+  //   §4), so a client missing the recipe hits #118's no-refresh-token path;
+  // - `code_challenge` (S256 only) is recorded and enforced at the token
+  //   endpoint;
+  // - invalid requests are a plain 400 (real Google renders an error page).
+  // ---------------------------------------------------------------------
+
+  app.get("/o/oauth2/v2/auth", (c) => {
+    const q = (name: string) => c.req.query(name);
+    const redirectUri = q("redirect_uri");
+    if (!q("client_id") || !redirectUri || !isHttpUrl(redirectUri)) {
+      return oauthBadRequest(
+        c,
+        "invalid_request",
+        "Missing or malformed client_id / redirect_uri.",
+      );
+    }
+    if (q("response_type") !== "code") {
+      return oauthBadRequest(
+        c,
+        "unsupported_response_type",
+        "response_type must be 'code'.",
+      );
+    }
+    if (!(q("scope") ?? "").split(/\s+/).includes(GBP_OAUTH_SCOPE)) {
+      return oauthBadRequest(
+        c,
+        "invalid_scope",
+        `scope must include ${GBP_OAUTH_SCOPE}.`,
+      );
+    }
+    const codeChallenge = q("code_challenge");
+    if (codeChallenge && q("code_challenge_method") !== "S256") {
+      return oauthBadRequest(
+        c,
+        "invalid_request",
+        "code_challenge_method must be S256.",
+      );
+    }
+    const withRefreshToken =
+      q("access_type") === "offline" &&
+      (q("prompt") ?? "").split(/\s+/).includes("consent");
+    const code = store.issueAuthCode({
+      ...(codeChallenge ? { codeChallenge } : {}),
+      withRefreshToken,
+    });
+    const location = new URL(redirectUri);
+    location.searchParams.set("code", code);
+    const state = q("state");
+    if (state !== undefined) location.searchParams.set("state", state);
+    return c.redirect(location.toString(), 302);
+  });
+
+  // ---------------------------------------------------------------------
   // OAuth token endpoint (real host: oauth2.googleapis.com/token)
   // ---------------------------------------------------------------------
 
@@ -109,7 +171,16 @@ export function createFakeGbp(
 
     if (grantType === "authorization_code") {
       const code = params.get("code");
-      const granted = code ? store.exchangeAuthCode(code) : undefined;
+      const codeVerifier = params.get("code_verifier");
+      const derivedCodeChallenge = codeVerifier
+        ? await s256Challenge(codeVerifier)
+        : undefined;
+      const granted = code
+        ? store.exchangeAuthCode(
+            code,
+            derivedCodeChallenge ? { derivedCodeChallenge } : {},
+          )
+        : undefined;
       if (!granted) {
         return c.json(
           { error: "invalid_grant", error_description: "Malformed auth code." },
@@ -119,7 +190,9 @@ export function createFakeGbp(
       const body: OauthTokenResponse = {
         access_token: granted.accessToken,
         expires_in: granted.expiresIn,
-        refresh_token: granted.refreshToken,
+        ...(granted.refreshToken
+          ? { refresh_token: granted.refreshToken }
+          : {}),
         scope: GBP_OAUTH_SCOPE,
         token_type: "Bearer",
       };
@@ -156,6 +229,23 @@ export function createFakeGbp(
       },
       400,
     );
+  });
+
+  // ---------------------------------------------------------------------
+  // OAuth revocation endpoint (real host: oauth2.googleapis.com/revoke) —
+  // #118's best-effort disconnect revocation. Accepts either token type.
+  // ---------------------------------------------------------------------
+
+  app.post("/oauth/revoke", async (c) => {
+    const params = await readTokenParams(c.req.raw);
+    const token = params.get("token") ?? c.req.query("token");
+    if (!token || !store.revokeToken(token)) {
+      return c.json(
+        { error: "invalid_token", error_description: "Token is not known." },
+        400,
+      );
+    }
+    return c.json({});
   });
 
   // ---------------------------------------------------------------------
@@ -379,6 +469,33 @@ export function createFakeGbp(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/** Authorization-endpoint validation failure (simplified: JSON, not a page). */
+function oauthBadRequest(
+  c: { json: (body: unknown, status: 400) => Response },
+  error: string,
+  description: string,
+): Response {
+  return c.json({ error, error_description: description }, 400);
+}
+
+/** RFC 7636 S256: base64url(SHA-256(ascii(code_verifier))). */
+async function s256Challenge(codeVerifier: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(codeVerifier),
+  );
+  return toBase64Url(btoa(String.fromCharCode(...new Uint8Array(digest))));
 }
 
 /** Google JSON error envelope, as the v1/v4 HTTP front ends render it. */

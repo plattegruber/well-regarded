@@ -128,6 +128,48 @@ const aiEnvSchema = z.object({
 });
 
 /**
+ * Google OAuth for the Business Profile integration (issue #118, Epic #7).
+ *
+ * The three `*_URL` vars exist so local dev and tests point at the fake GBP
+ * server (#130) instead of real Google — the defaults are the real hosts,
+ * so deployed environments only set the credentials. `business.manage` is
+ * the only scope (ADR 0002 §4).
+ */
+const googleOauthEnvSchema = z.object({
+  // TODO(#7-gbp-epic): make CLIENT_ID/SECRET/STATE_SECRET required once the
+  // real Google Cloud OAuth client exists (Appendix C of ADR 0002) — until
+  // then the connect route checks at request time with an actionable error.
+  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  /**
+   * HMAC key signing the OAuth `state` parameter (anti-CSRF binding of
+   * practice + staff + nonce): base64 of >= 32 random bytes
+   * (`openssl rand -base64 32`).
+   */
+  GOOGLE_OAUTH_STATE_SECRET: z.string().min(1).optional(),
+  GOOGLE_OAUTH_AUTH_URL: z
+    .url()
+    .default("https://accounts.google.com/o/oauth2/v2/auth"),
+  GOOGLE_OAUTH_TOKEN_URL: z
+    .url()
+    .default("https://oauth2.googleapis.com/token"),
+  GOOGLE_OAUTH_REVOKE_URL: z
+    .url()
+    .default("https://oauth2.googleapis.com/revoke"),
+  /**
+   * Public URL of the callback route. Unset = derived from the incoming
+   * request's origin (correct for local dev and the deployed worker); set it
+   * only when the worker sits behind a rewriting proxy.
+   */
+  GOOGLE_OAUTH_REDIRECT_URL: z.url().optional(),
+  /**
+   * Dashboard origin the callback redirects back to
+   * (`<origin>/settings?connected=google`). Default matches local dev.
+   */
+  DASHBOARD_ORIGIN: z.url().default("http://localhost:5173"),
+});
+
+/**
  * Cookie-session signing secret for the dashboard (flash messages, #141):
  * any long random string (`openssl rand -base64 32`).
  */
@@ -145,7 +187,8 @@ export const apiEnvSchema = baseEnvSchema
   .extend(clerkEnvSchema.shape)
   .extend(clerkJwtVerificationEnvSchema.shape)
   .extend(clerkWebhookEnvSchema.shape)
-  .extend(piiKeyringEnvSchema.shape);
+  .extend(piiKeyringEnvSchema.shape)
+  .extend(googleOauthEnvSchema.shape);
 export const pipelineEnvSchema = baseEnvSchema
   .extend(piiKeyringEnvSchema.shape)
   .extend(aiEnvSchema.shape);

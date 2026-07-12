@@ -22,6 +22,7 @@ import { staffAuth } from "./middleware/staffAuth";
 import { withDb } from "./middleware/withDb";
 import { apiKeyRoutes } from "./routes/apiKeys";
 import { importRoutes } from "./routes/imports";
+import { googleIntegrationRoutes } from "./routes/integrations/google";
 import { clerkWebhook } from "./routes/webhooks/clerk";
 
 export const app = new Hono<AppEnv>();
@@ -86,6 +87,9 @@ staff.route("/api-keys", apiKeyRoutes);
 
 /** CSV import upload + mapping drafts (issue #133): manage_settings-gated. */
 staff.route("/imports", importRoutes);
+
+/** Google Business Profile OAuth (issue #118): gated via manage_settings. */
+staff.route("/integrations/google", googleIntegrationRoutes);
 
 app.route("/api", staff);
 

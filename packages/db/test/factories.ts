@@ -18,7 +18,11 @@
  */
 
 import { faker } from "@faker-js/faker";
-import { createKeyring, generateApiKey } from "@wellregarded/core";
+import {
+  createKeyring,
+  encryptField,
+  generateApiKey,
+} from "@wellregarded/core";
 import { eq } from "drizzle-orm";
 
 import type { Db } from "../src/client.js";
@@ -39,6 +43,7 @@ import { importRuns } from "../src/schema/importRuns.js";
 import { patients } from "../src/schema/pii.js";
 import { proofExcerpts } from "../src/schema/proofExcerpts.js";
 import { signals } from "../src/schema/signals.js";
+import { sourceConnections } from "../src/schema/sourceConnections.js";
 import {
   locations,
   practices,
@@ -47,14 +52,17 @@ import {
 } from "../src/schema/tenancy.js";
 
 /**
- * Test-only key material (generated with `openssl rand -base64 32`; never
- * real secrets). Used by `contactPoint()` and exported so tests can
+ * Test-only key material — base64 of readable 32-byte strings, computed at
+ * runtime so no secret-shaped literal sits in the repo; never real
+ * secrets. Used by `contactPoint()` and `sourceConnection()`, and exported
+ * (raw input too — worker tests feed it through env vars) so tests can
  * decrypt/hash the same values.
  */
-export const TEST_KEYRING = createKeyring({
-  encryptionKeys: { "1": "3l4Zg1nkiYyIDvi2rL9BW6BpAgLE0za88AGB98s8xIo=" },
-  hashKey: "H0M2t0Cyp0kWt3pWn4E2G9dY0aQx8bH4bBqkYb7t0eE=",
-});
+export const TEST_KEYRING_INPUT = {
+  encryptionKeys: { "1": btoa("test-only-pii-encryption-key-32b") },
+  hashKey: btoa("test-only-pii-hash-hmac-key-32b!"),
+};
+export const TEST_KEYRING = createKeyring(TEST_KEYRING_INPUT);
 
 /**
  * Monotonic per-process counter — the uniqueness component of every
@@ -79,6 +87,7 @@ type LocationInsert = typeof locations.$inferInsert;
 type StaffMemberInsert = typeof staffMembers.$inferInsert;
 type ProviderInsert = typeof providers.$inferInsert;
 type SignalInsert = typeof signals.$inferInsert;
+type SourceConnectionInsert = typeof sourceConnections.$inferInsert;
 type DerivationInsert = typeof derivations.$inferInsert;
 type PatientInsert = typeof patients.$inferInsert;
 type ProofExcerptInsert = typeof proofExcerpts.$inferInsert;
@@ -178,6 +187,44 @@ export async function staffMember(
     })
     .returning();
   return must(row, "staff member");
+}
+
+/**
+ * Inserts a `source_connections` row (issue #118). The default
+ * `encryptedCredentials` is real `encryptField` output over a fake refresh
+ * token using `TEST_KEYRING`, so decrypt paths work in tests. Creates the
+ * practice (and a connecting staff member) on demand.
+ */
+export async function sourceConnection(
+  db: Db,
+  overrides: Partial<SourceConnectionInsert> = {},
+): Promise<typeof sourceConnections.$inferSelect> {
+  const n = nextSeq();
+  const practiceId = overrides.practiceId ?? (await practice(db)).id;
+  const connectedBy =
+    overrides.connectedBy ?? (await staffMember(db, { practiceId })).id;
+  const encryptedCredentials =
+    overrides.encryptedCredentials !== undefined
+      ? overrides.encryptedCredentials
+      : await encryptField(
+          JSON.stringify({
+            refreshToken: `test-refresh-token-${n}`,
+            obtainedAt: new Date().toISOString(),
+          }),
+          TEST_KEYRING,
+        );
+  const [row] = await db
+    .insert(sourceConnections)
+    .values({
+      kind: "google",
+      scopes: ["https://www.googleapis.com/auth/business.manage"],
+      ...overrides,
+      practiceId,
+      connectedBy,
+      encryptedCredentials,
+    })
+    .returning();
+  return must(row, "source connection");
 }
 
 export async function provider(

@@ -41,6 +41,34 @@ in the create-response; the `api_keys` table stores a SHA-256 hash and a
   `apiActor.environment === "test"` flags demo/staging scoping for later
   proof routes.
 
+### Google Business Profile connect flow (issue #118)
+
+`/api/integrations/google/*` (staff auth, gated by
+`requirePermission("manage_settings")`):
+
+- `GET /connect` — 302 to Google's authorization endpoint with PKCE (S256),
+  `access_type=offline` + `prompt=consent`, and a signed `state` binding
+  `{ practiceId, staffId, nonce, exp }` (HMAC via
+  `GOOGLE_OAUTH_STATE_SECRET`); the PKCE verifier lives in the
+  `OAUTH_STATE` KV under the nonce (10-minute TTL, single-use).
+- `GET /callback` — verifies state + actor binding, consumes the nonce
+  (delete-on-read), exchanges the code, AES-GCM-encrypts
+  `{ refreshToken, obtainedAt }` (shared `encryptField` util,
+  `PII_ENCRYPTION_KEYS` keyring) into `source_connections`, audits, and
+  redirects to `DASHBOARD_ORIGIN/settings?connected=google` (failures:
+  `?error=google_*`).
+- `POST /disconnect` — best-effort Google revocation, then
+  `status='disconnected'` + credentials erased + audit.
+- `GET /` — connection status JSON (never credentials) for the settings
+  card (#121 builds the UI and location mapping).
+
+Local dev runs against the fake GBP server: `pnpm dev:fake-gbp`, with the
+`GOOGLE_OAUTH_*_URL` vars in `.dev.vars` pointing at it (see
+`.dev.vars.example`). Token refresh (`getAccessToken` with clock-skew slack
+and single-flight) lives in `@wellregarded/sources` (`google/auth.ts`);
+`invalid_grant` marks the row `needs_reauth` — expected weekly while the
+OAuth consent screen is in Testing status (ADR 0002 §4).
+
 ## CSV imports (issue #133)
 
 `POST /api/imports/csv` (staff auth, `manage_settings`) accepts a CSV as

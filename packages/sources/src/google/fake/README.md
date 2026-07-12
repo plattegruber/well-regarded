@@ -25,7 +25,9 @@ from one origin (base URLs are injectable everywhere, per #118/#123/#127):
 
 | Fake path | Real endpoint (ADR 0002 §2) |
 |---|---|
+| `GET /o/oauth2/v2/auth` | `accounts.google.com/o/oauth2/v2/auth` (auto-approving consent — no screen, just validation → 302 with a code) |
 | `POST /oauth/token` | `oauth2.googleapis.com/token` |
+| `POST /oauth/revoke` | `oauth2.googleapis.com/revoke` (#118's best-effort disconnect revocation) |
 | `GET /v1/accounts` | Account Management v1 (`pageSize` default **and max 20**) |
 | `GET /v1/accounts/{a}/locations` | Business Information v1 (**`readMask` required**, max 100) |
 | `GET /v1/locations/{l}` | Business Information v1 (profile fields for #156) |
@@ -55,6 +57,14 @@ from one origin (base URLs are injectable everywhere, per #118/#123/#127):
 - OAuth: form-encoded grants, single-use codes, `refresh_token` only on the
   code exchange, `invalid_grant` on bad/revoked grants, scope
   `https://www.googleapis.com/auth/business.manage`.
+- PKCE (S256): a code issued with a `code_challenge` (via the authorization
+  endpoint or `store.issueAuthCode({ codeChallenge })`) exchanges only with
+  the matching `code_verifier`; a failed PKCE exchange still consumes the
+  code. Codes issued without a challenge skip verification.
+- Refresh-token recipe: the authorization endpoint returns a
+  refresh-token-bearing code only with `access_type=offline` **and**
+  `prompt=consent` — models Google's repeat-consent behavior (ADR 0002 §4),
+  so #118's missing-refresh-token error path is exercisable.
 
 ## Simplified / assumed (safe for our tests, verify before relying on more)
 
@@ -80,8 +90,10 @@ from one origin (base URLs are injectable everywhere, per #118/#123/#127):
 - Deterministic ids/tokens (`accounts/1`, `fake-access-token-1`) instead of
   Google's opaque blobs; `pageSize` over the max is clamped (Google may 400).
 - Quotas are not simulated — script 429s explicitly with `failNext`.
-- OAuth ignores `client_id`/`client_secret`/PKCE params, and the token
-  endpoint also accepts JSON bodies (real Google: form-encoded only).
+- OAuth ignores `client_id`/`client_secret` values (any non-empty client_id
+  passes), the authorization endpoint auto-approves and answers invalid
+  requests with a JSON 400 (real Google renders an error page), and the
+  token endpoint also accepts JSON bodies (real Google: form-encoded only).
 
 ## In-process mode (Vitest — no port, no race)
 

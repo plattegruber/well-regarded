@@ -36,12 +36,29 @@ ENVIRONMENT=local
 PII_ENCRYPTION_KEYS={"1":"JB0/YtR2n0wh265yN8SRYBs45Lp0yt7sE2m+Ty6LOaE="}
 PII_HASH_KEY=JKTMICa0vU/Ori8626X0AqH4D+At4aJ3cPg5JQBKqwI=
 
-# Google Business Profile base URLs (Epic #7). Unset = future code uses the
-# real Google hosts. For local dev point ALL of them at the fake GBP server
-# (issue #130): `pnpm dev:fake-gbp` serves every host from one origin on
-# port 8799 and prints ready-to-use credentials. These become real entries
-# in apiEnvSchema when #118 lands; until then they document the pattern.
-# GOOGLE_OAUTH_TOKEN_URL=http://localhost:8799/oauth/token
+# Google Business Profile OAuth (issue #118, Epic #7). Unset URL vars
+# default to the real Google hosts (apiEnvSchema); for local dev point them
+# at the fake GBP server (issue #130): `pnpm dev:fake-gbp` serves every
+# Google host from one origin on port 8799. The client id/secret are
+# placeholders — the fake ignores their values; real ones arrive with the
+# GCP OAuth client (ADR 0002 Appendix C).
+GOOGLE_CLIENT_ID=fake-local-client-id
+GOOGLE_CLIENT_SECRET=fake-local-client-secret
+# HMAC key for the signed OAuth state param — dev-only placeholder (the
+# value below is itself valid base64 decoding to 33 bytes, chosen to read
+# as the placeholder it is), safe to commit; generate real keys with
+# `openssl rand -base64 32`.
+GOOGLE_OAUTH_STATE_SECRET=devonlygoogleoauthstatesecretplaceholder7777
+GOOGLE_OAUTH_AUTH_URL=http://localhost:8799/o/oauth2/v2/auth
+GOOGLE_OAUTH_TOKEN_URL=http://localhost:8799/oauth/token
+GOOGLE_OAUTH_REVOKE_URL=http://localhost:8799/oauth/revoke
+# Where the callback redirects back to (defaults to the local dashboard).
+# DASHBOARD_ORIGIN=http://localhost:5173
+# Override only behind a rewriting proxy; normally derived per request.
+# GOOGLE_OAUTH_REDIRECT_URL=http://localhost:8787/api/integrations/google/callback
+
+# Future Epic #7 issues (#121/#123/#156) add their data-plane base URLs the
+# same way; until then these document the pattern:
 # GOOGLE_ACCOUNT_MGMT_BASE_URL=http://localhost:8799
 # GOOGLE_BUSINESS_INFO_BASE_URL=http://localhost:8799
 # GOOGLE_VERIFICATIONS_BASE_URL=http://localhost:8799
