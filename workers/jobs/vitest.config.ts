@@ -12,11 +12,13 @@ import { configDefaults, defineConfig } from "vitest/config";
 // - workers: only `test/**/*.worker.test.ts`, inside workerd via
 //   @cloudflare/vitest-pool-workers — the `SyncLock` Durable Object (#123)
 //   only exists in workerd; these tests exercise real DO storage, RPC
-//   stubs, and lock semantics. Runs with bindings from wrangler.jsonc's
-//   top-level (local) block, EXCEPT Hyperdrive, which is overridden to a
-//   deterministic dead end — no workerd test may touch a real database.
-//   (Pinned to vitest-pool-workers 0.12.x like workers/pipeline: 0.13+
-//   requires vitest 4; bump together with the workspace's vitest.)
+//   stubs, and lock semantics. Boots from test/wrangler.test.jsonc (the
+//   real config minus the always-remote `ai` binding, which would demand
+//   a Cloudflare login CI does not have — see that file's header), with
+//   Hyperdrive overridden to a deterministic dead end — no workerd test
+//   may touch a real database. (Pinned to vitest-pool-workers 0.12.x like
+//   workers/pipeline: 0.13+ requires vitest 4; bump together with the
+//   workspace's vitest.)
 //
 // - integration: only `test/**/*.integration.test.ts`, in Node against a
 //   real Postgres via packages/db's template-clone harness — the GBP sync
@@ -48,7 +50,7 @@ export default defineConfig({
               // known issue), and `SyncLock` is SQLite-backed by design.
               // Tests isolate by using a distinct DO name per test instead.
               isolatedStorage: false,
-              wrangler: { configPath: "./wrangler.jsonc" },
+              wrangler: { configPath: "./test/wrangler.test.jsonc" },
               miniflare: {
                 // Deterministic dead end (RFC 6335 discard port): a workerd
                 // test that accidentally reaches for Postgres fails loudly
@@ -57,12 +59,10 @@ export default defineConfig({
                   HYPERDRIVE:
                     "postgresql://workerd-tests-must-not-touch-postgres:x@127.0.0.1:9/none",
                 },
-                // Hermetic vars: pool-workers auto-loads `.dev.vars` (which
-                // exists on dev machines but not CI), so pin the one var the
-                // SyncLock failure-path test depends on. A keyring that
-                // fails structural validation makes `runSync` fail fast and
-                // deterministically BEFORE any socket is opened — the same
-                // controlled failure with or without `.dev.vars`.
+                // Hermetic vars regardless of any `.dev.vars`: a keyring
+                // that fails structural validation makes `runSync` fail
+                // fast and deterministically BEFORE any socket is opened —
+                // what the SyncLock release-on-failure test relies on.
                 bindings: {
                   PII_ENCRYPTION_KEYS: "workerd-tests-invalid-keyring",
                 },
