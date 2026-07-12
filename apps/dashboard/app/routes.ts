@@ -22,6 +22,14 @@ export default [
     route("reviews", "routes/reviews.tsx"),
     // Review detail (#77): honest derivations, attribution, response seam.
     route("reviews/:signalId", "routes/reviews.$signalId.tsx"),
+    // Response workflow (#80/#82): the thread + approve/reject/retry
+    // ACTION endpoint for one review, plus a minimal standalone page. The
+    // detail page above mounts the same components (via ResponseThreadSlot)
+    // and posts here — see the route header's integration contract.
+    route(
+      "reviews/:signalId/responses",
+      "routes/reviews.$signalId.responses.tsx",
+    ),
     route("recovery", "routes/recovery.tsx"),
     route("proof", "routes/proof.tsx"),
     route("coverage", "routes/coverage.tsx"),

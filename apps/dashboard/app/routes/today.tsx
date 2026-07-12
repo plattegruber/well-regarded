@@ -3,11 +3,13 @@
 // action, in a strict priority order. When nothing needs attention the
 // page says so warmly and stops: no charts, no stats strip, no activity
 // feed. That emptiness is the product working.
-import { can } from "@wellregarded/core";
+import { can, describeResponseError } from "@wellregarded/core";
 import {
   listFailedImports,
+  listFailedPublishes,
   listNegativeReviewsNeedingResponse,
   listReauthConnections,
+  listResponsesPendingApproval,
   listRunningImports,
   listUrgentSignals,
   TODAY_SECTION_LIMIT,
@@ -72,31 +74,50 @@ export async function loader({ context }: Route.LoaderArgs) {
     // any staff viewer can open (private signals are gated in the query).
     const canManageSettings = allow("manage_settings");
     const canDraftResponse = allow("draft_response");
+    // Failed publishes route to Retry and pending drafts to Approve —
+    // both behind approve_response (#82 requirement 5).
+    const canApproveResponse = allow("approve_response");
 
     // ONE Promise.all — every condition is queried concurrently, never a
     // waterfall (#95 requirement 6). Sections the viewer cannot act on
     // resolve to empty without a query.
-    const [reauth, urgent, negative, failedImports, runningImports] =
-      await Promise.all([
-        canManageSettings
-          ? listReauthConnections(db, ctx.practiceId)
-          : Promise.resolve([]),
-        listUrgentSignals(db, {
-          practiceId: ctx.practiceId,
-          viewPrivateFeedback: ctx.viewer.viewPrivateFeedback,
-        }),
-        canDraftResponse
-          ? listNegativeReviewsNeedingResponse(db, {
-              practiceId: ctx.practiceId,
-            })
-          : Promise.resolve(emptySection<never>()),
-        canManageSettings
-          ? listFailedImports(db, { practiceId: ctx.practiceId })
-          : Promise.resolve(emptySection<never>()),
-        canManageSettings
-          ? listRunningImports(db, { practiceId: ctx.practiceId })
-          : Promise.resolve(emptySection<never>()),
-      ]);
+    const [
+      reauth,
+      urgent,
+      negative,
+      failedImports,
+      runningImports,
+      failedPublishes,
+      pendingApprovals,
+    ] = await Promise.all([
+      canManageSettings
+        ? listReauthConnections(db, ctx.practiceId)
+        : Promise.resolve([]),
+      listUrgentSignals(db, {
+        practiceId: ctx.practiceId,
+        viewPrivateFeedback: ctx.viewer.viewPrivateFeedback,
+      }),
+      canDraftResponse
+        ? listNegativeReviewsNeedingResponse(db, {
+            practiceId: ctx.practiceId,
+          })
+        : Promise.resolve(emptySection<never>()),
+      canManageSettings
+        ? listFailedImports(db, { practiceId: ctx.practiceId })
+        : Promise.resolve(emptySection<never>()),
+      canManageSettings
+        ? listRunningImports(db, { practiceId: ctx.practiceId })
+        : Promise.resolve(emptySection<never>()),
+      canApproveResponse
+        ? listFailedPublishes(db, { practiceId: ctx.practiceId })
+        : Promise.resolve(emptySection<never>()),
+      canApproveResponse
+        ? listResponsesPendingApproval(db, {
+            practiceId: ctx.practiceId,
+            excludeAuthorId: ctx.actor.staffId,
+          })
+        : Promise.resolve(emptySection<never>()),
+    ]);
 
     // THE ordering (#95 requirement 3) — sections render in exactly this
     // order, each capped at TODAY_SECTION_LIMIT cards + an accurate
@@ -112,13 +133,10 @@ export async function loader({ context }: Route.LoaderArgs) {
     //   3. Failed imports.                                  (live)
     //   4. Overdue recovery items (most overdue first).
     //      TODO(#122): deferred with the same table.      (deferred)
-    //   5. Failed publishes. TODO(#82): the publish pipeline (Epic #10)
-    //      has no storage yet; add `listFailedPublishes` when it lands.
-    //                                                     (deferred)
-    //   6. Responses pending MY approval (oldest first). TODO(#80): the
-    //      `responses` table (Epic #10) does not exist yet; gate on
-    //      approve_response and exclude the viewer's own drafts when it
-    //      lands.                                         (deferred)
+    //   5. Failed publishes (#82) — loud, with Retry on the review's
+    //      workflow surface; gated on approve_response.     (live)
+    //   6. Responses pending MY approval (oldest first, #80) — gated on
+    //      approve_response, the viewer's own drafts excluded. (live)
     //   7. Negative reviews needing response (oldest first) — the shared
     //      tier-1 predicate from @wellregarded/core.        (live)
     //   8. Running imports (informational, always last).    (live)
@@ -174,6 +192,40 @@ export async function loader({ context }: Route.LoaderArgs) {
           }),
         ),
         more: more(failedImports, "/settings/imports"),
+      },
+      {
+        key: "failed-publishes",
+        cards: failedPublishes.items.map(
+          (publish): TodayCardData => ({
+            id: publish.responseId,
+            tag: "Publish failed",
+            tone: "negative",
+            title: excerpt(publish.body, "A response failed to publish"),
+            meta: publish.errorDetail
+              ? describeResponseError(publish.errorDetail)
+              : `Failed ${formatAge(publish.failedAt)}`,
+            cta: "Review & retry",
+            to: `/reviews/${publish.signalId}`,
+          }),
+        ),
+        // The inbox's pending_approval tab includes failed publishes
+        // (approved-but-unpublished is still inside the human gate).
+        more: more(failedPublishes, "/reviews?status=pending_approval"),
+      },
+      {
+        key: "pending-approvals",
+        cards: pendingApprovals.items.map(
+          (pending): TodayCardData => ({
+            id: pending.responseId,
+            tag: "Awaiting approval",
+            tone: "caution",
+            title: excerpt(pending.body, "A response is awaiting approval"),
+            meta: `${pending.authorName ?? "Staff member"} · waiting ${formatAge(pending.submittedAt)}`,
+            cta: "Review & approve",
+            to: `/reviews/${pending.signalId}`,
+          }),
+        ),
+        more: more(pendingApprovals, "/reviews?status=pending_approval"),
       },
       {
         key: "negative-reviews",

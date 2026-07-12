@@ -83,6 +83,14 @@ function loaderData(overrides: Record<string, unknown> = {}) {
     responses: [],
     responseSourceNote:
       "Replies posted directly on Google are not captured yet. This thread shows responses recorded in Well Regarded.",
+    // The workflow seam (#80/#82): no response yet → no panel renders.
+    workflow: {
+      latest: null,
+      canDraft: true,
+      canApprove: true,
+      reviewIsNegative: true,
+      action: "/reviews/8b0d3f8e-0000-4000-8000-000000000000/responses",
+    },
     ...overrides,
   };
 }

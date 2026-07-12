@@ -15,12 +15,16 @@
  * - `scheduled`: the 6-hourly GBP poll tick (issue #123; src/scheduled.ts).
  *   Test locally with `wrangler dev --test-scheduled` and
  *   `curl "http://localhost:8789/cdn-cgi/handler/scheduled?cron=0+*%2F6+*+*+*"`;
+ * - `queue`: the publish-response consumer (issue #82) —
+ *   `wr-publish-response` messages from the dashboard's approve/retry
+ *   actions, published to GBP via the Epic #7 capability;
  * - `fetch`: local-only debug triggers for the workflows (404 outside
  *   local).
  */
 
 import type { JobsBindings } from "./bindings";
 import { handleLocalTrigger } from "./localTrigger";
+import { handlePublishResponseBatch } from "./publishResponseRuntime";
 import { handleScheduled } from "./scheduled";
 
 export { CsvImport } from "./csvImport.workflow";
@@ -33,5 +37,11 @@ export default {
   },
   async scheduled(controller, env, _ctx) {
     await handleScheduled(controller, env);
+  },
+  // The publish-response consumer (issue #82). Lives here — not
+  // workers/pipeline — because this worker already holds the Google OAuth
+  // secrets, PII keyring, and #118 token provider a GBP call needs.
+  async queue(batch, env, _ctx) {
+    await handlePublishResponseBatch(batch, env);
   },
 } satisfies ExportedHandler<JobsBindings>;

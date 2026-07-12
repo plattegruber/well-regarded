@@ -54,6 +54,22 @@
     "producers": [
       // Jobs enqueue work at the top of the pipeline spine.
       { "binding": "INGEST_QUEUE", "queue": "wr-ingest" }
+    ],
+    "consumers": [
+      // Publish-response consumer (issue #82): approved review responses,
+      // produced by the dashboard's approve/retry actions. max_retries: 2
+      // = 3 deliveries total, matching PUBLISH_RESPONSE_MAX_DELIVERIES in
+      // @wellregarded/core (the consumer marks the row `failed` on the
+      // final delivery; retry delays are per-message via message.retry()).
+      // The DLQ only catches crash-shaped failures — it has no consumer,
+      // Cloudflare retains its messages for inspection.
+      {
+        "queue": "wr-publish-response",
+        "max_retries": 2,
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "dead_letter_queue": "wr-publish-response-dlq"
+      }
     ]
   },
 
@@ -135,6 +151,16 @@
       "queues": {
         "producers": [
           { "binding": "INGEST_QUEUE", "queue": "wr-ingest-preview" }
+        ],
+        "consumers": [
+          // <TBD>: queue + DLQ must be provisioned before first deploy — Epic #2.
+          {
+            "queue": "wr-publish-response-preview",
+            "max_retries": 2,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "dead_letter_queue": "wr-publish-response-dlq-preview"
+          }
         ]
       },
       "hyperdrive": [
@@ -174,7 +200,17 @@
         "crons": ["0 */6 * * *"]
       },
       "queues": {
-        "producers": [{ "binding": "INGEST_QUEUE", "queue": "wr-ingest-prod" }]
+        "producers": [{ "binding": "INGEST_QUEUE", "queue": "wr-ingest-prod" }],
+        "consumers": [
+          // <TBD>: queue + DLQ must be provisioned before first deploy — Epic #2.
+          {
+            "queue": "wr-publish-response-prod",
+            "max_retries": 2,
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "dead_letter_queue": "wr-publish-response-dlq-prod"
+          }
+        ]
       },
       "hyperdrive": [
         // <TBD>: id of Hyperdrive config `wr-hyperdrive-prod` — Epic #2.

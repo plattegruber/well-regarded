@@ -17,10 +17,16 @@ import type {
   DerivationBasis,
   DerivationDimension,
   ReviewSourceKind,
+  Sentiment,
+} from "@wellregarded/core";
+import {
+  can,
+  isNegativeReview,
+  reviewStatusFromResponseState,
 } from "@wellregarded/core";
 import { getReviewDetail } from "@wellregarded/db";
 import { data, Link } from "react-router";
-
+import { ResponseWorkflowPanel } from "~/components/responses/response-workflow-panel";
 import {
   REVIEW_SOURCE_TITLES,
   REVIEW_STATUS_LABELS,
@@ -72,7 +78,8 @@ export async function loader({ params, context }: Route.LoaderArgs) {
     // doc. Viewing public reviews is broad per the Epic #4 matrix; nothing
     // on this route exposes patient identity (getReviewDetail never joins
     // pii.patients), so no further gate applies here.
-    const { practiceId } = await requirePracticeContext(db);
+    const ctx = await requirePracticeContext(db);
+    const { practiceId } = ctx;
     const detail = await getReviewDetail(db, {
       practiceId,
       signalId: params.signalId,
@@ -134,13 +141,51 @@ export async function loader({ params, context }: Route.LoaderArgs) {
         detail.currentDerivations.response_risk?.value === "high",
       responses: detail.responses.map((entry) => ({
         id: entry.id,
-        status: detail.status,
+        // Per-entry inbox-vocabulary chip (the page-level status reflects
+        // only the newest entry).
+        status: reviewStatusFromResponseState(entry.status),
         body: entry.body,
         authorName: entry.authorName,
         createdOn: formatDate(entry.createdAt),
         publishedOn: entry.publishedAt ? formatDate(entry.publishedAt) : null,
         publishedUrl: entry.publishedUrl,
       })),
+      // The workflow panel (#80/#82): actions for the newest response,
+      // mounted in the slot's composer seam; forms post to the responses
+      // action route.
+      workflow: (() => {
+        const latest = detail.responses[0];
+        const resource = { practiceId, locationId: detail.signal.locationId };
+        const sentimentValue = detail.currentDerivations.sentiment?.value;
+        return {
+          latest: latest
+            ? {
+                id: latest.id,
+                status: latest.status as
+                  | "draft"
+                  | "pending_approval"
+                  | "approved"
+                  | "published"
+                  | "failed",
+                isAuthor: latest.authorId === ctx.actor.staffId,
+                rejectionComment: latest.rejectionComment,
+                errorDetail: latest.errorDetail,
+              }
+            : null,
+          canDraft: can(ctx.actor, "draft_response", resource),
+          canApprove: can(ctx.actor, "approve_response", resource),
+          // The SHARED negative predicate (reviews.ts) — same verdict as
+          // the approval gate and the inbox tier-1 ordering.
+          reviewIsNegative: isNegativeReview({
+            rating:
+              detail.currentRating === null
+                ? null
+                : Number(detail.currentRating),
+            sentiment: (sentimentValue as Sentiment | undefined) ?? null,
+          }),
+          action: `/reviews/${params.signalId}/responses`,
+        };
+      })(),
       // Honesty note for sources that hold replies we do not capture yet
       // (see the module doc).
       responseSourceNote:
@@ -307,7 +352,17 @@ export default function ReviewDetail({ loaderData }: Route.ComponentProps) {
           <ResponseThreadSlot
             entries={d.responses}
             sourceNote={d.responseSourceNote}
-            // TODO(#79): the composer mounts here — see the slot's contract.
+            // The workflow panel (#80/#82) mounts in the composer seam;
+            // #79's compose form joins it here when it lands.
+            composer={
+              <ResponseWorkflowPanel
+                latest={d.workflow.latest}
+                canDraft={d.workflow.canDraft}
+                canApprove={d.workflow.canApprove}
+                reviewIsNegative={d.workflow.reviewIsNegative}
+                action={d.workflow.action}
+              />
+            }
           />
         </div>
 

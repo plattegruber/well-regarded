@@ -235,9 +235,12 @@ export const jobsEnvSchema = baseEnvSchema
   .extend(piiKeyringEnvSchema.shape)
   .extend(googleOauthClientEnvSchema.shape)
   .extend(googleGbpApiEnvSchema.shape);
+// dashboard runs the approve-time safety re-check (#80) via
+// `checkResponseSafety`, so it carries the AI client config too.
 export const dashboardEnvSchema = baseEnvSchema
   .extend(clerkEnvSchema.shape)
-  .extend(sessionEnvSchema.shape);
+  .extend(sessionEnvSchema.shape)
+  .extend(aiEnvSchema.shape);
 export const patientEnvSchema = baseEnvSchema.extend(
   patientTokenEnvSchema.shape,
 );

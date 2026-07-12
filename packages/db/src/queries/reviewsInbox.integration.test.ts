@@ -6,11 +6,10 @@
  * against a hand-built fixture set, `countReviewInboxStatuses`, and
  * `getReviewDetail` assembly + its four indistinguishable 404 paths.
  *
- * NOTE on tiers 4–5 (drafted/pending approval, responded): they derive
- * from `responses` rows, and the `responses` table is #80's work (in
- * flight). Until it lands every signal resolves to `needs_response`
- * (the documented fallback), so only tiers 1–3 are reachable here. #80
- * extends these tests when the table exists.
+ * Tiers 4–5 (drafted/pending approval, responded) derive from `responses`
+ * rows (#80). The corpus tests above run BEFORE any response rows exist
+ * (documented fallback: `needs_response`); the final describe block seeds
+ * rows and pins the real derivation — keep it last in the file.
  */
 
 import { isNegativeReview, REVIEW_SOURCE_KINDS } from "@wellregarded/core";
@@ -19,7 +18,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   derivation as derivationFactory,
   practice as practiceFactory,
+  response as responseFactory,
   signal as signalFactory,
+  staffMember as staffMemberFactory,
 } from "../../test/factories.js";
 import { setupTestDb } from "../../test/harness.js";
 import { LOCATION_FIXTURES } from "../seed/fixtures/demoPractice.js";
@@ -473,5 +474,117 @@ describe("getReviewDetail (integration)", () => {
         signalId: publicEmail.id,
       }),
     ).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #80: response-status derivation from REAL `responses` rows. Keep this
+// block LAST — it seeds rows onto the demo corpus, and the tests above pin
+// the no-responses fallback.
+// ---------------------------------------------------------------------------
+
+describe("response-status derivation from responses rows (#80)", () => {
+  const target = () => signalId("g01");
+
+  it("the latest responses row drives the inbox status, step by step", async () => {
+    const author = await staffMemberFactory(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+    });
+    const statusOf = async () => {
+      const items = await collectAllPages({ practiceId: DEMO_PRACTICE_ID });
+      return items.find((i) => i.id === target())?.status;
+    };
+
+    await responseFactory(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+      signalId: target(),
+      authorId: author.id,
+      status: "draft",
+      body: "Draft one.",
+      rejectionComment: "Please soften the tone.",
+      createdAt: new Date("2026-07-01T00:00:00Z"),
+    });
+    expect(await statusOf()).toBe("drafted");
+
+    await responseFactory(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+      signalId: target(),
+      authorId: author.id,
+      status: "pending_approval",
+      body: "Pending wording.",
+      createdAt: new Date("2026-07-02T00:00:00Z"),
+    });
+    expect(await statusOf()).toBe("pending_approval");
+
+    // approved-but-unpublished and publish-failed are still inside the
+    // human gate — never "responded" (#76's strict definition).
+    await responseFactory(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+      signalId: target(),
+      authorId: author.id,
+      status: "failed",
+      body: "Failed wording.",
+      errorDetail: {
+        kind: "transient_exhausted",
+        message: "HTTP 503",
+        at: "2026-07-03T00:00:00.000Z",
+      },
+      createdAt: new Date("2026-07-03T00:00:00Z"),
+    });
+    expect(await statusOf()).toBe("pending_approval");
+
+    await responseFactory(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+      signalId: target(),
+      authorId: author.id,
+      status: "published",
+      body: "Published wording.",
+      publishedAt: new Date("2026-07-04T00:00:00Z"),
+      moderationState: "PENDING",
+      createdAt: new Date("2026-07-04T00:00:00Z"),
+    });
+    expect(await statusOf()).toBe("responded");
+  });
+
+  it("status filter and counts read through the same derivation", async () => {
+    const responded = await collectAllPages({
+      practiceId: DEMO_PRACTICE_ID,
+      filters: { status: "responded" },
+    });
+    expect(responded.map((i) => i.id)).toEqual([target()]);
+
+    const counts = await countReviewInboxStatuses(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+    });
+    expect(counts.responded).toBe(1);
+  });
+
+  it("a responded review sorts into the last tier", async () => {
+    const items = await collectAllPages({ practiceId: DEMO_PRACTICE_ID });
+    expect(items[items.length - 1]?.id).toBe(target());
+  });
+
+  it("getReviewDetail assembles the populated thread, newest first", async () => {
+    const detail = await getReviewDetail(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+      signalId: target(),
+    });
+    expect(detail).toBeDefined();
+    if (!detail) return;
+
+    expect(detail.status).toBe("responded");
+    expect(detail.responses.map((r) => r.status)).toEqual([
+      "published",
+      "failed",
+      "pending_approval",
+      "draft",
+    ]);
+    const [published, failed, , draft] = detail.responses;
+    expect(published?.publishedAt).not.toBeNull();
+    expect(published?.publishedUrl).toBe(detail.signal.sourceUrl);
+    expect(published?.moderationState).toBe("PENDING");
+    expect(published?.authorName).not.toBeNull();
+    expect(failed?.errorDetail).toMatchObject({ kind: "transient_exhausted" });
+    expect(draft?.rejectionComment).toBe("Please soften the tone.");
   });
 });

@@ -43,6 +43,7 @@ import { importDrafts } from "../src/schema/importDrafts.js";
 import { importRuns } from "../src/schema/importRuns.js";
 import { patients } from "../src/schema/pii.js";
 import { proofExcerpts } from "../src/schema/proofExcerpts.js";
+import { responses } from "../src/schema/responses.js";
 import { signals } from "../src/schema/signals.js";
 import { sourceConnections } from "../src/schema/sourceConnections.js";
 import {
@@ -93,6 +94,7 @@ type SourceConnectionInsert = typeof sourceConnections.$inferInsert;
 type DerivationInsert = typeof derivations.$inferInsert;
 type PatientInsert = typeof patients.$inferInsert;
 type ProofExcerptInsert = typeof proofExcerpts.$inferInsert;
+type ResponseInsert = typeof responses.$inferInsert;
 
 export async function practice(
   db: Db,
@@ -405,6 +407,32 @@ export async function proofExcerpt(
     })
     .returning();
   return must(row, "proof excerpt");
+}
+
+/**
+ * Inserts a `responses` row (issues #80/#82) directly at any status —
+ * factories set up STATE; the sanctioned transition path
+ * (`transitionResponse`) is what the tests exercise. Creates the signal
+ * and an authoring staff member on demand.
+ */
+export async function response(
+  db: Db,
+  overrides: Partial<ResponseInsert> = {},
+): Promise<typeof responses.$inferSelect> {
+  const { signalId, practiceId } = await resolveSignalScope(db, overrides);
+  const authorId =
+    overrides.authorId ?? (await staffMember(db, { practiceId })).id;
+  const [row] = await db
+    .insert(responses)
+    .values({
+      body: faker.lorem.sentences(2),
+      ...overrides,
+      signalId,
+      practiceId,
+      authorId,
+    })
+    .returning();
+  return must(row, "response");
 }
 
 /**
