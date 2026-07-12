@@ -45,9 +45,9 @@ import {
   normalizeArtifact,
 } from "../src/stages/normalize";
 import {
-  auditOnlyProofSink,
   auditOnlyRecoverySink,
   defaultRoutingConfig,
+  proofSuggestionSink,
   type RouteDeps,
   type RouteStore,
   type RoutingDerivations,
@@ -725,7 +725,7 @@ describe("route stage on a real workerd batch (issue #108)", () => {
           );
         },
       },
-      proof: auditOnlyProofSink,
+      proof: proofSuggestionSink,
       config: defaultRoutingConfig,
     };
 
@@ -743,7 +743,11 @@ describe("route stage on a real workerd batch (issue #108)", () => {
     expect(committed[0]?.audits.map((audit) => audit.action)).toEqual([
       "signal.routed_urgent",
       "signal.entered_review_inbox",
-      "signal.proof_candidate",
+    ]);
+    // The proof branch queues a suggest_proof effect instead of an audit —
+    // the store executes it (and writes proof.suggested) transactionally.
+    expect(committed[0]?.effects.map((effect) => effect.kind)).toEqual([
+      "suggest_proof",
     ]);
     expect(committed[0]?.stats).toEqual({
       route_urgent: 1,
@@ -760,7 +764,7 @@ describe("route stage on a real workerd batch (issue #108)", () => {
     const deps: RouteDeps = {
       store,
       recovery: auditOnlyRecoverySink,
-      proof: auditOnlyProofSink,
+      proof: proofSuggestionSink,
       config: defaultRoutingConfig,
     };
 
@@ -799,7 +803,7 @@ describe("route stage on a real workerd batch (issue #108)", () => {
     const deps: RouteDeps = {
       store,
       recovery: auditOnlyRecoverySink,
-      proof: auditOnlyProofSink,
+      proof: proofSuggestionSink,
       config: defaultRoutingConfig,
     };
 

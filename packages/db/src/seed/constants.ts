@@ -34,8 +34,14 @@
  * UPDATE, so the revoked fixture (`fp06`) now produces two `consents` rows
  * (the patient_link grant plus a patient_link revocation row at version
  * 2) — 13 consent rows total instead of 12.
+ *
+ * v6 (issue #96): four proofs — approved excerpt-level (fp01, live website
+ * placement), approved whole-signal (cs02), suggested (g01), archived
+ * (fp06, placement deactivated for `consent_revoked`) — with
+ * deterministic ids (`proof:<key>`, `placement:<key>`; see
+ * `fixtures/proofs.ts`). The wipe also clears `placements` and `proofs`.
  */
-export const SEED_VERSION = 5;
+export const SEED_VERSION = 6;
 
 /**
  * Fixed faker seed (issue #32 requirement 2). Narrative content is

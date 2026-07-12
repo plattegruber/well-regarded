@@ -73,6 +73,10 @@ async function main(): Promise<void> {
     console.log(
       `  ${summary.responseTemplates} response templates (the issue-#83 starters)`,
     );
+    console.log(
+      `  ${summary.proofs} proofs (suggested/approved/archived) with ` +
+        `${summary.placements} placements (#96)`,
+    );
   } finally {
     await sql.end();
   }

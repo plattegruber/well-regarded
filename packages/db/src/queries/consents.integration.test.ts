@@ -1,6 +1,12 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { consent, practice, signal } from "../../test/factories.js";
+import {
+  consent,
+  placement,
+  practice,
+  proof,
+  signal,
+} from "../../test/factories.js";
 import { pgError, setupTestDb } from "../../test/harness.js";
 import { consents } from "../schema/consents.js";
 import { isPublishable, revokeConsent } from "./consents.js";
@@ -132,17 +138,41 @@ describe("consents (integration)", () => {
     expect(after).toMatchObject({ publishable: true, reason: "ok" });
   });
 
-  it("revokeConsent returns the purge contract — empty until #96 lands proofs/placements", async () => {
+  it("revokeConsent returns the purge contract — the signal's proofs and their active placements (#96)", async () => {
     const s = await insertSignal();
     await consent(t.db, grantInput(s.id));
-    const result = await revokeConsent(t.db, {
+
+    // No proofs yet: an effective revocation with nothing to purge.
+    const bare = await revokeConsent(t.db, {
       signalId: s.id,
       source: "patient_link",
       revokedAt: new Date("2026-05-03T00:00:00Z"),
     });
+    expect(bare.effective).toBe(true);
+    expect(bare.affectedProofIds).toEqual([]);
+    expect(bare.affectedPlacementIds).toEqual([]);
+
+    // Re-grant, add a proof with one active and one deactivated placement:
+    // the purge contract names the proof and ONLY the active placement.
+    await consent(t.db, grantInput(s.id));
+    const affected = await proof(t.db, { signalId: s.id, status: "approved" });
+    const live = await placement(t.db, { proofId: affected.id });
+    await placement(t.db, {
+      proofId: affected.id,
+      channel: "email",
+      active: false,
+      deactivatedAt: new Date("2026-05-04T00:00:00Z"),
+      deactivationReason: "staff choice",
+    });
+
+    const result = await revokeConsent(t.db, {
+      signalId: s.id,
+      source: "patient_link",
+      revokedAt: new Date("2026-05-05T00:00:00Z"),
+    });
     expect(result.effective).toBe(true);
-    expect(result.affectedProofIds).toEqual([]);
-    expect(result.affectedPlacementIds).toEqual([]);
+    expect(result.affectedProofIds).toEqual([affected.id]);
+    expect(result.affectedPlacementIds).toEqual([live.id]);
   });
 
   it("patient always wins: a staff attestation after a patient revocation stays unpublishable", async () => {

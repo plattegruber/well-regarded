@@ -15,6 +15,7 @@ export * from "./importRuns.js";
 export * from "./pii.js";
 export * from "./practiceSettings.js";
 export * from "./proofExcerpts.js";
+export * from "./proofs.js";
 export * from "./responses.js";
 export * from "./responseTemplates.js";
 export * from "./signals.js";

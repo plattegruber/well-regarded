@@ -16,7 +16,6 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  auditOnlyProofSink,
   auditOnlyRecoverySink,
   classifyShouldHaveJudged,
   decideRoutes,
@@ -24,6 +23,7 @@ import {
   isSpecificText,
   MIN_PROOF_TEXT_LENGTH,
   type ProofSink,
+  proofSuggestionSink,
   type RecoverySink,
   type RouteDeps,
   type RouteStore,
@@ -127,7 +127,7 @@ function recordingSinks() {
   const proof: ProofSink = {
     suggestProof: async (signal, context) => {
       proofCalls.push(signal);
-      await auditOnlyProofSink.suggestProof(signal, context);
+      await proofSuggestionSink.suggestProof(signal, context);
     },
   };
   return { recovery, proof, recoveryCalls, proofCalls };
@@ -372,7 +372,7 @@ describe("routeSignal — branch execution and the routing commit", () => {
     expect(outcome?.stats).toEqual({ route_review_inbox: 1 });
   });
 
-  it("proof candidate: calls the proof sink and commits its audit + stat", async () => {
+  it("proof candidate: calls the proof sink and commits its suggest_proof effect + stat", async () => {
     const store = makeStore(
       signalWith({}),
       derivationsWith({
@@ -386,10 +386,14 @@ describe("routeSignal — branch execution and the routing commit", () => {
 
     expect(sinks.proofCalls).toHaveLength(1);
     const outcome = store.committed[0]?.outcome;
-    expect(outcome?.audits).toEqual([
+    // No queued audit: `suggestProof` in @wellregarded/db writes the
+    // `proof.suggested` row keyed on the inserted proof's id, inside the
+    // routing transaction (see the effect execution in commitRouting).
+    expect(outcome?.audits).toEqual([]);
+    expect(outcome?.effects).toEqual([
       {
-        action: "signal.proof_candidate",
-        payload: {
+        kind: "suggest_proof",
+        auditPayload: {
           sentiment: "positive",
           suitabilityConfidence: 0.9,
           importRunId: runUuid,
@@ -435,7 +439,9 @@ describe("routeSignal — branch execution and the routing commit", () => {
     expect(outcome?.audits.map((audit) => audit.action)).toEqual([
       "signal.routed_urgent",
       "signal.entered_review_inbox",
-      "signal.proof_candidate",
+    ]);
+    expect(outcome?.effects.map((effect) => effect.kind)).toEqual([
+      "suggest_proof",
     ]);
     expect(outcome?.stats).toEqual({
       route_urgent: 1,

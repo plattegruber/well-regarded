@@ -26,10 +26,12 @@
  *   there with a backfill from these audit rows.
  * - **Proof candidate** (`ProofSink` seam): positive sentiment + specific
  *   text + suitable-for-publication with adequate confidence. The
- *   `proofs` table is Epic #13 (M2); the only current sink audits
- *   `signal.proof_candidate`. See the TODO(#96) contract on
- *   {@link ProofSink}. This is a suggestion only — consent gating is the
- *   proof library's job; nothing here touches `consents`.
+ *   production sink ({@link proofSuggestionSink}, issue #96) queues a
+ *   `suggest_proof` effect that the store executes inside the routing
+ *   transaction — `suggestProof` in `@wellregarded/db` creates a
+ *   whole-signal `suggested` proofs row idempotently and audits
+ *   `proof.suggested`. This is a suggestion only — consent gating lives
+ *   in #96's `publishableProofs` joins; nothing here touches `consents`.
  * - **Quiet path**: none of the above — the signal simply rests in the
  *   signals store (still queryable in the unified inbox, Epic #11), with
  *   a `signal.routed` audit entry.
@@ -78,6 +80,7 @@ import {
   getSignal,
   incrementImportRunCounts,
   schema,
+  suggestProof,
 } from "@wellregarded/db";
 import { eq } from "drizzle-orm";
 
@@ -233,13 +236,30 @@ export interface RouteAuditSpec {
 }
 
 /**
+ * A row-writing effect queued into the routing transaction. Sinks stay
+ * pure outcome-writers (workerd unit tests never touch Postgres); the
+ * store executes effects inside the SAME transaction as the audits,
+ * status advance, and stats — the "extend `RoutingOutcome` with a typed
+ * effect" option from the sink contracts. The executing helper (e.g.
+ * `suggestProof` in `@wellregarded/db`) writes its own audit row, because
+ * the new row's id — which the audit entry is keyed on — does not exist
+ * until the insert runs.
+ */
+export type RouteEffect = {
+  kind: "suggest_proof";
+  /** References and non-PII fields for the `proof.suggested` audit row. */
+  auditPayload: Record<string, unknown>;
+};
+
+/**
  * Everything one message writes, committed atomically by
  * `RouteStore.commitRouting`: audit entries (all `entity_type: signals`,
- * `entity_id: signalId`, actor `system` / `pipeline:route`) and
- * import-run stats counter deltas.
+ * `entity_id: signalId`, actor `system` / `pipeline:route`), row-writing
+ * effects, and import-run stats counter deltas.
  */
 export interface RoutingOutcome {
   audits: RouteAuditSpec[];
+  effects: RouteEffect[];
   stats: Record<string, number>;
 }
 
@@ -251,6 +271,8 @@ export interface RouteSinkContext {
   derivations: RoutingDerivations;
   /** Queue an audit entry; committed with the routing transaction. */
   audit(spec: RouteAuditSpec): void;
+  /** Queue a row-writing effect; executed inside the routing transaction. */
+  effect(effect: RouteEffect): void;
   /** Bump a per-branch counter in the import run's stats jsonb. */
   count(stat: string, n?: number): void;
 }
@@ -318,23 +340,9 @@ export const auditOnlyRecoverySink: RecoverySink = {
 /**
  * Seam for the proof-candidate branch (issue #108 requirement 4).
  *
- * TODO(#96): the `proofs` table (Epic #13, M2) does not exist yet;
- * {@link auditOnlyProofSink} is the only implementation. The real sink
- * #96 plugs in here must:
- *
- * - Create a `proofs` row `{ signal_id, practice_id, status:
- *   'suggested', excerpt_id: null }` — a whole-signal suggestion; excerpt
- *   extraction and `display_text` initialization are Epic #13's job.
- * - Be idempotent per signal: skip creation when any non-archived proof
- *   already exists for the `signal_id` (re-delivery and re-classification
- *   must not stack suggestions).
- * - Audit `proof.suggested` (entity `proofs`, the new row's id) via
- *   `context.audit` INSTEAD of `signal.proof_candidate`, and count the
- *   same `route_proof_candidate` stat.
- * - Join the routing transaction (same rule as {@link RecoverySink}).
- * - This creates a suggestion ONLY: consent-gated visibility lives in
- *   #96's `publishableProofs` query joins — nothing routes through
- *   `consents` here.
+ * Production is {@link proofSuggestionSink} (issue #96). Audit rows
+ * written by the pre-#96 interim sink (`signal.proof_candidate`) identify
+ * candidates that predate the `proofs` table.
  */
 export interface ProofSink {
   suggestProof(
@@ -343,16 +351,28 @@ export interface ProofSink {
   ): Promise<void>;
 }
 
-/** The interim proof sink: logs and audits `signal.proof_candidate`. */
-export const auditOnlyProofSink: ProofSink = {
+/**
+ * The real proof sink (issue #96, replacing the interim audit-only one):
+ * queues a `suggest_proof` effect that `RouteStore.commitRouting` executes
+ * inside the routing transaction — `suggestProof` in `@wellregarded/db`
+ * creates the whole-signal `{ status: 'suggested', excerpt_id: null }`
+ * proofs row (excerpt extraction and `display_text` initialization stay
+ * in Epic #13), skips idempotently when any non-archived proof already
+ * exists for the signal, and audits `proof.suggested` (entity `proofs`,
+ * the new row's id — written by the helper, not `context.audit`, because
+ * the id does not exist until the insert runs). Suggestion ONLY: consent
+ * gating lives in #96's `publishableProofs` joins — nothing here touches
+ * `consents`.
+ */
+export const proofSuggestionSink: ProofSink = {
   suggestProof: async (_signal, context) => {
     context.log.info("pipeline.route.proof_candidate", {
       signalId: context.message.signalId,
       importRunId: context.message.importRunId,
     });
-    context.audit({
-      action: "signal.proof_candidate",
-      payload: {
+    context.effect({
+      kind: "suggest_proof",
+      auditPayload: {
         sentiment: context.derivations.sentiment?.value,
         suitabilityConfidence:
           context.derivations.publication_suitability?.confidence,
@@ -450,12 +470,13 @@ export async function routeSignal(
 
   const decisions = decideRoutes(signal, derivations, deps.config);
 
-  const outcome: RoutingOutcome = { audits: [], stats: {} };
+  const outcome: RoutingOutcome = { audits: [], effects: [], stats: {} };
   const context: RouteSinkContext = {
     message,
     log,
     derivations,
     audit: (spec) => outcome.audits.push(spec),
+    effect: (effect) => outcome.effects.push(effect),
     count: (stat, n = 1) => {
       outcome.stats[stat] = (outcome.stats[stat] ?? 0) + n;
     },
@@ -551,6 +572,20 @@ export function createRouteStore(db: Db): RouteStore {
     },
     commitRouting: (message, outcome) =>
       db.transaction(async (tx) => {
+        for (const effect of outcome.effects) {
+          // Only `suggest_proof` exists today; the switch keeps future
+          // effects (e.g. #122's recovery item) exhaustively typed.
+          switch (effect.kind) {
+            case "suggest_proof":
+              await suggestProof(tx, {
+                practiceId: message.practiceId,
+                signalId: message.signalId,
+                actor: ROUTE_ACTOR,
+                auditPayload: effect.auditPayload,
+              });
+              break;
+          }
+        }
         for (const spec of outcome.audits) {
           await audit(tx, {
             practiceId: message.practiceId,
@@ -579,8 +614,9 @@ export function createRouteStore(db: Db): RouteStore {
 /**
  * The wired handler: per-message client over the Hyperdrive binding
  * (isolates cannot share sockets; Hyperdrive makes reconnects cheap), the
- * interim audit-only sinks, and the default routing config (per-practice
- * settings are a seam — see {@link RoutingConfig}).
+ * real proof sink (#96), the interim audit-only recovery sink, and the
+ * default routing config (per-practice settings are a seam — see
+ * {@link RoutingConfig}).
  */
 export const route: StageHandler<"route"> = async (message, env) => {
   if (!env.HYPERDRIVE) {
@@ -595,7 +631,7 @@ export const route: StageHandler<"route"> = async (message, env) => {
     await routeSignal(message, {
       store: createRouteStore(db),
       recovery: auditOnlyRecoverySink,
-      proof: auditOnlyProofSink,
+      proof: proofSuggestionSink,
       config: defaultRoutingConfig,
     });
   } finally {

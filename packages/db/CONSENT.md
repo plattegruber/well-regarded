@@ -6,10 +6,21 @@ join.**
 `isPublishable(db, signalId, channel)` in `src/queries/consents.ts` is the
 **single entry point** for publication eligibility. Every publication path —
 the Proof API (Epic #14), the proof library (Epic #13), review responses
-(Epic #10), GBP placement — MUST call it (or, for proof serving once #96
-lands, the `publishableProofs` helper that encodes the same rules in SQL). A
-publication path that does not is a bug, full stop. See also the
-"Publication checks" section of CONTRIBUTING.md.
+(Epic #10), GBP placement — MUST call it (or, for proof serving, the
+`publishableProofs` helper below). A publication path that does not is a
+bug, full stop. See also the "Publication checks" section of
+CONTRIBUTING.md.
+
+One sanctioned set-based counterpart exists: `publishableProofs` in
+`src/queries/proofs.ts` (issue #96), the canonical query for **serving**
+proof. Its consent join encodes the same `checkConsent` rules in SQL —
+the patient-partition precedence and version ordering of
+`governingConsent`, then each refusal predicate — and is test-locked
+against the core function (a property-style check in
+`proofs.integration.test.ts` asserts the SQL and JS agree over the same
+rows). It is not a second gate — it is the same gate, expressed as a
+join. If `checkConsent` changes, that query and its lock-test change in
+the same PR.
 
 ## The rules it encodes
 
@@ -71,9 +82,9 @@ affectedPlacementIds }`:
   in `@wellregarded/core`). The ids exist so caches and placements are
   cleaned up promptly — serving decisions still recompute through
   `checkConsent` at read time.
-- Until issue #96 lands the `proofs`/`placements` tables, both lists are
-  empty: `currentPurgeTargets` in `src/queries/consents.ts` is the seam
-  (`TODO(#96)`) that will select `{ id, signalId }` from `proofs` and
-  `{ id, proofId }` from active `placements` — the structural ref types
-  (`RevocationProofRef`, `RevocationPlacementRef` in `@wellregarded/core`)
-  are the contract, so #96 fills the seam without touching any caller.
+- The lists are computed by `purgeTargetsForSignal` in
+  `src/queries/proofs.ts` (the seam issue #96 filled): `{ id, signalId }`
+  from `proofs` for the signal, `{ id, proofId }` from its **active**
+  `placements` — the structural ref types (`RevocationProofRef`,
+  `RevocationPlacementRef` in `@wellregarded/core`) are the contract, and
+  the selects run inside the revocation's transaction.

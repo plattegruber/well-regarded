@@ -48,6 +48,10 @@ The load-bearing idea: **facts and judgments live in different tables.** A `sign
 ### Consent and publication
 
 - `consents` — append-only versions: scope (channels), attribution rules, edit permission, granted/revoked, source of consent, `consent_version`. Publication eligibility is always a join through this table. Revocation is a new version, not a deletion — the history of what was permitted when is itself evidence.
+- `proofs` — a governed decision to use a signal (or one of its excerpts — `excerpt_id` NULL means whole-signal) beyond its source ([#96](https://github.com/plattegruber/well-regarded/issues/96)). `display_text` is what gets published (initialized from the original at approval; the original is referenced via `signal_id`/`excerpt_id`, never copied or mutated); `status` is `suggested | approved | archived` with `approved_by`/`approved_at`. The route stage writes `suggested` rows; approval is a human act.
+- `placements` — where a proof is used: `channel` (`website | gbp_post | email | in_office`), a free-text `target` hint, `active`, activation/deactivation timestamps, and `deactivation_reason` (free text for staff; the machine-written `consent_revoked` when a revocation cascade takes a placement down, [#91](https://github.com/plattegruber/well-regarded/issues/91)).
+
+**`publishableProofs(practiceId, channel, filters)`** in `packages/db` is the **only sanctioned read path for serving proof**: approved proofs joined to consent-satisfying signals joined to their excerpts, with composable filters (location, provider, recency, excerpt ids). The Proof API search (Epic #14) composes on top of it and the proof library's "publishable" filter uses it — per the Epic #12 structural rule, consent gating lives in this query's joins (the SQL encodes `checkConsent` from `packages/core` — patient-partition precedence, version ordering, and each refusal predicate — and is test-locked against it), so no serving surface can drift from the consent gate. A surface that serves proof through any other query is a bug.
 
 ### Operations
 

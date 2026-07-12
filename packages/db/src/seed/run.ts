@@ -49,6 +49,7 @@ import { importDrafts } from "../schema/importDrafts.js";
 import { importRuns } from "../schema/importRuns.js";
 import { contactPoints, patients } from "../schema/pii.js";
 import { proofExcerpts } from "../schema/proofExcerpts.js";
+import { placements, proofs } from "../schema/proofs.js";
 import { responses } from "../schema/responses.js";
 import { responseTemplates } from "../schema/responseTemplates.js";
 import { signals } from "../schema/signals.js";
@@ -79,6 +80,7 @@ import {
   demoGoogleArtifactKey,
   demoGoogleReviewName,
 } from "./fixtures/googleArtifacts.js";
+import { PROOF_FIXTURES } from "./fixtures/proofs.js";
 import { SIGNAL_FIXTURES, type SignalFixture } from "./fixtures/signals.js";
 import { seededFloat, seededInt, seedId } from "./ids.js";
 
@@ -100,6 +102,9 @@ export interface SeedSummary {
   /** Imported pre-existing Google owner replies (#214). */
   responses: number;
   responseTemplates: number;
+  /** Proofs in every state + their placements (#96). */
+  proofs: number;
+  placements: number;
 }
 
 export interface RunSeedOptions {
@@ -151,6 +156,12 @@ export async function runSeed(
       patientIds,
     );
     const excerptCount = await insertProofExcerpts(tx, practiceId, signalIds);
+    const { proofCount, placementCount } = await insertProofs(
+      tx,
+      practiceId,
+      signalIds,
+      staffIds,
+    );
     const responseCount = await insertImportedResponses(
       tx,
       practiceId,
@@ -172,6 +183,8 @@ export async function runSeed(
       importRuns: importRunCount,
       responses: responseCount,
       responseTemplates: templateCount,
+      proofs: proofCount,
+      placements: placementCount,
     };
   });
 }
@@ -211,6 +224,10 @@ async function upsertPractice(tx: Tx): Promise<string> {
   await tx
     .delete(responseTemplates)
     .where(eq(responseTemplates.practiceId, practiceId));
+  // Placements FK proofs; proofs FK signals, proof_excerpts, and
+  // staff_members — delete before all three.
+  await tx.delete(placements).where(eq(placements.practiceId, practiceId));
+  await tx.delete(proofs).where(eq(proofs.practiceId, practiceId));
   await tx
     .delete(proofExcerpts)
     .where(eq(proofExcerpts.practiceId, practiceId));
@@ -686,6 +703,80 @@ async function insertProofExcerpts(
   }
   await tx.insert(proofExcerpts).values(rows);
   return rows.length;
+}
+
+/**
+ * Proofs in every state plus their placements (issue #96) — see
+ * `./fixtures/proofs.ts` for the narrative. Plain tables, direct insert
+ * (per the composition rules); deterministic ids so E2E and the proof
+ * library can select against them. Excerpt-level proofs reference the
+ * deterministic excerpt ids minted by `insertProofExcerpts` above.
+ */
+async function insertProofs(
+  tx: Tx,
+  practiceId: string,
+  signalIds: Record<string, string>,
+  staffIds: Record<string, string>,
+): Promise<{ proofCount: number; placementCount: number }> {
+  type ProofInsert = typeof proofs.$inferInsert;
+  type PlacementInsert = typeof placements.$inferInsert;
+  const proofRows: ProofInsert[] = [];
+  const placementRows: PlacementInsert[] = [];
+
+  for (const fixture of PROOF_FIXTURES) {
+    const signalId = signalIds[fixture.signal];
+    if (!signalId) {
+      throw new Error(
+        `proof fixture ${fixture.key} references unknown signal ${fixture.signal}`,
+      );
+    }
+    const proofId = seedId(`proof:${fixture.key}`);
+    const createdAt = daysBeforeAnchor(fixture.createdDaysAgo);
+    proofRows.push({
+      id: proofId,
+      practiceId,
+      signalId,
+      excerptId:
+        fixture.excerptIndex !== undefined
+          ? seedId(`excerpt:${fixture.signal}:${fixture.excerptIndex}`)
+          : null,
+      displayText: fixture.displayText ?? null,
+      status: fixture.status,
+      approvedBy: fixture.approvedBy ? staffIds[fixture.approvedBy] : null,
+      approvedAt:
+        fixture.approvedDaysAgo !== undefined
+          ? daysBeforeAnchor(fixture.approvedDaysAgo)
+          : null,
+      createdAt,
+      updatedAt: createdAt,
+    });
+
+    for (const placementFixture of fixture.placements ?? []) {
+      const activatedAt = daysBeforeAnchor(placementFixture.activatedDaysAgo);
+      placementRows.push({
+        id: seedId(`placement:${placementFixture.key}`),
+        practiceId,
+        proofId,
+        channel: placementFixture.channel,
+        target: placementFixture.target ?? null,
+        active: placementFixture.active,
+        activatedAt,
+        deactivatedAt:
+          placementFixture.deactivatedDaysAgo !== undefined
+            ? daysBeforeAnchor(placementFixture.deactivatedDaysAgo)
+            : null,
+        deactivationReason: placementFixture.deactivationReason ?? null,
+        createdAt: activatedAt,
+        updatedAt: activatedAt,
+      });
+    }
+  }
+
+  await tx.insert(proofs).values(proofRows);
+  if (placementRows.length > 0) {
+    await tx.insert(placements).values(placementRows);
+  }
+  return { proofCount: proofRows.length, placementCount: placementRows.length };
 }
 
 /**

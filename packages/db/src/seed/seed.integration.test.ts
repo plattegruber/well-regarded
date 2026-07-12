@@ -17,10 +17,12 @@ import { setupTestDb } from "../../test/harness.js";
 import { isPublishable } from "../queries/consents.js";
 import { getImportRunSummary } from "../queries/importRuns.js";
 import { findContactPoint } from "../queries/patients.js";
+import { publishableProofs } from "../queries/proofs.js";
 import { consents } from "../schema/consents.js";
 import { derivations } from "../schema/derivations.js";
 import { contactPoints, patients } from "../schema/pii.js";
 import { proofExcerpts } from "../schema/proofExcerpts.js";
+import { placements, proofs } from "../schema/proofs.js";
 import { responses } from "../schema/responses.js";
 import { responseTemplates } from "../schema/responseTemplates.js";
 import { signals } from "../schema/signals.js";
@@ -42,6 +44,7 @@ import {
   STAFF_FIXTURES,
 } from "./fixtures/demoPractice.js";
 import { demoGoogleReviewName } from "./fixtures/googleArtifacts.js";
+import { PROOF_FIXTURES } from "./fixtures/proofs.js";
 import { SIGNAL_FIXTURES } from "./fixtures/signals.js";
 import { seedId } from "./ids.js";
 import { DEMO_IMPORT_RUN_ID, runSeed, type SeedSummary } from "./run.js";
@@ -146,6 +149,18 @@ async function tableCounts(summary: SeedSummary) {
         .select({ n: count() })
         .from(responseTemplates)
         .where(eq(responseTemplates.practiceId, practiceId)),
+    ),
+    proofs: await one(
+      t.db
+        .select({ n: count() })
+        .from(proofs)
+        .where(eq(proofs.practiceId, practiceId)),
+    ),
+    placements: await one(
+      t.db
+        .select({ n: count() })
+        .from(placements)
+        .where(eq(placements.practiceId, practiceId)),
     ),
   };
 }
@@ -368,6 +383,58 @@ describe("runSeed", () => {
         .where(eq(signals.id, row?.signalId ?? ""));
       expect(parent?.sourceId).toBe(demoGoogleReviewName(fixture));
     }
+
+    // --- Proofs & placements (#96): every state, deterministic ids ----------
+    expect(counts.proofs).toBe(PROOF_FIXTURES.length);
+    expect(first.proofs).toBe(PROOF_FIXTURES.length);
+    const proofRows = await t.db
+      .select()
+      .from(proofs)
+      .where(eq(proofs.practiceId, first.practiceId));
+    expect(new Set(proofRows.map((row) => row.status))).toEqual(
+      new Set(["suggested", "approved", "archived"]),
+    );
+    // The suggested one mirrors the route sink's write exactly.
+    const suggested = proofRows.find(
+      (row) => row.id === seedId("proof:g01-suggested"),
+    );
+    expect(suggested).toMatchObject({
+      signalId: seedId("signal:g01"),
+      excerptId: null,
+      displayText: null,
+      status: "suggested",
+      approvedBy: null,
+      approvedAt: null,
+    });
+    // The approved excerpt-level one points at fp01's first excerpt.
+    const anxiety = proofRows.find(
+      (row) => row.id === seedId("proof:fp01-anxiety"),
+    );
+    expect(anxiety).toMatchObject({
+      signalId: seedId("signal:fp01"),
+      excerptId: seedId("excerpt:fp01:0"),
+      status: "approved",
+    });
+    expect(anxiety?.approvedBy).toBe(seedId("staff:office_manager"));
+
+    expect(counts.placements).toBe(2);
+    const [revokedPlacement] = await t.db
+      .select()
+      .from(placements)
+      .where(eq(placements.id, seedId("placement:fp06-crown-website")));
+    expect(revokedPlacement).toMatchObject({
+      active: false,
+      deactivationReason: "consent_revoked",
+    });
+    expect(revokedPlacement?.deactivatedAt).not.toBeNull();
+
+    // The canonical query over the seeded corpus: exactly the two approved
+    // + website-consented proofs serve; suggested, archived (revoked), and
+    // unconsented ones never do.
+    const servable = await publishableProofs(t.db, first.practiceId, "website");
+    expect(new Set(servable.map((row) => row.proof.id))).toEqual(
+      new Set([seedId("proof:fp01-anxiety"), seedId("proof:cs02-referrals")]),
+    );
 
     // --- Proof excerpts: embeddings left NULL (Epic #9 backfills) -----------
     const [nullEmbeddings] = await t.db

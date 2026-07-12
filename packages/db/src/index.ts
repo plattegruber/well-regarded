@@ -137,6 +137,19 @@ export {
   signalHasProofExcerpts,
 } from "./queries/proofExcerpts.js";
 export {
+  type Placement,
+  type Proof,
+  type PublishableProof,
+  type PublishableProofsFilters,
+  placementsForSignal,
+  publishableProofs,
+  purgeTargetsForSignal,
+  type SignalPlacement,
+  type SuggestProofInput,
+  type SuggestProofResult,
+  suggestProof,
+} from "./queries/proofs.js";
+export {
   type ConfirmDerivationInput,
   confirmDerivation,
   type ReclassifyDerivationInput,

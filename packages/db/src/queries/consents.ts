@@ -32,6 +32,7 @@ import { eq, sql } from "drizzle-orm";
 import type { Tx } from "../audit.js";
 import type { Db } from "../client.js";
 import { consents } from "../schema/consents.js";
+import { purgeTargetsForSignal } from "./proofs.js";
 
 export type { GrantConsentInput, RevokeConsentInput };
 
@@ -172,21 +173,17 @@ export async function revokeConsent(
 
 /**
  * The signal's proofs and their active placements — what a revocation must
- * purge.
- *
- * TODO(#96): once the `proofs` and `placements` tables land, select
- * `{ id, signalId }` from `proofs` where `signal_id = signalId`, and
- * `{ id, proofId }` from `placements` where `proof_id` is one of those and
- * `active`. The return shape is the purge contract in
- * `@wellregarded/core` (`RevocationProofRef` / `RevocationPlacementRef`) —
- * issue #96 fills this in without touching any caller.
+ * purge. Filled by issue #96 (the seam this was reserved for): the selects
+ * live in ./proofs.js next to the tables; the return shape is the purge
+ * contract in `@wellregarded/core` (`RevocationProofRef` /
+ * `RevocationPlacementRef`).
  */
 async function currentPurgeTargets(
-  _tx: Tx,
-  _signalId: string,
+  tx: Tx,
+  signalId: string,
 ): Promise<{
   proofs: RevocationProofRef[];
   placements: RevocationPlacementRef[];
 }> {
-  return { proofs: [], placements: [] };
+  return purgeTargetsForSignal(tx, signalId);
 }
