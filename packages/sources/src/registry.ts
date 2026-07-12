@@ -3,8 +3,8 @@
  * normalize stage resolves a `SourceKind` to its `SourceAdapter`.
  *
  * A plain map, populated here. Real adapters slot in as they land — the
- * Google reviews adapter (Epic #7) and the CSV import adapter (Epic #8)
- * each add themselves to `defaultAdapters` in their own PR; nothing else
+ * Google reviews adapter (#125, Epic #7) is in; the CSV import adapter
+ * (Epic #8) adds itself to `defaultAdapters` in its own PR; nothing else
  * changes. An unknown kind returns `undefined`, which the normalize stage
  * treats as a non-retryable failure (straight to the DLQ) — a message for a
  * kind with no adapter can never succeed by retrying.
@@ -24,10 +24,12 @@ import type { SourceKind } from "@wellregarded/core";
 
 import { fixtureAdapter } from "./contract/fixtureAdapter.js";
 import type { SourceAdapter } from "./contract/sourceAdapter.js";
+import { googleReviewsAdapter } from "./google/adapter.js";
 
 const defaultAdapters: ReadonlyArray<SourceAdapter> = [
   // TODO(#138): replace with the real manual-entry adapter.
   fixtureAdapter,
+  googleReviewsAdapter,
 ];
 
 const registry = new Map<SourceKind, SourceAdapter>(

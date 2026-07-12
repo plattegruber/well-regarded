@@ -100,6 +100,54 @@ export const ratingSchema = z
 export type NormalizedRating = z.infer<typeof ratingSchema>;
 
 /**
+ * Moderation states a source can report for an existing owner reply.
+ * Vocabulary from Google's v4 `reviewReplyState` (owner replies are
+ * moderated since 2026 — ADR 0002 §2), kept source-neutral here so a future
+ * source with reply moderation reuses it.
+ */
+export const SOURCE_REPLY_STATES = ["PENDING", "REJECTED", "APPROVED"] as const;
+
+/**
+ * A pre-existing owner/practice response already published (or pending
+ * moderation) AT THE SOURCE — e.g. a Google `reviewReply`. Carried so the
+ * review inbox (Epic #10) can render "already replied on Google" instead of
+ * prompting a fresh draft. Adapters only report this state; they never
+ * write `responses` rows (Epic #10 decides how to import it).
+ */
+export const existingSourceReplySchema = z.strictObject({
+  comment: z.string(),
+  /** When the source says the reply was last changed (ISO datetime). */
+  updateTime: z.iso.datetime({ offset: true }).optional(),
+  /** The source's moderation verdict on the reply, when it reports one. */
+  state: z.enum(SOURCE_REPLY_STATES).optional(),
+  /** Rejection reason, when the source gives one (e.g. Google 2026-07). */
+  policyViolation: z.string().optional(),
+});
+
+export type ExistingSourceReply = z.infer<typeof existingSourceReplySchema>;
+
+/**
+ * Structured source-context passthrough (issue #125, Epic #7) — an additive
+ * optional extension of the wire contract:
+ *
+ * - `sourceUpdatedAt`: the source-reported last-update time. Edited reviews
+ *   keep `occurredAt = createTime` (the experience happened then); the
+ *   dedupe stage (#106) threads this value into
+ *   `signal_versions.source_updated_at` when it records an edit.
+ * - `existingReply`: see {@link existingSourceReplySchema}.
+ *
+ * NOTE: the `signals` table has no source-metadata column — this field
+ * rides the wire contract for dedupe and Epic #10; persisting it is an
+ * Epic #3 schema question, deliberately not invented here as a side channel.
+ */
+export const signalSourceMetadataSchema = z.strictObject({
+  sourceUpdatedAt: z.iso.datetime({ offset: true }).optional(),
+  existingReply: existingSourceReplySchema.optional(),
+});
+
+export type SignalSourceMetadata = z.infer<typeof signalSourceMetadataSchema>;
+
+/**
  * The one shape every ingestion source converges on. See module doc; field
  * mapping to `signals` columns is pinned by `signalsTableDrift.test.ts`.
  */
@@ -131,6 +179,8 @@ export const normalizedSignalSchema = z.strictObject({
   locationHint: entityHintSchema.optional(),
   /** Optional consent context — see {@link consentHintSchema}. */
   consentHint: consentHintSchema.optional(),
+  /** Optional source context — see {@link signalSourceMetadataSchema}. */
+  sourceMetadata: signalSourceMetadataSchema.optional(),
 });
 
 export type NormalizedSignal = z.infer<typeof normalizedSignalSchema>;

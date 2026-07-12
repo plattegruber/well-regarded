@@ -12,6 +12,9 @@
  * path and become visible in the run's error samples.
  */
 
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
 import { resetEnvCache } from "@wellregarded/core";
 import { getImportRunSummary, schema } from "@wellregarded/db";
 import {
@@ -78,7 +81,7 @@ async function fixturePractice() {
 
 async function storeArtifact(
   practiceId: string,
-  sourceKind: "manual" | "csv_import" | "google",
+  sourceKind: "manual" | "csv_import" | "google" | "opendental",
   artifact: unknown,
 ): Promise<string> {
   const { key } = await putRawArtifact(bucket, {
@@ -264,6 +267,148 @@ describe("normalize end-to-end (second source kind: csv fixture adapter)", () =>
   });
 });
 
+describe("normalize end-to-end (google reviews adapter, #125)", () => {
+  /** The recorded reviews page shared with the fake GBP server (#130). */
+  async function loadRecordedPage(): Promise<{ reviews: unknown[] }> {
+    return JSON.parse(
+      await readFile(
+        fileURLToPath(
+          new URL(
+            "../../../packages/sources/src/google/fixtures/reviews.list.page1.json",
+            import.meta.url,
+          ),
+        ),
+        "utf8",
+      ),
+    );
+  }
+
+  it("a poller envelope lands one public signal row per review with google provenance", async () => {
+    const p = await practice(t.db);
+    const run = await importRun(t.db, {
+      practiceId: p.id,
+      sourceKind: "google",
+    });
+    const page = await loadRecordedPage();
+    // The artifact exactly as the poller (#123) stores it: the raw page
+    // wrapped in the envelope from packages/sources/src/google/schema.ts.
+    const key = await storeArtifact(p.id, "google", {
+      kind: "gbp.reviews.page",
+      envelopeVersion: 1,
+      practiceId: p.id,
+      googleLocationName: "accounts/1/locations/1",
+      fetchedAt: "2026-07-01T00:00:00.000Z",
+      page,
+    });
+
+    const message = await deliverIngest({
+      importRunId: run.id,
+      rawArtifactKey: key,
+      sourceKind: "google",
+      practiceId: p.id,
+    });
+    expect(message.ack).toHaveBeenCalledOnce();
+    expect(message.retry).not.toHaveBeenCalled();
+
+    const rows = await t.db
+      .select()
+      .from(signals)
+      .where(eq(signals.practiceId, p.id))
+      .orderBy(signals.sourceId);
+    expect(rows).toHaveLength(page.reviews.length);
+    for (const row of rows) {
+      expect(row.sourceKind).toBe("google");
+      expect(row.visibility).toBe("public");
+      expect(row.pipelineStatus).toBe("pending_dedupe");
+      expect(row.rawArtifactKey).toBe(key);
+      expect(row.sourceId).toMatch(/^accounts\/1\/locations\/1\/reviews\/\d+$/);
+      expect(row.patientId).toBeNull();
+      // No location named "accounts/1/locations/1" exists, so the mapping
+      // hint is STORED (text + basis), never a guessed FK — the #121
+      // mapping lookup resolves it once that lands.
+      expect(row.locationId).toBeNull();
+      expect(row.locationHint).toEqual({
+        text: "accounts/1/locations/1",
+        basis: "source_metadata",
+      });
+    }
+
+    // Star-only review: a rating-only row, not dropped, not empty-stringed.
+    const starOnly = rows.find((row) => row.sourceId?.endsWith("/reviews/14"));
+    expect(starOnly?.originalText).toBeNull();
+    expect(starOnly?.originalRating).toBe("4.0");
+
+    // Edited review: occurred_at is the experience time (createTime), even
+    // though the fetched payload carries a later updateTime.
+    const edited = rows.find((row) => row.sourceId?.endsWith("/reviews/2"));
+    expect(edited?.occurredAt.toISOString()).toBe("2025-07-25T15:13:43.000Z");
+
+    // Replied review: original content lands untouched; the existing-reply
+    // state rides the wire metadata (no signals column), never a responses
+    // row — Epic #10 imports that state.
+    const replied = rows.find((row) => row.sourceId?.endsWith("/reviews/4"));
+    expect(replied?.originalRating).toBe("2.0");
+
+    const summary = await getImportRunSummary(t.db, p.id, run.id);
+    expect(summary?.run.created).toBe(page.reviews.length);
+    expect(summary?.errorCount).toBe(0);
+    expect(env.DEDUPE_QUEUE.sent).toHaveLength(page.reviews.length);
+  });
+
+  it("a malformed page (unknown starRating) fails the artifact loudly onto the run", async () => {
+    const p = await practice(t.db);
+    const run = await importRun(t.db, {
+      practiceId: p.id,
+      sourceKind: "google",
+    });
+    const key = await storeArtifact(p.id, "google", {
+      kind: "gbp.reviews.page",
+      envelopeVersion: 1,
+      practiceId: p.id,
+      googleLocationName: "accounts/1/locations/1",
+      fetchedAt: "2026-07-01T00:00:00.000Z",
+      page: {
+        reviews: [
+          {
+            name: "accounts/1/locations/1/reviews/1",
+            reviewId: "1",
+            reviewer: { displayName: "Maria Delgado" },
+            starRating: "STAR_RATING_UNSPECIFIED",
+            createTime: "2026-05-01T09:00:00.000Z",
+            updateTime: "2026-05-01T09:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    const message = await deliverIngest({
+      importRunId: run.id,
+      rawArtifactKey: key,
+      sourceKind: "google",
+      practiceId: p.id,
+    });
+    // Non-retryable: the same bytes will never parse — DLQ, not retry.
+    expect(message.ack).toHaveBeenCalledOnce();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(env.INGEST_DLQ.sent).toHaveLength(1);
+
+    const dlqMessage = fakeMessage(env.INGEST_DLQ.sent[0]);
+    await handleQueueBatch(
+      { queue: "wr-ingest-dlq", messages: [dlqMessage] },
+      env,
+    );
+
+    const rows = await t.db
+      .select()
+      .from(signals)
+      .where(eq(signals.practiceId, p.id));
+    expect(rows).toHaveLength(0);
+    const summary = await getImportRunSummary(t.db, p.id, run.id);
+    expect(summary?.errorCount).toBe(1);
+    expect(summary?.errorSamples[0]?.message).toContain('adapter "google"');
+  });
+});
+
 describe("normalize failure paths land in the import run (issues #104/#111)", () => {
   it("missing artifact: DLQ forward, then the DLQ consumer records it on the run", async () => {
     const { p, run } = await fixturePractice();
@@ -304,13 +449,13 @@ describe("normalize failure paths land in the import run (issues #104/#111)", ()
     const p = await practice(t.db);
     const run = await importRun(t.db, {
       practiceId: p.id,
-      sourceKind: "google",
+      sourceKind: "opendental",
     });
-    const key = await storeArtifact(p.id, "google", { reviews: [] });
+    const key = await storeArtifact(p.id, "opendental", { events: [] });
     const body = {
       importRunId: run.id,
       rawArtifactKey: key,
-      sourceKind: "google",
+      sourceKind: "opendental",
       practiceId: p.id,
     };
 
@@ -327,7 +472,7 @@ describe("normalize failure paths land in the import run (issues #104/#111)", ()
     const summary = await getImportRunSummary(t.db, p.id, run.id);
     expect(summary?.errorCount).toBe(1);
     expect(summary?.errorSamples[0]?.message).toContain(
-      'no SourceAdapter registered for sourceKind "google"',
+      'no SourceAdapter registered for sourceKind "opendental"',
     );
   });
 });
