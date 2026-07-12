@@ -13,6 +13,10 @@ export const PACKAGE_NAME = "@wellregarded/sources";
 // verbatim and plain Node ESM resolves only fully specified paths.
 export * from "./contract/normalizedSignal.js";
 export * from "./contract/sourceAdapter.js";
+export * from "./csv/adapter.js";
+export * from "./csv/parse.js";
+export * from "./csv/schema.js";
+export * from "./csv/validateRow.js";
 export * from "./google/adapter.js";
 export * from "./google/auth.js";
 export * from "./google/replies.js";

@@ -29,6 +29,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { importRuns } from "./importRuns.js";
 import { practices, staffMembers } from "./tenancy.js";
 
 // Enum values sourced from @wellregarded/core (one source of truth, same
@@ -61,6 +62,13 @@ export const importDrafts = pgTable(
     mapping: jsonb("mapping").$type<ColumnMapping>(),
 
     status: importDraftStatusEnum("status").notNull().default("draft"),
+
+    /**
+     * The `import_runs` row executing (or having executed) this draft —
+     * set by the import Workflow's validate step (#135), null until then.
+     * The queryable draft↔run linkage the report UI (#137) follows.
+     */
+    importRunId: uuid("import_run_id").references(() => importRuns.id),
 
     /** Who uploaded. Staff rows are deactivated, never deleted, so non-null holds. */
     createdBy: uuid("created_by")

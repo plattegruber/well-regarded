@@ -74,6 +74,16 @@
   // real usage). See docs/embedding-backfill.md.
   "ai": { "binding": "AI" },
 
+  "r2_buckets": [
+    // Uploaded CSV imports (#133) — the CSV import Workflow (#135) reads
+    // the confirmed draft's file from here. Same bucket the api worker
+    // writes ({practiceId}/imports/{sha256}.csv).
+    { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-local" },
+    // Immutable raw artifacts (#100) — the Workflow writes its batch
+    // envelopes here (store-before-enqueue) for the pipeline to read.
+    { "binding": "RAW_ARTIFACTS", "bucket_name": "wr-raw-artifacts-local" }
+  ],
+
   // The embedding backfill Workflow (#71): batched, resumable (one durable
   // checkpoint per batch via step.do), rate-aware (step.sleep between
   // batches). Triggered manually — local debug route or the Wrangler CLI;
@@ -83,6 +93,15 @@
       "name": "wr-embedding-backfill-local",
       "binding": "EMBEDDING_BACKFILL",
       "class_name": "EmbeddingBackfill"
+    },
+    // The CSV import Workflow (#135): validate -> chunk -> enqueue ->
+    // await drain -> finalize, one durable checkpoint per step. Triggered
+    // by #134's start endpoint (deployed) or the local debug route; see
+    // docs/csv-import.md.
+    {
+      "name": "wr-csv-import-local",
+      "binding": "CSV_IMPORT",
+      "class_name": "CsvImport"
     }
   ],
 
@@ -121,11 +140,23 @@
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
       ],
       "ai": { "binding": "AI" },
+      "r2_buckets": [
+        { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-preview" },
+        {
+          "binding": "RAW_ARTIFACTS",
+          "bucket_name": "wr-raw-artifacts-preview"
+        }
+      ],
       "workflows": [
         {
           "name": "wr-embedding-backfill-preview",
           "binding": "EMBEDDING_BACKFILL",
           "class_name": "EmbeddingBackfill"
+        },
+        {
+          "name": "wr-csv-import-preview",
+          "binding": "CSV_IMPORT",
+          "class_name": "CsvImport"
         }
       ],
       "durable_objects": {
@@ -148,11 +179,23 @@
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
       ],
       "ai": { "binding": "AI" },
+      "r2_buckets": [
+        { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-prod" },
+        {
+          "binding": "RAW_ARTIFACTS",
+          "bucket_name": "wr-raw-artifacts-prod"
+        }
+      ],
       "workflows": [
         {
           "name": "wr-embedding-backfill-prod",
           "binding": "EMBEDDING_BACKFILL",
           "class_name": "EmbeddingBackfill"
+        },
+        {
+          "name": "wr-csv-import-prod",
+          "binding": "CSV_IMPORT",
+          "class_name": "CsvImport"
         }
       ],
       "durable_objects": {

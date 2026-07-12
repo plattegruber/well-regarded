@@ -15,14 +15,10 @@ import { FakeEmbeddingProvider } from "@wellregarded/ai";
 import { resetEnvCache } from "@wellregarded/core";
 import { getImportRunSummary, schema } from "@wellregarded/db";
 import {
+  buildCsvImportBatchArtifact,
   putRawArtifact,
-  registerAdapter,
-  resetAdapterRegistry,
 } from "@wellregarded/sources";
-import {
-  csvFixtureAdapter,
-  InMemoryRawArtifactBucket,
-} from "@wellregarded/sources/testing";
+import { InMemoryRawArtifactBucket } from "@wellregarded/sources/testing";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -71,7 +67,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  resetAdapterRegistry();
 });
 
 async function storeArtifact(
@@ -112,7 +107,6 @@ async function ingestAndDedupe(body: {
 
 describe("acceptance: same review via two sources → linked, never merged", () => {
   it("creates two signals plus one pending_review suspected_duplicates row, and both proceed to classify", async () => {
-    registerAdapter(csvFixtureAdapter);
     const p = await practice(t.db);
 
     // First arrival: the review through the (fixture) polling source.
@@ -131,12 +125,25 @@ describe("acceptance: same review via two sources → linked, never merged", () 
       practiceId: p.id,
     });
 
-    // Second arrival: the SAME review inside the previous vendor's CSV.
-    const csvKey = await storeArtifact(p.id, "csv_import", {
-      rows: [
-        { rowId: "row-7", submittedAt: when, comment: reviewText, score: 5 },
-      ],
-    });
+    // Second arrival: the SAME review inside the previous vendor's CSV —
+    // one batch envelope exactly as the import Workflow (#135) stores it.
+    const csvKey = await storeArtifact(
+      p.id,
+      "csv_import",
+      buildCsvImportBatchArtifact({
+        practiceId: p.id,
+        draftId: "3b74b0f7-6d7c-4b7e-9f36-1af6a29f2f3a",
+        batchIndex: 0,
+        firstRowNumber: 1,
+        headers: ["Date", "Review", "Rating"],
+        mapping: {
+          occurredAt: { column: "Date", dateFormat: "ISO" },
+          text: { column: "Review" },
+          rating: { column: "Rating", ratingScale: 5 },
+        },
+        rows: [[when, reviewText, "5"]],
+      }),
+    );
     const csvRun = await importRun(t.db, {
       practiceId: p.id,
       sourceKind: "csv_import",

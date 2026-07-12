@@ -8,7 +8,10 @@
  * - `SyncLock` Durable Object (stub until Epic #20);
  * - `EmbeddingBackfill` Workflow (issue #71) — the class behind the
  *   `EMBEDDING_BACKFILL` binding / `wr-embedding-backfill-<env>` workflow;
- * - `fetch`: local-only debug trigger for the backfill (404 outside local).
+ * - `CsvImport` Workflow (issue #135) — the class behind the
+ *   `CSV_IMPORT` binding / `wr-csv-import-<env>` workflow;
+ * - `fetch`: local-only debug triggers for the workflows (404 outside
+ *   local).
  *
  * Real scheduled/queue handlers land in later epics.
  */
@@ -16,6 +19,7 @@
 import type { JobsBindings } from "./bindings";
 import { handleLocalTrigger } from "./localTrigger";
 
+export { CsvImport } from "./csvImport.workflow";
 export { EmbeddingBackfill } from "./embeddingBackfill.workflow";
 export { SyncLock } from "./sync-lock";
 

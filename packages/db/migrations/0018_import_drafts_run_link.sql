@@ -1,0 +1,2 @@
+ALTER TABLE "import_drafts" ADD COLUMN "import_run_id" uuid;--> statement-breakpoint
+ALTER TABLE "import_drafts" ADD CONSTRAINT "import_drafts_import_run_id_import_runs_id_fk" FOREIGN KEY ("import_run_id") REFERENCES "public"."import_runs"("id") ON DELETE no action ON UPDATE no action;

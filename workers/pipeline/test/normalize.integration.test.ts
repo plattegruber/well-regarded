@@ -18,13 +18,11 @@ import { fileURLToPath } from "node:url";
 import { resetEnvCache } from "@wellregarded/core";
 import { getImportRunSummary, schema } from "@wellregarded/db";
 import {
+  buildCsvImportBatchArtifact,
+  csvRowSourceId,
   putRawArtifact,
-  registerAdapter,
-  resetAdapterRegistry,
 } from "@wellregarded/sources";
 import {
-  csvFixtureAdapter,
-  csvFixtureArtifact,
   fixtureArtifact,
   InMemoryRawArtifactBucket,
 } from "@wellregarded/sources/testing";
@@ -61,7 +59,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  resetAdapterRegistry();
 });
 
 /** A practice with entities matching the manual fixture artifact's hints. */
@@ -198,16 +195,54 @@ describe("normalize end-to-end (manual fixture adapter)", () => {
   });
 });
 
-describe("normalize end-to-end (second source kind: csv fixture adapter)", () => {
+describe("normalize end-to-end (second source kind: csv import adapter, #135)", () => {
+  /** One batch envelope exactly as the import Workflow (#135) stores it. */
+  const CSV_DRAFT_ID = "3b74b0f7-6d7c-4b7e-9f36-1af6a29f2f3a";
+  const csvBatchArtifact = (practiceId: string) =>
+    buildCsvImportBatchArtifact({
+      practiceId,
+      draftId: CSV_DRAFT_ID,
+      batchIndex: 0,
+      firstRowNumber: 1,
+      headers: ["Date", "Review", "Rating", "Patient", "Email", "Doctor"],
+      mapping: {
+        occurredAt: { column: "Date", dateFormat: "ISO" },
+        text: { column: "Review" },
+        rating: { column: "Rating", ratingScale: 5 },
+        patientName: { column: "Patient" },
+        patientEmail: { column: "Email" },
+        providerHint: { column: "Doctor" },
+        consentHint: { constant: "imported_unknown" },
+      },
+      rows: [
+        [
+          "2026-04-01T10:00:00Z",
+          "The hygiene team here is the most careful I have experienced.",
+          "5",
+          "R. Alvarez",
+          "r.alvarez@example.com",
+          "Dr. Patel",
+        ],
+        [
+          "2026-04-02T15:30:00-05:00",
+          "Care was fine; the waiting room gets cramped.",
+          "3",
+          "",
+          "",
+          "",
+        ],
+      ],
+    });
+
   it("resolves by sourceKind, stores unmatched hints with basis, and links patients through the PII seam", async () => {
-    registerAdapter(csvFixtureAdapter);
     // No providers/locations created: the csv hints must stay hints.
     const p = await practice(t.db);
     const run = await importRun(t.db, {
       practiceId: p.id,
       sourceKind: "csv_import",
     });
-    const key = await storeArtifact(p.id, "csv_import", csvFixtureArtifact);
+    const artifact = csvBatchArtifact(p.id);
+    const key = await storeArtifact(p.id, "csv_import", artifact);
 
     const message = await deliverIngest({
       importRunId: run.id,
@@ -220,26 +255,29 @@ describe("normalize end-to-end (second source kind: csv fixture adapter)", () =>
     const rows = await t.db
       .select()
       .from(signals)
-      .where(eq(signals.practiceId, p.id))
-      .orderBy(signals.sourceId);
-    expect(rows).toHaveLength(csvFixtureArtifact.rows.length);
+      .where(eq(signals.practiceId, p.id));
+    expect(rows).toHaveLength(artifact.rows.length);
     expect(rows.every((row) => row.sourceKind === "csv_import")).toBe(true);
 
-    // row-1's provider hint has no matching entity: stored, never guessed.
-    const first = rows.find((row) => row.sourceId === "row-1");
-    expect(first?.providerId).toBeNull();
-    expect(first?.providerHint).toEqual({
+    // Row 1's identity is the deterministic per-row hash (#135).
+    const row1SourceId = await csvRowSourceId(CSV_DRAFT_ID, 1);
+    const row1 = rows.find((row) => row.sourceId === row1SourceId);
+    expect(row1).toBeDefined();
+
+    // row 1's provider hint has no matching entity: stored, never guessed.
+    expect(row1?.providerId).toBeNull();
+    expect(row1?.providerHint).toEqual({
       text: "Dr. Patel",
       basis: "source_metadata",
     });
 
     // The patient hint went through pii.patients/contact_points and linked.
-    expect(first?.patientId).not.toBeNull();
+    expect(row1?.patientId).not.toBeNull();
     const [patient] = await t.db
       .select()
       .from(patients)
       .where(eq(patients.practiceId, p.id));
-    expect(patient?.id).toBe(first?.patientId);
+    expect(patient?.id).toBe(row1?.patientId);
     expect(patient?.displayName).toBe("R. Alvarez");
     const points = await t.db
       .select()
@@ -263,7 +301,7 @@ describe("normalize end-to-end (second source kind: csv fixture adapter)", () =>
     expect(allPatients).toHaveLength(1);
 
     const summary = await getImportRunSummary(t.db, p.id, run.id);
-    expect(summary?.run.created).toBe(csvFixtureArtifact.rows.length);
+    expect(summary?.run.created).toBe(artifact.rows.length);
   });
 });
 

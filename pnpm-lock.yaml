@@ -198,6 +198,9 @@ importers:
       hono:
         specifier: ^4.12.29
         version: 4.12.29
+      papaparse:
+        specifier: ^5.5.4
+        version: 5.5.4
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -208,6 +211,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.19.0
         version: 1.19.14(hono@4.12.29)
+      '@types/papaparse':
+        specifier: ^5.5.2
+        version: 5.5.2
       '@wellregarded/db':
         specifier: workspace:*
         version: link:../db
@@ -301,6 +307,12 @@ importers:
       '@wellregarded/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@wellregarded/sources':
+        specifier: workspace:*
+        version: link:../../packages/sources
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^5.20260711.1

@@ -8,11 +8,13 @@ const TRIGGER_URL = "http://localhost:8789/__local/trigger/embedding-backfill";
 
 function makeEnv(environment = "local") {
   const create = vi.fn().mockResolvedValue({ id: "instance-1" });
+  const createCsvImport = vi.fn().mockResolvedValue({ id: "instance-2" });
   const env = {
     ENVIRONMENT: environment,
     EMBEDDING_BACKFILL: { create },
+    CSV_IMPORT: { create: createCsvImport },
   } as unknown as JobsBindings;
-  return { env, create };
+  return { env, create, createCsvImport };
 }
 
 beforeEach(() => {
@@ -37,6 +39,37 @@ describe("handleLocalTrigger", () => {
     expect(create).toHaveBeenCalledExactlyOnceWith({
       params: { batchSize: 5 },
     });
+  });
+
+  it("triggers the csv-import workflow by its own slug (#135)", async () => {
+    const { env, create, createCsvImport } = makeEnv();
+    const params = { importDraftId: "d-1", practiceId: "p-1" };
+    const response = await handleLocalTrigger(
+      new Request("http://localhost:8789/__local/trigger/csv-import", {
+        method: "POST",
+        body: JSON.stringify(params),
+      }),
+      env,
+    );
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({
+      triggered: "csv-import",
+      instanceId: "instance-2",
+    });
+    expect(createCsvImport).toHaveBeenCalledExactlyOnceWith({ params });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("404s an unknown workflow slug", async () => {
+    const { env } = makeEnv();
+    const response = await handleLocalTrigger(
+      new Request("http://localhost:8789/__local/trigger/nope", {
+        method: "POST",
+      }),
+      env,
+    );
+    expect(response.status).toBe(404);
+    expect(await response.text()).toContain("csv-import");
   });
 
   it("treats an empty body as default params", async () => {

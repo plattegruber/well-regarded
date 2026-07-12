@@ -54,6 +54,25 @@ export async function createImportRun(
   return row;
 }
 
+/**
+ * Record the raw-artifact keys a run stored, once they are known. The CSV
+ * import Workflow (#135) creates its run BEFORE parsing (so failures are
+ * visible on a run row), then sets the batch-artifact keys here after the
+ * chunk step — and MUST do so before enqueueing any ingest message: the
+ * dedupe stage's `conflict_reimport` path re-reads these keys (#106), and
+ * a run with none recorded fails that path by contract.
+ */
+export async function setImportRunArtifactKeys(
+  db: Db | Tx,
+  importRunId: string,
+  rawArtifactKeys: string[],
+): Promise<void> {
+  await db
+    .update(importRuns)
+    .set({ rawArtifactKeys })
+    .where(eq(importRuns.id, importRunId));
+}
+
 /** Count deltas for `incrementImportRunCounts` — all optional, default 0. */
 export interface ImportRunCountDelta {
   created?: number;

@@ -7,12 +7,6 @@
  * Workers-runtime clean.
  */
 
-export type { CsvFixtureArtifact } from "./contract/csvFixtureAdapter.js";
-export {
-  csvFixtureAdapter,
-  csvFixtureArtifact,
-  emptyCsvFixtureArtifact,
-} from "./contract/csvFixtureAdapter.js";
 export type {
   AdapterContractFixture,
   AdapterContractFixtures,
