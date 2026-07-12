@@ -12,6 +12,7 @@ export const ACTIONS = [
   "view_private_feedback",
   "assign_recovery",
   "resolve_duplicates",
+  "reclassify_signal",
   "draft_response",
   "approve_response",
   "publish_public",

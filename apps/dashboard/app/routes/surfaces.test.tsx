@@ -30,21 +30,23 @@ import Settings, {
   loader as settingsLoader,
   meta as settingsMeta,
 } from "./settings";
-import Today, { loader as todayLoader, meta as todayMeta } from "./today";
 
 // biome-ignore lint/suspicious/noExplicitAny: route component/loader prop types are per-route; the table erases them on purpose
 type AnyComponent = (props: any) => React.ReactNode;
 
-// /signals graduated to a data-backed loader in #88, /reviews in #76 —
-// their rendering is covered by signals.route.test.tsx and
-// reviews.route.test.tsx, not this static table.
+// /signals graduated to a data-backed loader in #88, /reviews in #76,
+// and /today in #95 — their rendering is covered by
+// signals.route.test.tsx, reviews.route.test.tsx, and
+// today.route.test.tsx, not this static table.
 const EMPTY_STATE_ROUTES: Array<{
-  key: Exclude<keyof typeof SURFACES, "signals" | "reviews" | "settings">;
+  key: Exclude<
+    keyof typeof SURFACES,
+    "signals" | "reviews" | "settings" | "today"
+  >;
   Component: AnyComponent;
   loader: () => unknown;
   meta: () => Array<{ title: string }>;
 }> = [
-  { key: "today", Component: Today, loader: todayLoader, meta: todayMeta },
   {
     key: "recovery",
     Component: Recovery,
@@ -142,10 +144,6 @@ describe("today's overline", () => {
     expect(todayOverline(new Date("2026-07-08T12:00:00Z"))).toBe(
       "Wednesday, July 8",
     );
-    const data = todayLoader();
-    const TodayAny = Today as AnyComponent;
-    const html = renderToString(<TodayAny loaderData={data} />);
-    expect(html).toContain(data.overline);
   });
 });
 

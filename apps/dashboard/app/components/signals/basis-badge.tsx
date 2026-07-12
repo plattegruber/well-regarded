@@ -24,7 +24,11 @@ function isInferred(basis: DerivationBasis): boolean {
 
 export interface BasisBadgeProps extends React.ComponentProps<"span"> {
   basis: DerivationBasis;
-  /** 0–1; rendered as plain language. Omit to show the basis alone. */
+  /**
+   * 0–1; rendered as plain language. Omit to show the basis alone.
+   * Ignored for `manual` rows: a human assertion is "Staff confirmed",
+   * never "high confidence" — confidence is model language (#93).
+   */
   confidence?: number;
 }
 
@@ -50,7 +54,9 @@ export function BasisBadge({
       {...props}
     >
       {BASIS_LABELS[basis]}
-      {confidence !== undefined && ` · ${confidenceLabel(confidence)}`}
+      {confidence !== undefined &&
+        basis !== "manual" &&
+        ` · ${confidenceLabel(confidence)}`}
     </span>
   );
 }

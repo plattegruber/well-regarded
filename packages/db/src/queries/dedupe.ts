@@ -307,9 +307,12 @@ export interface ResolveSuspectedDuplicateInput {
  * `undefined`, so double submits are harmless.
  *
  * Deliberately NOT a merge. The epic's hard rule is no silent merges: both
- * signals stay fully visible and both raws are kept; `confirmed` records
- * the human's verdict that they describe the same event. Canonical-choice /
- * merge mechanics, if any, land with #93 on top of this status.
+ * raws are kept and both details stay reachable; `confirmed` records the
+ * human's verdict that they describe the same event. Canonical semantics
+ * (#93) are derived, not stored: the OLDER signal of a confirmed pair
+ * (earliest occurred_at, then created_at, then id) is canonical, and
+ * `listSignals` hides the non-canonical member from default listings
+ * (visible via the duplicate filter).
  */
 export async function resolveSuspectedDuplicate(
   db: Db,

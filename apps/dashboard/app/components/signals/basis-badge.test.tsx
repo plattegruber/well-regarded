@@ -16,10 +16,11 @@ describe("BasisBadge", () => {
     expect(html).toContain('data-basis="inferred_text"');
   });
 
-  it("renders manual as staff confirmed, solid", () => {
+  it("renders manual as staff confirmed, solid — never as 'confidence' (#93)", () => {
     const html = renderToString(<BasisBadge basis="manual" confidence={1} />);
     expect(html).toContain("Staff confirmed");
-    expect(html).toContain("high confidence");
+    // Confidence is model language; a human assertion is just confirmed.
+    expect(html).not.toContain("high confidence");
     expect(html).not.toContain("border-dashed");
   });
 

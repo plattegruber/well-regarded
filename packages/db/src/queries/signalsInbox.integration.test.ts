@@ -477,6 +477,104 @@ describe("suspected duplicates — list flag, filter, detail, resolve", () => {
       payload: { resolution: "same" },
     });
   });
+
+  it("confirmed pairs follow canonical semantics: the newer signal hides from default listings, stays visible via the duplicate filter (#93)", async () => {
+    const older = await signalFactory(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+      visibility: "public",
+      occurredAt: new Date("2026-05-01T00:00:00Z"),
+      originalText: "canonical duplicate test — original",
+    });
+    const newer = await signalFactory(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+      visibility: "public",
+      occurredAt: new Date("2026-05-02T00:00:00Z"),
+      originalText: "canonical duplicate test — re-import",
+    });
+    const pair = canonicalPair(older.id, newer.id);
+    const [link] = await t.db
+      .insert(suspectedDuplicates)
+      .values({ practiceId: DEMO_PRACTICE_ID, ...pair, similarity: 0.97 })
+      .returning();
+    if (!link) throw new Error("suspected duplicate insert returned no row");
+
+    // Pending: both visible by default (no silent hiding before a human
+    // decides).
+    const pending = await collectAllPages({
+      practiceId: DEMO_PRACTICE_ID,
+      viewer: FULL,
+    });
+    expect(pending.map((item) => item.id)).toContain(older.id);
+    expect(pending.map((item) => item.id)).toContain(newer.id);
+
+    await resolveSuspectedDuplicate(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+      duplicateId: link.id,
+      resolution: "same",
+      actor: ACTOR,
+    });
+
+    // Confirmed: the OLDER signal is canonical; the newer one leaves the
+    // default listing but is NOT deleted — both raws are kept.
+    const defaults = await collectAllPages({
+      practiceId: DEMO_PRACTICE_ID,
+      viewer: FULL,
+    });
+    expect(defaults.map((item) => item.id)).toContain(older.id);
+    expect(defaults.map((item) => item.id)).not.toContain(newer.id);
+
+    // The duplicate filter is the way to see the whole pair.
+    const viaFilter = await collectAllPages({
+      practiceId: DEMO_PRACTICE_ID,
+      viewer: FULL,
+      filters: { suspectedDuplicate: true },
+    });
+    expect(viaFilter.map((item) => item.id)).toContain(older.id);
+    expect(viaFilter.map((item) => item.id)).toContain(newer.id);
+
+    // And the detail stays reachable directly.
+    const detail = await getSignalDetail(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+      signalId: newer.id,
+      viewer: FULL,
+      actor: ACTOR,
+    });
+    expect(detail?.signal.id).toBe(newer.id);
+  });
+
+  it("dismissed pairs hide nothing — 'different' keeps both in default listings", async () => {
+    const a = await signalFactory(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+      visibility: "public",
+      occurredAt: new Date("2026-05-03T00:00:00Z"),
+    });
+    const b = await signalFactory(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+      visibility: "public",
+      occurredAt: new Date("2026-05-04T00:00:00Z"),
+    });
+    const [link] = await t.db
+      .insert(suspectedDuplicates)
+      .values({
+        practiceId: DEMO_PRACTICE_ID,
+        ...canonicalPair(a.id, b.id),
+        similarity: 0.91,
+      })
+      .returning();
+    if (!link) throw new Error("suspected duplicate insert returned no row");
+    await resolveSuspectedDuplicate(t.db, {
+      practiceId: DEMO_PRACTICE_ID,
+      duplicateId: link.id,
+      resolution: "different",
+      actor: ACTOR,
+    });
+    const defaults = await collectAllPages({
+      practiceId: DEMO_PRACTICE_ID,
+      viewer: FULL,
+    });
+    expect(defaults.map((item) => item.id)).toContain(a.id);
+    expect(defaults.map((item) => item.id)).toContain(b.id);
+  });
 });
 
 describe("getSignalDetail", () => {

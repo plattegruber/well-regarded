@@ -144,3 +144,30 @@ export const PUBLICATION_SUITABILITIES = [
 ] as const;
 
 export type PublicationSuitability = (typeof PUBLICATION_SUITABILITIES)[number];
+
+/**
+ * The canonical value vocabulary per dimension (issue #93) — what the
+ * classify pipeline may write and what the manual-reclassification picker
+ * offers. One map so the dashboard's correction UI and its action
+ * validation can never drift from the pipeline's vocabulary.
+ */
+export const DERIVATION_DIMENSION_VALUES: Record<
+  DerivationDimension,
+  readonly string[]
+> = {
+  sentiment: SENTIMENTS,
+  urgency: URGENCY_LEVELS,
+  response_risk: RESPONSE_RISKS,
+  publication_suitability: PUBLICATION_SUITABILITIES,
+};
+
+/** Is `value` in `dimension`'s canonical vocabulary? (issue #93 pickers) */
+export function isDerivationValueForDimension(
+  dimension: DerivationDimension,
+  value: unknown,
+): value is string {
+  return (
+    typeof value === "string" &&
+    DERIVATION_DIMENSION_VALUES[dimension].includes(value)
+  );
+}

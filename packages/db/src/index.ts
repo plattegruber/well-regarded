@@ -119,6 +119,15 @@ export {
   signalHasProofExcerpts,
 } from "./queries/proofExcerpts.js";
 export {
+  type ConfirmDerivationInput,
+  confirmDerivation,
+  type ReclassifyDerivationInput,
+  reclassifyDerivation,
+  type SetSignalAssociationInput,
+  type SignalAssociationKind,
+  setSignalAssociation,
+} from "./queries/reclassify.js";
+export {
   countReviewInboxStatuses,
   decodeReviewsCursor,
   getReviewDetail,
@@ -179,4 +188,15 @@ export {
   type Practice,
   type StaffMember,
 } from "./queries/tenancy.js";
+export {
+  listFailedImports,
+  listNegativeReviewsNeedingResponse,
+  listReauthConnections,
+  listRunningImports,
+  listUrgentSignals,
+  type NegativeReviewCard,
+  TODAY_SECTION_LIMIT,
+  type TodaySection,
+  type UrgentSignalCard,
+} from "./queries/today.js";
 export * as schema from "./schema/index.js";
