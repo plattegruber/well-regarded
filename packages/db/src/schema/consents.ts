@@ -1,5 +1,6 @@
 /**
- * `consents` — append-only versioned consent (issue #38, Epic #3).
+ * `consents` — append-only versioned consent (issues #38 and #84, Epics #3
+ * and #12).
  *
  * Ethical invariant #2: nothing publishes without an explicit consent join.
  * There is no `is_publishable` boolean anywhere in the system — and there
@@ -12,12 +13,15 @@
  * Consent is scoped to a specific piece of content (`signal_id`) — a patient
  * consents to *this review* being reused, never blanket.
  *
- * Append-only: consent versions are never edited. Granting, narrowing, and
- * revoking are all new rows (`consent_version` is monotonic per signal,
- * starting at 1), so we can always answer "what was consented to at the time
- * we published X". The one permitted UPDATE is stamping `revoked_at` on the
- * currently-active row (`revokeConsent` in `../queries/consents.js`; a
- * re-grant after revocation is a new row with a higher version). The
+ * Append-only, with no exceptions (issue #84): consent versions are never
+ * edited. Granting, narrowing, revoking, and re-granting are all new rows
+ * (`consent_version` is monotonic per signal, starting at 1), so we can
+ * always answer "what was consented to at the time we published X". A
+ * revocation is a new row with `revoked_at` set, carrying the *revoker's*
+ * `source` — that is what makes the patient-always-wins precedence
+ * (`governingConsent` in `@wellregarded/core`) apply to revocations too: a
+ * staff attestation can never override a patient's revocation. Writes go
+ * through `grantConsent` / `revokeConsent` in `../queries/consents.js`. The
  * audit-log issue in this epic records every such change.
  */
 

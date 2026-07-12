@@ -56,8 +56,13 @@ const EXPECTED_SIGNALS_BY_KIND = SIGNAL_FIXTURES.reduce<Record<string, number>>(
   },
   {},
 );
+// A revocation is a consent row too (issue #84: revocations are new
+// version rows, never UPDATEs), so revoked fixtures count one extra.
 const EXPECTED_CONSENT_ROWS = SIGNAL_FIXTURES.reduce(
-  (total, fixture) => total + (fixture.consent?.grants.length ?? 0),
+  (total, fixture) =>
+    total +
+    (fixture.consent?.grants.length ?? 0) +
+    (fixture.consent?.revokedDaysAgo !== undefined ? 1 : 0),
   0,
 );
 const EXPECTED_EXCERPTS = SIGNAL_FIXTURES.reduce(

@@ -11,7 +11,7 @@
 
 import { z } from "zod";
 
-import { CONSENT_CHANNELS } from "./consent.js";
+import { CONSENT_CHANNELS } from "./consent/index.js";
 
 /**
  * Suggestion chips for the source-description field — a static starter

@@ -49,7 +49,8 @@ describe("signals schema (unit)", () => {
     // and no publishability flag ever (see CONSENT.md).
     expect(columnNames).not.toContain("sentiment");
     expect(columnNames).not.toContain("status");
-    expect(columnNames).not.toContain("is_publishable");
+    // The next line asserts the string's absence, hence the marker.
+    expect(columnNames).not.toContain("is_publishable"); // consent-guard: allow
     expect(columnNames).not.toContain("published");
   });
 });

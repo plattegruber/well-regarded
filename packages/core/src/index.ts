@@ -6,7 +6,7 @@ export const PACKAGE_NAME = "@wellregarded/core";
 // only fully specified paths. Bundlers (vitest, wrangler) accept either.
 export * from "./apiKeys.js";
 export * from "./audit.js";
-export * from "./consent.js";
+export * from "./consent/index.js";
 export * from "./crypto/fieldEncryption.js";
 export * from "./derivations.js";
 export * from "./env.js";
