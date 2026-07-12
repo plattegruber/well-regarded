@@ -33,6 +33,7 @@ export const SETTINGS_SECTIONS: Section[] = [
   {
     title: "Integrations",
     description: "Google Business Profile and other feedback sources.",
+    to: "/settings/integrations",
   },
   {
     title: "Imports",

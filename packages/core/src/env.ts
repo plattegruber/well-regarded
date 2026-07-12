@@ -157,6 +157,18 @@ const googleOauthEnvSchema = z.object({
     .url()
     .default("https://oauth2.googleapis.com/revoke"),
   /**
+   * Base URLs of the two v1 data APIs location discovery calls (#121):
+   * Account Management (`listAccounts`) and Business Information
+   * (`listLocations`). Local dev and tests point both at the fake GBP
+   * server (#130), which serves every surface from one origin.
+   */
+  GOOGLE_ACCOUNT_MANAGEMENT_URL: z
+    .url()
+    .default("https://mybusinessaccountmanagement.googleapis.com"),
+  GOOGLE_BUSINESS_INFORMATION_URL: z
+    .url()
+    .default("https://mybusinessbusinessinformation.googleapis.com"),
+  /**
    * Public URL of the callback route. Unset = derived from the incoming
    * request's origin (correct for local dev and the deployed worker); set it
    * only when the worker sits behind a rewriting proxy.

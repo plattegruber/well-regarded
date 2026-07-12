@@ -29,6 +29,15 @@ export default [
     // CSV import entry point (#133): upload + hand-off to the mapping
     // wizard (#134). Same non-nested placement rationale as above.
     route("settings/imports", "routes/settings.imports.tsx"),
+    // Integrations (#121): the Google Business Profile connection card and
+    // the location-mapping screen. The mapping route is reachable both
+    // mid-onboarding (right after the OAuth callback) and later from
+    // settings — no special flags, by design.
+    route("settings/integrations", "routes/settings.integrations.tsx"),
+    route(
+      "settings/integrations/google/locations",
+      "routes/settings.integrations.google.locations.tsx",
+    ),
     // Dev-only design-system reference; its loader 404s in production.
     route("styleguide", "routes/styleguide.tsx"),
   ]),

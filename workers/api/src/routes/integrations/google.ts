@@ -27,6 +27,21 @@
  * - GET / — connection status JSON for the settings card (#121 builds the
  *   UI; this payload never includes credentials).
  *
+ * Location discovery + mapping (issue #121) joins the group:
+ *
+ * - The callback runs discovery eagerly after a successful connect (ADR
+ *   0002 Appendix B: "auto after connect") with the access token it
+ *   already holds — best-effort, a Google hiccup never fails the connect.
+ * - POST /locations/discover — the on-demand "Refresh locations" action:
+ *   refreshes an access token, walks accounts × locations server-side in
+ *   this one handler (multi-account pagination is several round trips —
+ *   never waterfalled from the browser), and replaces
+ *   `metadata.googleLocations` wholesale. Mappings are preserved.
+ * - PUT /mappings — replaces `metadata.locationMappings` with the decided
+ *   set via `saveGoogleLocationMappings` (shared with the dashboard
+ *   action), which validates practice scope, snapshot membership, and the
+ *   unverified-cannot-map rule, creates inline locations, and audits.
+ *
  * All Google endpoint URLs come from env (`GOOGLE_OAUTH_*_URL`) so local
  * dev and tests point at the fake GBP server (#130).
  *
@@ -47,14 +62,22 @@ import {
 } from "@wellregarded/core";
 import {
   audit,
+  type Db,
   disconnectSourceConnection,
   getSourceConnection,
+  markSourceConnectionNeedsReauth,
+  patchSourceConnectionMetadata,
   type SourceConnection,
+  saveGoogleLocationMappings,
   upsertSourceConnection,
 } from "@wellregarded/db";
 import {
+  createGoogleAccessTokenProvider,
+  discoverGoogleLocations,
   exchangeAuthorizationCode,
   GOOGLE_BUSINESS_MANAGE_SCOPE,
+  type GoogleDataApiConfig,
+  NeedsReauthError,
   revokeGoogleToken,
 } from "@wellregarded/sources";
 import type { Context } from "hono";
@@ -132,9 +155,39 @@ function callbackUrl(c: Context<AppEnv>, env: ApiEnv): string {
   return `${url.origin}${basePath}/callback`;
 }
 
-/** Redirect target on the dashboard settings page. */
+/** Discovery client config — base URLs from env (fake GBP in local/tests). */
+function dataApiConfig(env: ApiEnv, accessToken: string): GoogleDataApiConfig {
+  return {
+    accountManagementUrl: env.GOOGLE_ACCOUNT_MANAGEMENT_URL,
+    businessInformationUrl: env.GOOGLE_BUSINESS_INFORMATION_URL,
+    // NEVER-LOG(credentials).
+    accessToken,
+  };
+}
+
+/**
+ * Run one discovery pass and replace the snapshot
+ * (`metadata.googleLocations`) wholesale. Mappings and other metadata keys
+ * (e.g. #123's sync cursors) are untouched — the patch is per-key.
+ */
+async function refreshLocationSnapshot(
+  db: Db,
+  env: ApiEnv,
+  connectionId: string,
+  accessToken: string,
+): Promise<SourceConnection | null> {
+  const googleLocations = await discoverGoogleLocations(
+    dataApiConfig(env, accessToken),
+  );
+  return patchSourceConnectionMetadata(db, connectionId, { googleLocations });
+}
+
+/**
+ * Redirect target on the dashboard: the integrations page (#121), which
+ * renders the `?connected=` / `?error=` outcome banner.
+ */
 function settingsRedirect(env: ApiEnv, params: Record<string, string>): string {
-  const url = new URL("/settings", env.DASHBOARD_ORIGIN);
+  const url = new URL("/settings/integrations", env.DASHBOARD_ORIGIN);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
@@ -327,7 +380,7 @@ googleIntegrationRoutes.get("/callback", async (c) => {
     GOOGLE_BUSINESS_MANAGE_SCOPE,
   ];
 
-  await c.get("db").transaction(async (tx) => {
+  const connection = await c.get("db").transaction(async (tx) => {
     const existing = await getSourceConnection(tx, actor.practiceId, "google");
     const row = await upsertSourceConnection(tx, {
       practiceId: actor.practiceId,
@@ -347,7 +400,25 @@ googleIntegrationRoutes.get("/callback", async (c) => {
       // References and non-sensitive fields only — never token material.
       payload: { kind: "google", scopes, previousStatus: existing?.status },
     });
+    return row;
   });
+
+  // Location discovery, eagerly, with the access token the exchange just
+  // minted (issue #121; ADR 0002 Appendix B — "auto after connect").
+  // Best-effort: a Google hiccup here must not fail the connect — the
+  // mapping screen's "Refresh locations" action retries.
+  try {
+    await refreshLocationSnapshot(
+      c.get("db"),
+      env,
+      connection.id,
+      tokens.accessToken,
+    );
+  } catch (error) {
+    c.get("logger").warn("google location discovery after connect failed", {
+      error,
+    });
+  }
 
   return c.redirect(settingsRedirect(env, { connected: "google" }), 302);
 });
@@ -411,4 +482,140 @@ googleIntegrationRoutes.post("/disconnect", async (c) => {
   if (!disconnected) return c.json({ error: "not_found" as const }, 404);
 
   return c.json({ connection: connectionView(disconnected) });
+});
+
+// ---------------------------------------------------------------------------
+// Location discovery + mapping (issue #121)
+// ---------------------------------------------------------------------------
+
+/**
+ * On-demand discovery ("Refresh locations"): refresh an access token from
+ * the stored credentials, list every account's locations, and replace the
+ * snapshot. Existing mappings are preserved (they live under a different
+ * metadata key); locations that vanished from Google stay mapped but are
+ * excluded from polling (`getActiveMappings`).
+ */
+googleIntegrationRoutes.post("/locations/discover", async (c) => {
+  const env = getEnv(c.env, apiEnvSchema);
+  const actor = c.get("actor");
+  const db = c.get("db");
+
+  const connection = await getSourceConnection(db, actor.practiceId, "google");
+  if (!connection || connection.status === "disconnected") {
+    return c.json({ error: "not_found" as const }, 404);
+  }
+  if (
+    connection.status === "needs_reauth" ||
+    !connection.encryptedCredentials
+  ) {
+    return c.json({ error: "needs_reauth" as const }, 409);
+  }
+
+  const keyring = keyringFromEnv({
+    PII_ENCRYPTION_KEYS: requireVar(env, "PII_ENCRYPTION_KEYS"),
+    PII_HASH_KEY: requireVar(env, "PII_HASH_KEY"),
+  });
+  const credentials = JSON.parse(
+    await decryptField(connection.encryptedCredentials, keyring),
+  ) as GoogleConnectionCredentials;
+
+  // Per-request provider: no cross-request token cache to amortize here —
+  // discovery is a rare, staff-initiated action (the poller, #123, owns
+  // the long-lived provider). `onInvalidGrant` still makes a dead grant
+  // durable before the 409.
+  const provider = createGoogleAccessTokenProvider({
+    config: {
+      tokenUrl: env.GOOGLE_OAUTH_TOKEN_URL,
+      clientId: requireVar(env, "GOOGLE_CLIENT_ID"),
+      clientSecret: requireVar(env, "GOOGLE_CLIENT_SECRET"),
+    },
+    onInvalidGrant: async (connectionId) => {
+      await markSourceConnectionNeedsReauth(db, connectionId);
+    },
+  });
+
+  let updated: SourceConnection | null;
+  try {
+    const accessToken = await provider.getAccessToken({
+      id: connection.id,
+      refreshToken: credentials.refreshToken,
+    });
+    updated = await refreshLocationSnapshot(
+      db,
+      env,
+      connection.id,
+      accessToken,
+    );
+  } catch (error) {
+    if (error instanceof NeedsReauthError) {
+      return c.json({ error: "needs_reauth" as const }, 409);
+    }
+    // Transient Google-side failure (quota, 5xx, network): nothing was
+    // persisted; the caller retries. NEVER-LOG(credentials): these error
+    // messages carry status codes only.
+    c.get("logger").warn("google location discovery failed", { error });
+    return c.json({ error: "google_unavailable" as const }, 502);
+  }
+  if (!updated) return c.json({ error: "not_found" as const }, 404);
+
+  return c.json({ connection: connectionView(updated) });
+});
+
+/** PUT /mappings request body — mirrors `GoogleMappingEntry` from @wellregarded/db. */
+const putMappingsSchema = z.object({
+  mappings: z.array(
+    z.object({
+      googleLocationName: z.string().min(1),
+      decision: z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("map"), locationId: z.uuid() }),
+        z.object({ kind: z.literal("skip") }),
+        z.object({
+          kind: z.literal("create"),
+          name: z.string().trim().min(1),
+          addressLine1: z.string().nullish(),
+          city: z.string().nullish(),
+          state: z.string().nullish(),
+          postalCode: z.string().nullish(),
+        }),
+      ]),
+    }),
+  ),
+});
+
+/**
+ * Replace the mapping decisions wholesale. Validation (practice scope,
+ * snapshot membership, unverified-cannot-map, duplicates) and auditing
+ * live in `saveGoogleLocationMappings` — shared with the dashboard's
+ * mapping-screen action so the rules cannot drift.
+ */
+googleIntegrationRoutes.put("/mappings", async (c) => {
+  const body: unknown = await c.req.json().catch(() => undefined);
+  const parsed = putMappingsSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "invalid_body" as const }, 400);
+  }
+  const actor = c.get("actor");
+
+  const result = await saveGoogleLocationMappings(c.get("db"), {
+    practiceId: actor.practiceId,
+    actor: staffAuditActor(actor),
+    entries: parsed.data.mappings,
+  });
+  if (result.status === "not_found") {
+    return c.json({ error: "not_found" as const }, 404);
+  }
+  if (result.status === "invalid") {
+    return c.json(
+      { error: "invalid_mappings" as const, issues: result.issues },
+      422,
+    );
+  }
+  return c.json({
+    connection: connectionView(result.connection),
+    mappings: result.mappings,
+    createdLocations: result.createdLocations.map((location) => ({
+      id: location.id,
+      name: location.name,
+    })),
+  });
 });

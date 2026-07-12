@@ -59,6 +59,7 @@ files contain placeholder values only, and secrets never go in `vars` in
 | `GOOGLE_OAUTH_STATE_SECRET` | **Yes** | api (signs the OAuth `state` param, #118) | `workers/api/.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put GOOGLE_OAUTH_STATE_SECRET --env preview\|prod` |
 | `GOOGLE_OAUTH_AUTH_URL`, `GOOGLE_OAUTH_TOKEN_URL`, `GOOGLE_OAUTH_REVOKE_URL` | No | api | `workers/api/.dev.vars`, pointed at the fake GBP server (`http://localhost:8799/...`, #130) | leave unset — the schema defaults are the real Google endpoints |
 | `GOOGLE_OAUTH_REDIRECT_URL` | No | api | leave unset (derived from the request origin) | `vars` only when the worker sits behind a rewriting proxy |
+| `GOOGLE_ACCOUNT_MANAGEMENT_URL`, `GOOGLE_BUSINESS_INFORMATION_URL` | No | api (location discovery, #121) | `workers/api/.dev.vars`, pointed at the fake GBP server (`http://localhost:8799`) | leave unset — the schema defaults are the real Google endpoints |
 | `DASHBOARD_ORIGIN` | No | api (OAuth callback redirect target) | leave unset (defaults to `http://localhost:5173`) | `vars` in `wrangler.jsonc` (all env stanzas) |
 
 Every `CLERK_*` var is **optional in the schemas until the real Clerk

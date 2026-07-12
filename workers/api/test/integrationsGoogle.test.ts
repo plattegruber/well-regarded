@@ -77,6 +77,8 @@ describe("permission gate — manage_settings", () => {
     ["provider", "GET", "/integrations/google/callback"],
     ["external_partner", "POST", "/integrations/google/disconnect"],
     ["marketing", "GET", "/integrations/google/connect"],
+    ["front_desk", "POST", "/integrations/google/locations/discover"],
+    ["provider", "PUT", "/integrations/google/mappings"],
   ] as const)("%s is denied %s %s → 403", async (role, method, path) => {
     const res = await appWithActor({ ...OWNER, role }).request(
       path,
@@ -194,7 +196,7 @@ describe("GET /integrations/google/callback — CSRF rejections (no DB, no Googl
     expect(res.status).toBe(302);
     const url = new URL(res.headers.get("Location") ?? "");
     expect(url.origin).toBe("http://localhost:5173");
-    expect(url.pathname).toBe("/settings");
+    expect(url.pathname).toBe("/settings/integrations");
     return url.searchParams.get("error");
   }
 
@@ -283,5 +285,54 @@ describe("GET /integrations/google/callback — CSRF rejections (no DB, no Googl
     expect(redirectError(res)).toBe("google_state_mismatch");
     // Consumed on read even when rejected — single-use either way.
     expect(kv.entries.size).toBe(0);
+  });
+});
+
+describe("PUT /integrations/google/mappings — body validation (no DB)", () => {
+  it.each([
+    ["not JSON at all", "nope"],
+    ["missing mappings", JSON.stringify({})],
+    [
+      "unknown decision kind",
+      JSON.stringify({
+        mappings: [
+          { googleLocationName: "locations/1", decision: { kind: "wat" } },
+        ],
+      }),
+    ],
+    [
+      "map without a uuid locationId",
+      JSON.stringify({
+        mappings: [
+          {
+            googleLocationName: "locations/1",
+            decision: { kind: "map", locationId: "loc-1" },
+          },
+        ],
+      }),
+    ],
+    [
+      "create without a name",
+      JSON.stringify({
+        mappings: [
+          {
+            googleLocationName: "locations/1",
+            decision: { kind: "create", name: "  " },
+          },
+        ],
+      }),
+    ],
+  ])("%s → 400 before any DB access", async (_what, body) => {
+    const res = await appWithActor().request(
+      "/integrations/google/mappings",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body,
+      },
+      googleEnv(),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_body" });
   });
 });
