@@ -622,11 +622,13 @@ async function insertConsents(
       count++;
     }
     if (fixture.consent.revokedDaysAgo !== undefined) {
-      await revokeConsent(
-        tx,
+      // The fixture patient changed their mind — a patient_link revocation
+      // row (issue #84: revocations are new versions, never UPDATEs).
+      await revokeConsent(tx, {
         signalId,
-        daysBeforeAnchor(fixture.consent.revokedDaysAgo),
-      );
+        source: "patient_link",
+        revokedAt: daysBeforeAnchor(fixture.consent.revokedDaysAgo),
+      });
     }
   }
   return count;

@@ -29,6 +29,8 @@ export {
   type GrantConsentInput,
   grantConsent,
   isPublishable,
+  type RevokeConsentInput,
+  type RevokeConsentResult,
   revokeConsent,
 } from "./queries/consents.js";
 export {

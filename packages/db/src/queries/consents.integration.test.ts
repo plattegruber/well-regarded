@@ -7,10 +7,10 @@ import { isPublishable, revokeConsent } from "./consents.js";
 
 /**
  * Integration tests for the consents table and publication gate
- * (migration 0006, issue #38) against a real Postgres, on the #49 harness
- * (own database per file, factories for fixtures, no cleanup needed). The
- * `consent()` factory grants through `grantConsent`, so version math is
- * always the sanctioned path. Run locally with:
+ * (migration 0006, issues #38 and #84) against a real Postgres, on the #49
+ * harness (own database per file, factories for fixtures, no cleanup
+ * needed). The `consent()` factory grants through `grantConsent`, so
+ * version math is always the sanctioned path. Run locally with:
  *
  *   docker compose up -d && pnpm --filter @wellregarded/db test:integration
  */
@@ -109,13 +109,16 @@ describe("consents (integration)", () => {
     const s = await insertSignal();
     await consent(t.db, grantInput(s.id));
 
-    const revoked = await revokeConsent(
-      t.db,
-      s.id,
-      new Date("2026-05-03T00:00:00Z"),
-    );
-    expect(revoked?.consentVersion).toBe(1);
-    expect(revoked?.revokedAt).toBeInstanceOf(Date);
+    // Revocation is a new version row (issue #84), never an UPDATE.
+    const { revocation, effective } = await revokeConsent(t.db, {
+      signalId: s.id,
+      source: "patient_link",
+      revokedAt: new Date("2026-05-03T00:00:00Z"),
+    });
+    expect(effective).toBe(true);
+    expect(revocation?.consentVersion).toBe(2);
+    expect(revocation?.revokedAt).toBeInstanceOf(Date);
+    expect(revocation?.source).toBe("patient_link");
 
     const decision = await isPublishable(t.db, s.id, "website");
     expect(decision.publishable).toBe(false);
@@ -124,9 +127,57 @@ describe("consents (integration)", () => {
     // Re-grant after revocation is a new row with a higher version — and
     // publishable again.
     const regrant = await consent(t.db, grantInput(s.id));
-    expect(regrant.consentVersion).toBe(2);
+    expect(regrant.consentVersion).toBe(3);
     const after = await isPublishable(t.db, s.id, "website");
     expect(after).toMatchObject({ publishable: true, reason: "ok" });
+  });
+
+  it("revokeConsent returns the purge contract — empty until #96 lands proofs/placements", async () => {
+    const s = await insertSignal();
+    await consent(t.db, grantInput(s.id));
+    const result = await revokeConsent(t.db, {
+      signalId: s.id,
+      source: "patient_link",
+      revokedAt: new Date("2026-05-03T00:00:00Z"),
+    });
+    expect(result.effective).toBe(true);
+    expect(result.affectedProofIds).toEqual([]);
+    expect(result.affectedPlacementIds).toEqual([]);
+  });
+
+  it("patient always wins: a staff attestation after a patient revocation stays unpublishable", async () => {
+    const s = await insertSignal();
+    await consent(t.db, { ...grantInput(s.id), source: "practice_attested" });
+    await revokeConsent(t.db, {
+      signalId: s.id,
+      source: "patient_link",
+      revokedAt: new Date("2026-05-03T00:00:00Z"),
+    });
+
+    // Staff try to re-enable via the attestation path — the patient_link
+    // revocation row still governs (precedence, issue #84).
+    await consent(t.db, { ...grantInput(s.id), source: "practice_attested" });
+    const decision = await isPublishable(t.db, s.id, "website");
+    expect(decision.publishable).toBe(false);
+    expect(decision.reason).toBe("revoked");
+  });
+
+  it("patient always wins: a staff revocation is recorded but cannot silence a patient grant", async () => {
+    const s = await insertSignal();
+    await consent(t.db, { ...grantInput(s.id), source: "practice_attested" });
+    await consent(t.db, { ...grantInput(s.id), source: "patient_link" });
+
+    const result = await revokeConsent(t.db, {
+      signalId: s.id,
+      source: "practice_attested",
+      revokedAt: new Date("2026-05-03T00:00:00Z"),
+    });
+    expect(result.effective).toBe(false);
+    expect(result.revocation?.source).toBe("practice_attested");
+    expect(result.affectedProofIds).toEqual([]);
+
+    const decision = await isPublishable(t.db, s.id, "website");
+    expect(decision).toMatchObject({ publishable: true, reason: "ok" });
   });
 
   it("isPublishable reports no_consent for a signal with no rows", async () => {
@@ -135,9 +186,18 @@ describe("consents (integration)", () => {
     expect(decision).toEqual({ publishable: false, reason: "no_consent" });
   });
 
-  it("revokeConsent returns undefined when there is nothing active to revoke", async () => {
+  it("revokeConsent records nothing when there is nothing to revoke", async () => {
     const s = await insertSignal();
-    const result = await revokeConsent(t.db, s.id, new Date());
-    expect(result).toBeUndefined();
+    const result = await revokeConsent(t.db, {
+      signalId: s.id,
+      source: "patient_link",
+      revokedAt: new Date(),
+    });
+    expect(result).toEqual({
+      revocation: undefined,
+      effective: false,
+      affectedProofIds: [],
+      affectedPlacementIds: [],
+    });
   });
 });

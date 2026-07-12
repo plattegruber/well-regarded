@@ -23,7 +23,7 @@
 
 import { z } from "zod";
 
-import type { ConsentSource } from "../consent.js";
+import type { ConsentSource } from "../consent/index.js";
 import { SIGNAL_VISIBILITIES } from "../signals.js";
 
 /**

@@ -29,8 +29,13 @@
  * (`STARTER_RESPONSE_TEMPLATES` in `@wellregarded/core`) are seeded with
  * deterministic ids (`template:<key>`); the wipe also clears
  * `response_templates`.
+ *
+ * v5 (issue #84): revocation is a new consent version row, never an
+ * UPDATE, so the revoked fixture (`fp06`) now produces two `consents` rows
+ * (the patient_link grant plus a patient_link revocation row at version
+ * 2) — 13 consent rows total instead of 12.
  */
-export const SEED_VERSION = 4;
+export const SEED_VERSION = 5;
 
 /**
  * Fixed faker seed (issue #32 requirement 2). Narrative content is

@@ -85,6 +85,14 @@ Ground rules that hold at every level:
 - No test may call a real external API. External services get local fakes (fake Google server, logging SMS/email adapters, fake `AppointmentEventSource`).
 - AI prompts get golden-dataset eval fixtures in `packages/ai/evals`; classification changes run evals in CI (planned: [#73](https://github.com/plattegruber/well-regarded/issues/73)).
 
+## Publication checks
+
+Ethical invariant #2 is structural: **nothing publishes without an explicit consent join.**
+
+- Every code path that publishes, serves, or exports patient content MUST resolve eligibility through `checkConsent` in `@wellregarded/core` — in practice via `isPublishable` in `@wellregarded/db` (or, once [#96](https://github.com/plattegruber/well-regarded/issues/96) lands, the `publishableProofs` helper whose SQL is test-locked against `checkConsent`). **Reviewers should reject any PR that queries `proofs`/`placements` (or signal text) for serving without going through the gate.** The rules live in [packages/db/CONSENT.md](packages/db/CONSENT.md).
+- There is no `is_publishable` boolean anywhere — no cached flags, no `published` column. CI enforces this: the guardrail meta-test in `packages/core/src/consent/guardrail.test.ts` (part of the unit `test` job) fails if the string appears in `apps/`, `workers/`, or `packages/`. Prose may mention it in backticks; a test that must assert on the literal carries a `consent-guard: allow` marker on that line.
+- Revocations must purge: `revokeConsent` in `@wellregarded/db` returns the affected proof/placement ids ([#84](https://github.com/plattegruber/well-regarded/issues/84)); the cascade that consumes them is [#91](https://github.com/plattegruber/well-regarded/issues/91). New revocation paths must not recompute this themselves.
+
 ## Database migrations
 
 Schema lives in `packages/db/src/schema`; migrations live in `packages/db/migrations` (see [packages/db/README.md](packages/db/README.md) for the full workflow). CI's `migration-check` job ([#55](https://github.com/plattegruber/well-regarded/issues/55)) gates every PR against the two ways migrations rot:
