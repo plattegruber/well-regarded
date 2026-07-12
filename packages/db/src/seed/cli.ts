@@ -70,6 +70,9 @@ async function main(): Promise<void> {
       `  ${summary.importRuns} import run (the legacy CSV feedback export), ` +
         `${summary.responses} imported Google owner replies (#214)`,
     );
+    console.log(
+      `  ${summary.responseTemplates} response templates (the issue-#83 starters)`,
+    );
   } finally {
     await sql.end();
   }

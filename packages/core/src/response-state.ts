@@ -314,6 +314,23 @@ export function canTransition(
 }
 
 // ---------------------------------------------------------------------------
+// Reply-body size limit (issue #79)
+// ---------------------------------------------------------------------------
+
+/**
+ * Google Business Profile caps review replies at 4096 UTF-8 **bytes** (not
+ * characters — the #117 spike). The composer (#79) surfaces the count live
+ * and refuses to submit past the cap; the save/submit actions enforce it
+ * server-side too so a publish can never fail on length alone.
+ */
+export const GBP_REPLY_MAX_BYTES = 4096;
+
+/** UTF-8 byte length of a reply body — the unit the GBP cap is defined in. */
+export function utf8ByteLength(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
+// ---------------------------------------------------------------------------
 // Publish outcome detail (issue #82)
 // ---------------------------------------------------------------------------
 

@@ -42,6 +42,9 @@ export default [
     route("settings/practice", "routes/settings.practice.tsx"),
     // AI configuration (#75): kill switch + monthly budget, owner-gated.
     route("settings/ai", "routes/settings.ai.tsx"),
+    // Response templates (#83): manage_settings-gated CRUD with the
+    // save-time safety gate; the composer's picker reads the active set.
+    route("settings/templates", "routes/settings.templates.tsx"),
     // Imports list (#137): the practice's import runs, with the "New
     // import" entry point. Same non-nested placement rationale as above.
     route("settings/imports", "routes/settings.imports.tsx"),

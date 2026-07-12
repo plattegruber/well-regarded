@@ -93,6 +93,50 @@ export async function createResponseDraft(
   });
 }
 
+export interface UpdateResponseDraftBodyInput {
+  practiceId: string;
+  responseId: string;
+  body: string;
+  actor: Actor;
+}
+
+/**
+ * Update a draft's body (the composer's save/autosave path, issue #79).
+ * Guarded `WHERE status = 'draft'` — once a draft is submitted, its text
+ * belongs to the approval workflow and only a reject can reopen it.
+ * Audited (`response.draft_saved`) in the same transaction; returns
+ * `undefined` when the row is missing, cross-practice, or no longer a
+ * draft (the caller maps all three to a 409/404, never a silent no-op).
+ */
+export async function updateResponseDraftBody(
+  db: Db,
+  input: UpdateResponseDraftBodyInput,
+): Promise<ReviewResponse | undefined> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(responses)
+      .set({ body: input.body, updatedAt: new Date() })
+      .where(
+        and(
+          eq(responses.id, input.responseId),
+          eq(responses.practiceId, input.practiceId),
+          eq(responses.status, "draft"),
+        ),
+      )
+      .returning();
+    if (!row) return undefined;
+    await audit(tx, {
+      practiceId: input.practiceId,
+      actor: input.actor,
+      action: "response.draft_saved",
+      entityType: "responses",
+      entityId: row.id,
+      payload: { signalId: row.signalId },
+    });
+    return row;
+  });
+}
+
 /** One response by id, practice-scoped. */
 export async function getResponse(
   db: Db | Tx,

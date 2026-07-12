@@ -21,6 +21,7 @@ import { Button } from "~/components/ui/button";
 import { ApprovalActions } from "./approval-actions";
 import { PublishFailureCard } from "./publish-failure-card";
 import { ResponseStatusChip } from "./response-status-chip";
+import { SafetyFindingsList } from "./safety-findings";
 
 export interface ResponseThreadItem {
   id: string;
@@ -45,6 +46,20 @@ export interface ResponseThreadProps {
   canApprove: boolean;
 }
 
+/** The submit action's bounce payload (#79's compose-side safety gate). */
+interface SubmitBounce {
+  safety?: {
+    level: "ok" | "warn" | "block";
+    findings: Array<{
+      code: string;
+      reason: string;
+      suggestion?: string | undefined;
+      level: "info" | "warn" | "block";
+    }>;
+  };
+  error?: string;
+}
+
 export function SubmitForApproval({
   responseId,
   action,
@@ -53,19 +68,54 @@ export function SubmitForApproval({
   /** POST target — the responses action route; defaults to the current route. */
   action?: string;
 }) {
-  const fetcher = useFetcher();
+  const fetcher = useFetcher<SubmitBounce>();
   const pending = fetcher.state !== "idle";
+  const safety = fetcher.data?.safety;
+  const blocked = safety?.level === "block";
+  const needsAck = safety?.level === "warn";
   return (
     <fetcher.Form
       method="post"
       action={action}
-      className="border-t border-hairline pt-3"
+      className="flex flex-col gap-2 border-t border-hairline pt-3"
     >
       <input type="hidden" name="intent" value="submit-for-approval" />
       <input type="hidden" name="responseId" value={responseId} />
-      <Button type="submit" size="sm" disabled={pending}>
-        Submit for approval
-      </Button>
+      {safety && safety.findings.length > 0 && (
+        <div>
+          <p className="m-0 mb-2 text-small font-medium text-ink-800">
+            {blocked
+              ? "This draft can't be submitted — the safety check found blocking issues:"
+              : "The safety check found warnings on this draft:"}
+          </p>
+          <SafetyFindingsList findings={safety.findings} />
+        </div>
+      )}
+      {fetcher.data?.error && (
+        <p className="m-0 text-small text-status-negative">
+          {fetcher.data.error}
+        </p>
+      )}
+      {needsAck && (
+        <label className="flex items-start gap-2 text-small text-ink-800">
+          <input
+            type="checkbox"
+            name="acknowledgeWarnings"
+            value="yes"
+            required
+            className="mt-0.5"
+            data-testid="acknowledge-warnings"
+          />
+          I reviewed the warnings above and want to submit anyway.
+        </label>
+      )}
+      {!blocked && (
+        <div>
+          <Button type="submit" size="sm" disabled={pending}>
+            Submit for approval
+          </Button>
+        </div>
+      )}
     </fetcher.Form>
   );
 }

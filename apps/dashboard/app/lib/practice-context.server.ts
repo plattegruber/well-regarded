@@ -25,6 +25,8 @@ const DEMO_CLERK_ORG_ID = "org_demo_cedar_ridge";
 
 export interface PracticeContext {
   practiceId: string;
+  /** The practice's display name (the drafting prompt's one non-review input). */
+  practiceName: string;
   /** The permission-matrix actor — `can(actor, action, resource)`. */
   actor: StaffActor;
   /** The audit-log actor shape for `audit()` / audited query helpers. */
@@ -58,6 +60,7 @@ export async function requirePracticeContext(db: Db): Promise<PracticeContext> {
   };
   return {
     practiceId: practice.id,
+    practiceName: practice.name,
     actor,
     auditActor: { type: "staff", id: actor.staffId },
     viewer: {

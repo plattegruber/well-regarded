@@ -162,11 +162,23 @@ export {
   type TransitionResponseInput,
   type TransitionResponseResult,
   transitionResponse,
+  type UpdateResponseDraftBodyInput,
   type UpsertImportedResponseInput,
   type UpsertImportedResponseOutcome,
   type UpsertImportedResponseResult,
+  updateResponseDraftBody,
   upsertImportedResponse,
 } from "./queries/responses.js";
+export {
+  type CreateResponseTemplateInput,
+  createResponseTemplate,
+  getResponseTemplate,
+  listResponseTemplates,
+  type ResponseTemplate,
+  seedStarterTemplates,
+  type UpdateResponseTemplateInput,
+  updateResponseTemplate,
+} from "./queries/responseTemplates.js";
 export {
   type LocationMetrics,
   METRICS_MONTHS,
