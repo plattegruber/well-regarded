@@ -123,6 +123,8 @@ interface StoreState {
     excerpts: readonly PlannedExcerpt[];
   }[];
   embeddingUpdates: ExcerptEmbeddingUpdate[];
+  deferrals: string[];
+  deferralClears: string[];
 }
 
 function makeStore(
@@ -137,6 +139,8 @@ function makeStore(
     probes: [],
     insertedExcerpts: [],
     embeddingUpdates: [],
+    deferrals: [],
+    deferralClears: [],
   };
   return {
     ...state,
@@ -159,6 +163,12 @@ function makeStore(
     setExcerptEmbeddings: async (updates) => {
       state.embeddingUpdates.push(...updates);
     },
+    markClassificationDeferred: async (signalId) => {
+      state.deferrals.push(signalId);
+    },
+    clearClassificationDeferred: async (signalId) => {
+      state.deferralClears.push(signalId);
+    },
   };
 }
 
@@ -175,6 +185,7 @@ function signalWith(
     originalText: "Everyone was kind and the cleaning was painless.",
     originalRating: "5.0",
     retentionState: "active",
+    classificationDeferredAt: null,
     ...overrides,
   };
 }
@@ -633,5 +644,152 @@ describe("classifySignal — edge signals", () => {
       classifySignal(message, env, deps(store, new FakeAiProvider())),
     ).rejects.toThrow(NonRetryableError);
     expect(routeSend).not.toHaveBeenCalled();
+  });
+});
+
+describe("classifySignal — AI kill switch / budget gate (issue #75)", () => {
+  const denyGate = (reason: "kill_switch" | "budget_exhausted") => async () =>
+    ({ allow: false, reason }) as const;
+
+  it("kill switch: no provider call, no judgments, marker set, route still enqueued", async () => {
+    const provider = new FakeAiProvider(); // no fixtures: any call would throw
+    const store = makeStore(signalWith({}));
+    const { env, routeSend } = makeEnv();
+
+    await classifySignal(message, env, {
+      ...deps(store, provider),
+      aiGate: denyGate("kill_switch"),
+    });
+
+    expect(provider.calls).toHaveLength(0);
+    expect(store.inserted).toHaveLength(0);
+    expect(store.insertedExcerpts).toHaveLength(0);
+    expect(store.deferrals).toEqual([uuid]);
+    expect(routeSend).toHaveBeenCalledExactlyOnceWith({
+      signalId: uuid,
+      practiceId: otherUuid,
+      importRunId: runUuid,
+    });
+  });
+
+  it("budget exhausted + urgent text: writes ONLY the keyword-fallback urgency row", async () => {
+    const provider = new FakeAiProvider();
+    const store = makeStore(
+      signalWith({
+        originalText:
+          "Unbearable pain and swelling since Friday and nobody calls back.",
+      }),
+    );
+    const { env, routeSend } = makeEnv();
+
+    await classifySignal(message, env, {
+      ...deps(store, provider),
+      aiGate: denyGate("budget_exhausted"),
+    });
+
+    expect(provider.calls).toHaveLength(0);
+    expect(store.inserted).toHaveLength(1);
+    const rows = store.inserted[0]?.rows ?? [];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      dimension: "urgency",
+      value: "high",
+      confidence: 0.3,
+      basis: "inferred_text",
+      modelVersion: "keyword-fallback-v1",
+    });
+    expect(store.deferrals).toEqual([uuid]);
+    expect(routeSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("deferral keyword write is idempotent under redelivery", async () => {
+    const store = makeStore(
+      signalWith({ originalText: "This is an emergency, please call." }),
+      {
+        existing: (source) =>
+          "modelVersion" in source &&
+          source.modelVersion === "keyword-fallback-v1",
+      },
+    );
+    const { env } = makeEnv();
+
+    await classifySignal(message, env, {
+      ...deps(store, new FakeAiProvider()),
+      aiGate: denyGate("kill_switch"),
+    });
+
+    expect(store.inserted).toHaveLength(0);
+    // The marker write itself is idempotent at the SQL layer (first
+    // timestamp wins); the store still gets the call.
+    expect(store.deferrals).toEqual([uuid]);
+  });
+
+  it("gated rating-only signals defer too (no deterministic rows)", async () => {
+    const store = makeStore(signalWith({ originalText: null }));
+    const { env, routeSend } = makeEnv();
+
+    await classifySignal(message, env, {
+      ...deps(store, new FakeAiProvider()),
+      aiGate: denyGate("kill_switch"),
+    });
+
+    expect(store.inserted).toHaveLength(0);
+    expect(store.deferrals).toEqual([uuid]);
+    expect(routeSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("nothing-to-judge signals are NOT marked (they owe no classification)", async () => {
+    const store = makeStore(
+      signalWith({ originalText: null, originalRating: null }),
+    );
+    const { env, routeSend } = makeEnv();
+
+    await classifySignal(message, env, {
+      ...deps(store, new FakeAiProvider()),
+      aiGate: denyGate("kill_switch"),
+    });
+
+    expect(store.deferrals).toEqual([]);
+    expect(routeSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-drive after re-enable: real pass runs and clears the marker", async () => {
+    const provider = new FakeAiProvider({
+      [JUDGMENTS_PROMPT_NAME]: [fixtures.positive],
+    });
+    const store = makeStore(
+      signalWith({
+        classificationDeferredAt: new Date("2026-07-01T00:00:00Z"),
+      }),
+    );
+    const { env, routeSend } = makeEnv();
+
+    await classifySignal(message, env, {
+      ...deps(store, provider),
+      aiGate: async () => ({ allow: true }),
+    });
+
+    expect(provider.calls.length).toBeGreaterThan(0);
+    expect(store.inserted).toHaveLength(1);
+    expect(store.inserted[0]?.rows).toHaveLength(4);
+    expect(store.deferralClears).toEqual([uuid]);
+    expect(routeSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("a clean allow gate changes nothing and never touches the marker", async () => {
+    const provider = new FakeAiProvider({
+      [JUDGMENTS_PROMPT_NAME]: [fixtures.positive],
+    });
+    const store = makeStore(signalWith({}));
+    const { env } = makeEnv();
+
+    await classifySignal(message, env, {
+      ...deps(store, provider),
+      aiGate: async () => ({ allow: true }),
+    });
+
+    expect(store.inserted).toHaveLength(1);
+    expect(store.deferrals).toEqual([]);
+    expect(store.deferralClears).toEqual([]);
   });
 });

@@ -36,6 +36,15 @@ interface LoaderDataOverrides {
     pending_approval: number;
     responded: number;
   }>;
+  stats?: Partial<{
+    responseRate: string;
+    medianResponse: string;
+    unresponded: string;
+    unrespondedDelta: string | null;
+    unrespondedTone: "positive" | "negative" | "neutral";
+    trend: Array<{ month: string; rate: number | null }>;
+    smallSample: boolean;
+  }>;
 }
 
 function loaderData(overrides: LoaderDataOverrides = {}) {
@@ -67,6 +76,16 @@ function loaderData(overrides: LoaderDataOverrides = {}) {
       sentiment: "" as const,
     },
     locations: [] as Array<{ id: string; name: string }>,
+    stats: {
+      responseRate: "\u2014",
+      medianResponse: "\u2014",
+      unresponded: "0",
+      unrespondedDelta: null,
+      unrespondedTone: "neutral" as const,
+      trend: [] as Array<{ month: string; rate: number | null }>,
+      smallSample: true,
+      ...overrides.stats,
+    },
   };
 }
 

@@ -26,6 +26,17 @@ export {
   isRetryableStatus,
 } from "./backoff.js";
 export {
+  type AiConfigEnv,
+  BUDGET_SOFT_ALERT_RATIO,
+  type BudgetLevel,
+  type BudgetState,
+  budgetState,
+  type PracticeAiSettings,
+  practiceAiSettingsSchema,
+  type ResolvedAiConfig,
+  resolveAiConfig,
+} from "./config.js";
+export {
   BGE_M3_EMBEDDING_MODEL,
   createWorkersAiEmbedder,
   EMBEDDING_BATCH_SIZE,
@@ -51,6 +62,13 @@ export {
   FakeAiProviderError,
 } from "./fake.js";
 export { type ModelConfig, resolveModel } from "./models.js";
+export {
+  estimateCostCents,
+  FALLBACK_RATE,
+  MODEL_PRICING,
+  type ModelRate,
+  rateForModel,
+} from "./pricing.js";
 export {
   countWords,
   EXCERPT_MIN_MODEL_WORDS,
@@ -124,3 +142,10 @@ export {
   PROCEDURE_TERMS,
 } from "./safety-vocab.js";
 export { zodToToolInputSchema } from "./toolSchema.js";
+export {
+  keywordUrgencyDerivation,
+  matchUrgentKeywords,
+  URGENT_KEYWORD_CONFIDENCE,
+  URGENT_KEYWORD_MODEL_VERSION,
+  URGENT_KEYWORDS,
+} from "./urgent-keywords.js";

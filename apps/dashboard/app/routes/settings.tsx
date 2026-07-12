@@ -36,6 +36,11 @@ export const SETTINGS_SECTIONS: Section[] = [
     to: "/settings/integrations",
   },
   {
+    title: "AI",
+    description: "Pause AI, and cap what it can spend each month.",
+    to: "/settings/ai",
+  },
+  {
     title: "Imports",
     description: "Bring past reviews in from another system's CSV export.",
     to: "/settings/imports",

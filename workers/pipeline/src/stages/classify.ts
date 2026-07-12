@@ -73,8 +73,11 @@ import {
   JudgmentsSchema,
   judgmentsPrompt,
   judgmentsToDerivations,
+  keywordUrgencyDerivation,
+  matchUrgentKeywords,
   type PlannedExcerpt,
   ratingOnlyDerivations,
+  URGENT_KEYWORD_MODEL_VERSION,
   validateExcerpts,
   wholeTextExcerpt,
 } from "@wellregarded/ai";
@@ -89,6 +92,7 @@ import {
   type RouteMessage,
 } from "@wellregarded/core";
 import {
+  clearClassificationDeferred,
   createAiCallSink,
   createDb,
   type Db,
@@ -96,6 +100,8 @@ import {
   getSignal,
   insertDerivations,
   insertProofExcerpts,
+  markClassificationDeferred,
+  practiceAiStatus,
   setProofExcerptEmbeddings,
   signalHasDerivations,
   signalHasProofExcerpts,
@@ -111,6 +117,9 @@ export interface SignalForClassification {
   originalRating: string | null;
   /** `redacted`/`purged` signals have had their content nulled by design. */
   retentionState: "active" | "redacted" | "purged";
+  /** Non-null = a previous delivery deferred classification (issue #75);
+   * a successful real pass clears it. */
+  classificationDeferredAt: Date | null;
 }
 
 /** Where existing judgments came from — the idempotency probe's key. */
@@ -154,7 +163,25 @@ export interface ClassifyStore {
   setExcerptEmbeddings(
     updates: readonly ExcerptEmbeddingUpdate[],
   ): Promise<void>;
+  /** Set the issue-#75 deferral marker (idempotent — first timestamp wins). */
+  markClassificationDeferred(signalId: string): Promise<void>;
+  /** Clear the marker after a successful real classification pass. */
+  clearClassificationDeferred(signalId: string): Promise<void>;
 }
+
+/**
+ * The kill-switch / budget gate (issue #75) — resolved once per message,
+ * BEFORE any provider call (the issue's "check the budget before each
+ * provider call": both of this stage's calls sit behind this one gate).
+ * `softAlert` carries the ≥ 80% state so the stage can log the structured
+ * warning without a second query.
+ */
+export type ClassifyAiGate =
+  | {
+      allow: true;
+      softAlert?: { spentCents: number; budgetCents: number } | undefined;
+    }
+  | { allow: false; reason: "kill_switch" | "budget_exhausted" };
 
 export interface ClassifyDeps {
   store: ClassifyStore;
@@ -171,11 +198,20 @@ export interface ClassifyDeps {
    */
   embedder?: EmbeddingProvider | undefined;
   /**
-   * Concrete pipeline-lane model id (`PIPELINE_MODEL`) — the idempotency
-   * probe's model_version. Pin dated ids (the env default is one) so this
-   * matches what the API reports back in `usage.model`.
+   * Concrete pipeline-lane model id (`PIPELINE_MODEL`, or the practice's
+   * override once resolved) — the idempotency probe's model_version. Pin
+   * dated ids (the env default is one) so this matches what the API
+   * reports back in `usage.model`.
    */
   pipelineModel: string;
+  /**
+   * The issue-#75 gate: kill switch (env `AI_DISABLED` / practice
+   * `ai.disabled`) and monthly budget, resolved per message. Absent (e.g.
+   * older tests) = always allowed. When it denies, the stage defers:
+   * signal stays unclassified, marker set, keyword urgency fallback runs,
+   * route still enqueued — nothing lost, only deferred.
+   */
+  aiGate?: ((practiceId: string) => Promise<ClassifyAiGate>) | undefined;
 }
 
 function stageLogger(message: ClassifyMessage) {
@@ -214,12 +250,6 @@ export async function classifySignal(
   env: PipelineBindings,
   deps: ClassifyDeps,
 ): Promise<void> {
-  // TODO(#75): the AI kill switch lands here — when the operator flips it
-  // (env config, e.g. AI_DISABLED), skip straight to the route enqueue
-  // without touching the provider, so the spine keeps flowing and signals
-  // can be reclassified once it is re-enabled. This is the ONE seam #75
-  // needs; do not add provider checks elsewhere.
-
   const signal = await deps.store.getSignal(message.signalId);
   if (!signal) {
     // The row is gone (or never existed): no retry can conjure it back.
@@ -228,23 +258,43 @@ export async function classifySignal(
     );
   }
 
+  // The issue-#75 seam: kill switch + budget, resolved once per message,
+  // ahead of BOTH provider calls. There are deliberately no provider
+  // checks anywhere else in this stage.
+  const gate: ClassifyAiGate = deps.aiGate
+    ? await deps.aiGate(message.practiceId)
+    : { allow: true };
+
   if (signal.retentionState !== "active") {
     // Redacted/purged content is nulled by design (Epic #23) — there is
     // nothing left to judge, and inferring from the void would fabricate.
     log("pipeline.classify.skipped_retention", message, {
       retentionState: signal.retentionState,
     });
+  } else if (!gate.allow) {
+    // Deferred, not dropped (issue #75): the signal stays unclassified
+    // with the re-drive marker set; the deterministic keyword fallback
+    // keeps urgent routing sighted; route still runs below.
+    await deferClassification(message, signal, deps, gate.reason);
   } else if (hasClassifiableText(signal.originalText)) {
+    if (gate.softAlert) {
+      // ≥ 80% of the monthly budget (issue #75 requirement 3): structured
+      // warning only — no behavior change; the dashboard banner reads the
+      // same state via `practiceAiStatus`.
+      warn("pipeline.classify.ai_budget_soft_alert", message, gate.softAlert);
+    }
     // Judgments first (issue #69 note): their output is needed for routing
     // even when the excerpt pass fails. Each pass has its own idempotency
     // probe, so a redelivery after judgments-but-no-excerpts re-runs only
     // the excerpt pass.
     await classifyWithModel(message, signal, deps);
     await extractExcerpts(message, signal, deps);
+    await clearDeferralAfterRealPass(message, signal, deps);
   } else {
     const rating = Number(signal.originalRating);
     if (signal.originalRating !== null && Number.isFinite(rating)) {
       await classifyFromRating(message, rating, deps);
+      await clearDeferralAfterRealPass(message, signal, deps);
     } else {
       // No text, no rating: nothing to judge. Route anyway — downstream
       // decides what an unjudged signal means.
@@ -259,6 +309,77 @@ export async function classifySignal(
     // Producers copy the trace id forward (issue #64).
     requestId: message.requestId,
   } satisfies RouteMessage);
+}
+
+/**
+ * The deferral path (issue #75): mark the signal for later re-drive and
+ * run the deterministic urgent-keyword fallback so the route stage can
+ * still open recovery work — a patient in pain must not wait for the
+ * budget month to roll over. No provider call happens on this path; the
+ * one derivation it may write carries honest fallback provenance
+ * (`keyword-fallback-v1`, confidence 0.3). Redacted/purged and
+ * nothing-to-judge signals never reach here — they owe no classification.
+ */
+async function deferClassification(
+  message: ClassifyMessage,
+  signal: SignalForClassification,
+  deps: ClassifyDeps,
+  reason: "kill_switch" | "budget_exhausted",
+): Promise<void> {
+  const rating = Number(signal.originalRating);
+  const wouldHaveJudged =
+    hasClassifiableText(signal.originalText) ||
+    (signal.originalRating !== null && Number.isFinite(rating));
+  if (!wouldHaveJudged) {
+    // Nothing to judge, gated or not — no classification is owed, so no
+    // marker; same outcome as the ungated nothing-to-classify path.
+    log("pipeline.classify.nothing_to_classify", message);
+    return;
+  }
+
+  await deps.store.markClassificationDeferred(message.signalId);
+
+  let keywordMatches: string[] = [];
+  if (hasClassifiableText(signal.originalText) && signal.originalText) {
+    keywordMatches = matchUrgentKeywords(signal.originalText);
+    if (
+      keywordMatches.length > 0 &&
+      // Same idempotency posture as the model path: a redelivery must not
+      // double-write the fallback row.
+      !(await deps.store.hasJudgments(message.signalId, {
+        modelVersion: URGENT_KEYWORD_MODEL_VERSION,
+      }))
+    ) {
+      await deps.store.insertJudgments(message, [
+        keywordUrgencyDerivation(keywordMatches),
+      ]);
+    }
+  }
+
+  // Loud by contract (issue #75 requirement 6): every deferral is logged
+  // with its reason — an outage or cap must never degrade silently.
+  warn("pipeline.classify.deferred", message, {
+    reason,
+    keywordUrgency: keywordMatches.length > 0,
+    keywordMatches,
+  });
+}
+
+/**
+ * A real (non-deferred) pass just completed: clear the issue-#75 marker
+ * if a previous delivery set it, so the re-drive sweep shrinks as the
+ * backlog is worked off.
+ */
+async function clearDeferralAfterRealPass(
+  message: ClassifyMessage,
+  signal: SignalForClassification,
+  deps: ClassifyDeps,
+): Promise<void> {
+  if (signal.classificationDeferredAt === null) return;
+  await deps.store.clearClassificationDeferred(message.signalId);
+  log("pipeline.classify.deferral_cleared", message, {
+    deferredAt: signal.classificationDeferredAt.toISOString(),
+  });
 }
 
 /** The one-Haiku-call path for signals with meaningful text. */
@@ -488,7 +609,16 @@ async function classifyFromRating(
 /** Production `ClassifyStore` over the Drizzle client. */
 export function createClassifyStore(db: Db): ClassifyStore {
   return {
-    getSignal: (signalId) => getSignal(db, signalId),
+    getSignal: async (signalId) => {
+      const row = await getSignal(db, signalId);
+      if (!row) return undefined;
+      return {
+        originalText: row.originalText,
+        originalRating: row.originalRating,
+        retentionState: row.retentionState,
+        classificationDeferredAt: row.classificationDeferredAt,
+      };
+    },
     hasJudgments: (signalId, source) =>
       signalHasDerivations(db, signalId, source),
     insertJudgments: async (message, rows) => {
@@ -524,14 +654,21 @@ export function createClassifyStore(db: Db): ClassifyStore {
       return rows.map((row) => ({ id: row.id, text: row.excerptText }));
     },
     setExcerptEmbeddings: (updates) => setProofExcerptEmbeddings(db, updates),
+    markClassificationDeferred: (signalId) =>
+      markClassificationDeferred(db, signalId),
+    clearClassificationDeferred: (signalId) =>
+      clearClassificationDeferred(db, signalId),
   };
 }
 
 /**
  * The wired handler: per-message client over the Hyperdrive binding
  * (isolates cannot share sockets; Hyperdrive makes reconnects cheap), the
- * real `AnthropicProvider` with the `ai_calls` cost sink, config from
- * validated env.
+ * real `AnthropicProvider` with the `ai_calls` cost sink, config resolved
+ * env → per-practice (issue #75: `practiceAiStatus` loads
+ * `practice_settings.ai` + this month's spend once per message — one
+ * indexed SUM, acceptable at M1 volume; the caching hook is documented on
+ * `monthlyAiSpendCents`).
  */
 export const classify: StageHandler<"classify"> = async (message, env) => {
   const cfg = getEnv(env, pipelineEnvSchema);
@@ -544,16 +681,33 @@ export const classify: StageHandler<"classify"> = async (message, env) => {
   }
   const { db, sql } = createDb(env.HYPERDRIVE.connectionString);
   try {
+    // Env defaults → practice overrides (models, kill switch, budget).
+    const status = await practiceAiStatus(db, {
+      practiceId: message.practiceId,
+      env: cfg,
+    });
     const provider = cfg.ANTHROPIC_API_KEY
       ? new AnthropicProvider({
           apiKey: cfg.ANTHROPIC_API_KEY,
-          models: {
-            pipeline: cfg.PIPELINE_MODEL,
-            drafting: cfg.DRAFTING_MODEL,
-          },
+          models: status.config.models,
           logAiCall: createAiCallSink(db),
         })
       : undefined;
+    const gate: ClassifyAiGate = status.config.disabled
+      ? { allow: false, reason: "kill_switch" }
+      : status.budget.level === "exhausted"
+        ? { allow: false, reason: "budget_exhausted" }
+        : {
+            allow: true,
+            softAlert:
+              status.budget.level === "soft" &&
+              status.config.monthlyBudgetCents !== null
+                ? {
+                    spentCents: status.spentCents,
+                    budgetCents: status.config.monthlyBudgetCents,
+                  }
+                : undefined,
+          };
     await classifySignal(message, env, {
       store: createClassifyStore(db),
       provider,
@@ -561,7 +715,8 @@ export const classify: StageHandler<"classify"> = async (message, env) => {
       // Absent (e.g. local dev without the binding): excerpts keep a NULL
       // embedding and the backfill Workflow in workers/jobs sweeps them.
       embedder: env.AI ? createWorkersAiEmbedder(env.AI) : undefined,
-      pipelineModel: cfg.PIPELINE_MODEL,
+      pipelineModel: status.config.models.pipeline,
+      aiGate: async () => gate,
     });
   } finally {
     await sql.end({ timeout: 5 });

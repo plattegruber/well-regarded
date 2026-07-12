@@ -40,6 +40,8 @@ export default [
     // mutation copies. Not nested under settings.tsx: the section list is
     // an index of pages, not a layout.
     route("settings/practice", "routes/settings.practice.tsx"),
+    // AI configuration (#75): kill switch + monthly budget, owner-gated.
+    route("settings/ai", "routes/settings.ai.tsx"),
     // Imports list (#137): the practice's import runs, with the "New
     // import" entry point. Same non-nested placement rationale as above.
     route("settings/imports", "routes/settings.imports.tsx"),

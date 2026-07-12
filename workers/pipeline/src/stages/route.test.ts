@@ -56,6 +56,7 @@ function signalWith(overrides: Partial<SignalForRouting>): SignalForRouting {
     originalRating: "4.0",
     retentionState: "active",
     pipelineStatus: "pending_route",
+    classificationPending: false,
     ...overrides,
   };
 }
@@ -475,6 +476,38 @@ describe("routeSignal — idempotency and failure vocabulary", () => {
       NonRetryableError,
     );
     expect(store.committed).toHaveLength(0);
+  });
+
+  it("routes a deferred-classification signal instead of dead-lettering it (issue #75)", async () => {
+    // The kill switch / budget cap left the signal unclassified with the
+    // marker set: absence is sanctioned. A public review still enters the
+    // inbox (visible, honestly unclassified) rather than DLQing.
+    const store = makeStore(
+      signalWith({ visibility: "public", classificationPending: true }),
+      derivationsWith({}),
+    );
+
+    await routeSignal(message, deps(store));
+
+    expect(store.committed).toHaveLength(1);
+    expect(store.committed[0]?.outcome.audits).toEqual([
+      expect.objectContaining({ action: "signal.entered_review_inbox" }),
+    ]);
+  });
+
+  it("a deferred signal with a keyword-fallback urgency still opens recovery (issue #75)", async () => {
+    const store = makeStore(
+      signalWith({ classificationPending: true }),
+      derivationsWith({
+        urgency: judgment("high", 0.3),
+      }),
+    );
+    const sinks = recordingSinks();
+
+    await routeSignal(message, deps(store, sinks));
+
+    expect(sinks.recoveryCalls).toHaveLength(1);
+    expect(sinks.recoveryCalls[0]?.urgency).toBe("high");
   });
 
   it("takes the quiet path for a legitimately unjudged signal (no text, no rating)", async () => {
