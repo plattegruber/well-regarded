@@ -41,6 +41,38 @@ in the create-response; the `api_keys` table stores a SHA-256 hash and a
   `apiActor.environment === "test"` flags demo/staging scoping for later
   proof routes.
 
+## CSV imports (issue #133)
+
+`POST /api/imports/csv` (staff auth, `manage_settings`) accepts a CSV as
+the RAW request body (`Content-Type: text/csv`, not multipart) up to
+**50MB**, stores it content-addressed in the `RAW_IMPORTS` R2 bucket
+(`{practiceId}/imports/{sha256}.csv` — the raw-artifact key scheme from
+`@wellregarded/sources`), creates an `import_drafts` row, and returns
+`{ importDraftId, headers, previewRows, detected }`.
+`PUT /api/imports/csv/:draftId/mapping` validates and persists the
+wizard's `ColumnMapping` (`@wellregarded/core`). Both are audited.
+
+Size cap and memory, honestly stated:
+
+- **One plain request is enough.** Cloudflare's per-request body limit is
+  100MB on Free/Pro (200MB Business, 500MB Enterprise), so the 50MB cap
+  needs no chunked/multipart protocol on any plan. The cap is enforced by
+  the `Content-Length` header (413 before reading) AND a streamed byte
+  counter that aborts mid-body — a lying client cannot make the worker
+  buffer past it.
+- **The upload is buffered once, as bytes** (single `Uint8Array`, never a
+  string): the content-addressed key needs the full-body sha-256 before
+  the R2 key exists, and 50MB of bytes sits comfortably in the 128MB
+  isolate. Rationale in `src/routes/imports.ts`.
+- **The preview never re-reads the whole object**: a 256KB ranged R2 get,
+  decoded and fed to papaparse with a hard `preview` record budget (~52),
+  BOM-stripped, dropping the final possibly-partial record of a truncated
+  window. Memory notes and the verifying tests: `src/imports/csv.ts` /
+  `src/imports/csv.test.ts` (10MB fixture) and
+  `test/imports.integration.test.ts` (asserts the read-back is ranged).
+  Full-file parsing happens row-streamed in the import Workflow (#135),
+  never in this worker.
+
 ## Testing
 
 ```sh

@@ -168,7 +168,7 @@ describe("today's overline", () => {
 });
 
 describe("settings route", () => {
-  it("renders the six-section list instead of an empty state", () => {
+  it("renders the section list instead of an empty state", () => {
     const SettingsAny = Settings as AnyComponent;
     const Stub = createRoutesStub([
       {
@@ -182,8 +182,10 @@ describe("settings route", () => {
       expect(html).toContain(escapeHtml(section.title));
       expect(html).toContain(escapeHtml(section.description));
     }
-    // Practice profile is live; the other five are placeholders.
+    // Practice profile and Imports (#133) are live; the other five are
+    // placeholders.
     expect(html).toContain('href="/settings/practice"');
+    expect(html).toContain('href="/settings/imports"');
     expect((html.match(/Coming soon/g) ?? []).length).toBe(5);
     expect(settingsMeta()).toContainEqual({
       title: "Settings · Well Regarded",

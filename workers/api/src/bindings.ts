@@ -10,6 +10,7 @@
 
 import type { ApiKeyActor, Logger, StaffActor } from "@wellregarded/core";
 import type { Db } from "@wellregarded/db";
+import type { RawImportBucket } from "@wellregarded/sources";
 
 /**
  * The bindings this worker's code actually consumes, typed structurally so
@@ -20,6 +21,12 @@ import type { Db } from "@wellregarded/db";
 export interface ApiBindings {
   /** Hyperdrive → Postgres. Only the connection string is consumed. */
   HYPERDRIVE: { connectionString: string };
+  /**
+   * R2: uploaded/imported source files (`wr-raw-imports-<env>`). Typed as
+   * the structural subset from `@wellregarded/sources` so tests inject
+   * `InMemoryRawArtifactBucket`; the real `R2Bucket` satisfies it.
+   */
+  RAW_IMPORTS: RawImportBucket;
   /** String vars/secrets, validated by `getEnv(c.env, apiEnvSchema)`. */
   [key: string]: unknown;
 }

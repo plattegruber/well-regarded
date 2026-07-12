@@ -27,5 +27,5 @@ export {
   fixtureAdapter,
   fixtureArtifact,
 } from "./contract/fixtureAdapter.js";
-export type { StoredArtifact } from "./testing/inMemoryBucket.js";
+export type { RecordedGet, StoredArtifact } from "./testing/inMemoryBucket.js";
 export { InMemoryRawArtifactBucket } from "./testing/inMemoryBucket.js";

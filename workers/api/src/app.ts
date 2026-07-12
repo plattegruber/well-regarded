@@ -21,6 +21,7 @@ import { requestId } from "./middleware/requestId";
 import { staffAuth } from "./middleware/staffAuth";
 import { withDb } from "./middleware/withDb";
 import { apiKeyRoutes } from "./routes/apiKeys";
+import { importRoutes } from "./routes/imports";
 import { clerkWebhook } from "./routes/webhooks/clerk";
 
 export const app = new Hono<AppEnv>();
@@ -82,6 +83,9 @@ staff.get("/me", (c) => c.json({ actor: c.get("actor") }));
 
 /** Key management (issue #81): owner-gated via manage_api_keys. */
 staff.route("/api-keys", apiKeyRoutes);
+
+/** CSV import upload + mapping drafts (issue #133): manage_settings-gated. */
+staff.route("/imports", importRoutes);
 
 app.route("/api", staff);
 

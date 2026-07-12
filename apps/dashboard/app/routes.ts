@@ -24,6 +24,9 @@ export default [
     // mutation copies. Not nested under settings.tsx: the section list is
     // an index of pages, not a layout.
     route("settings/practice", "routes/settings.practice.tsx"),
+    // CSV import entry point (#133): upload + hand-off to the mapping
+    // wizard (#134). Same non-nested placement rationale as above.
+    route("settings/imports", "routes/settings.imports.tsx"),
     // Dev-only design-system reference; its loader 404s in production.
     route("styleguide", "routes/styleguide.tsx"),
   ]),
