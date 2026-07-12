@@ -1,0 +1,352 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden normalize (#125 testing note) > page 1 → the exact expected NormalizedSignal list 1`] = `
+[
+  {
+    "authorDisplayName": "Elena Gutierrez",
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2026-06-11T05:35:36.000Z",
+    "originalText": "Quoted one price at the desk and billed my insurance for something else. Still untangling it a month later.",
+    "rating": {
+      "scale": 5,
+      "value": 2,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/4",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "existingReply": {
+        "comment": "We apologize for the billing confusion. Our manager has reached out to help resolve the insurance claim.",
+        "policyViolation": "Reply removed for policy violation: contains personal health information.",
+        "state": "REJECTED",
+        "updateTime": "2026-06-12T05:35:36.000Z",
+      },
+      "sourceUpdatedAt": "2026-06-12T05:35:36.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+  {
+    "authorDisplayName": "Brad Huang",
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2026-04-29T11:37:12.000Z",
+    "originalText": "They took my kids (4 and 7) for their first checkups — patient, funny, zero tears. We found our family dentist.",
+    "rating": {
+      "scale": 5,
+      "value": 5,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/9",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "sourceUpdatedAt": "2026-04-29T11:37:12.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+  {
+    "authorDisplayName": null,
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2026-04-23T12:06:17.000Z",
+    "originalText": "The work itself was solid. Parking downtown is a pain, plan extra time.",
+    "rating": {
+      "scale": 5,
+      "value": 3,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/11",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "sourceUpdatedAt": "2026-04-23T12:06:17.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+  {
+    "authorDisplayName": "Derek Marsh",
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2026-04-18T12:39:15.000Z",
+    "originalText": "Cleaning was fine, but I waited about 25 minutes past my appointment time.",
+    "rating": {
+      "scale": 5,
+      "value": 3,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/15",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "existingReply": {
+        "comment": "We apologize for the billing confusion. Our manager has reached out to help resolve the insurance claim.",
+        "state": "APPROVED",
+        "updateTime": "2026-04-21T12:39:15.000Z",
+      },
+      "sourceUpdatedAt": "2026-04-21T12:39:15.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+  {
+    "authorDisplayName": "Scott Okafor",
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2026-01-09T17:08:15.000Z",
+    "originalText": null,
+    "rating": {
+      "scale": 5,
+      "value": 4,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/14",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "sourceUpdatedAt": "2026-01-09T17:08:15.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+  {
+    "authorDisplayName": "Derek Huang",
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2025-10-28T11:06:06.000Z",
+    "originalText": "Best cleaning I've ever had. The hygienist was gentle and explained everything as she went.",
+    "rating": {
+      "scale": 5,
+      "value": 5,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/6",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "existingReply": {
+        "comment": "Thank you! Making nervous patients comfortable is exactly what we aim for.",
+        "state": "PENDING",
+        "updateTime": "2025-10-31T11:06:06.000Z",
+      },
+      "sourceUpdatedAt": "2025-10-31T11:06:06.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+  {
+    "authorDisplayName": "Renee Okafor",
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2025-09-30T19:31:17.000Z",
+    "originalText": "The whole team remembered my name on the second visit. Little things like that matter.",
+    "rating": {
+      "scale": 5,
+      "value": 5,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/3",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "existingReply": {
+        "comment": "We're so glad you had a great visit! Thanks for trusting us with your smile.",
+        "state": "APPROVED",
+        "updateTime": "2025-10-01T19:31:17.000Z",
+      },
+      "sourceUpdatedAt": "2025-10-01T19:31:17.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+  {
+    "authorDisplayName": "Luis Brandt",
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2025-08-20T03:54:47.000Z",
+    "originalText": "The whole team remembered my name on the second visit. Little things like that matter.",
+    "rating": {
+      "scale": 5,
+      "value": 5,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/12",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "sourceUpdatedAt": "2025-08-20T03:54:47.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+  {
+    "authorDisplayName": "Victor Tran",
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2025-07-25T15:13:43.000Z",
+    "originalText": "Painless root canal. Never thought I'd type those words. Edit: adding a star since they fixed the billing mix-up quickly.",
+    "rating": {
+      "scale": 5,
+      "value": 5,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/2",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "sourceUpdatedAt": "2025-08-02T15:13:43.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+  {
+    "authorDisplayName": "Ingrid Marsh",
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2025-06-19T13:43:55.000Z",
+    "originalText": "Dr. Patel fixed my chipped front tooth in one visit and it looks perfect. Couldn't be happier.",
+    "rating": {
+      "scale": 5,
+      "value": 4,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/8",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "sourceUpdatedAt": "2025-06-19T13:43:55.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+]
+`;
+
+exports[`golden normalize (#125 testing note) > page 2 → the exact expected NormalizedSignal list 1`] = `
+[
+  {
+    "authorDisplayName": "Kate Patterson",
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2025-06-04T13:33:48.000Z",
+    "originalText": "I've been terrified of dentists my whole life and this is the first office that made me feel at ease.",
+    "rating": {
+      "scale": 5,
+      "value": 5,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/10",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "sourceUpdatedAt": "2025-06-04T13:33:48.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+  {
+    "authorDisplayName": "Luis Okafor",
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2025-05-25T15:23:28.000Z",
+    "originalText": "Super clean office, on time, and they actually explain your x-rays instead of rushing you out. Edit: still feeling great two months later.",
+    "rating": {
+      "scale": 5,
+      "value": 5,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/7",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "sourceUpdatedAt": "2025-06-01T15:23:28.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+  {
+    "authorDisplayName": "Marcus Kowalski",
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2025-03-30T19:19:07.000Z",
+    "originalText": "Emergency visit on a Friday afternoon for my son's cracked molar — they stayed late for us.",
+    "rating": {
+      "scale": 5,
+      "value": 5,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/13",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "existingReply": {
+        "comment": "We're so glad you had a great visit! Thanks for trusting us with your smile.",
+        "state": "APPROVED",
+        "updateTime": "2025-04-03T19:19:07.000Z",
+      },
+      "sourceUpdatedAt": "2025-04-03T19:19:07.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+  {
+    "authorDisplayName": null,
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2025-03-31T00:17:40.000Z",
+    "originalText": "In and out in 45 minutes for a filling, numb the whole time, no lecture. Great experience.",
+    "rating": {
+      "scale": 5,
+      "value": 5,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/5",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "sourceUpdatedAt": "2025-03-31T00:17:40.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+  {
+    "authorDisplayName": "Priya Novak",
+    "authorExternalId": null,
+    "locationHint": {
+      "basis": "source_metadata",
+      "text": "accounts/1/locations/1",
+    },
+    "occurredAt": "2025-03-25T19:55:35.000Z",
+    "originalText": null,
+    "rating": {
+      "scale": 5,
+      "value": 5,
+    },
+    "sourceId": "accounts/1/locations/1/reviews/1",
+    "sourceKind": "google",
+    "sourceMetadata": {
+      "sourceUpdatedAt": "2025-03-25T19:55:35.000Z",
+    },
+    "sourceUrl": null,
+    "visibility": "public",
+  },
+]
+`;

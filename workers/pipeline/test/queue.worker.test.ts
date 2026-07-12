@@ -277,10 +277,11 @@ describe("normalize stage on a real workerd batch (issue #104)", () => {
   });
 
   it("forwards an unknown sourceKind to the ingest DLQ and acks", async () => {
-    // Artifact exists; what's missing is an adapter for its kind.
+    // Artifact exists; what's missing is an adapter for its kind
+    // (opendental has no adapter yet — google gained one in #125).
     const { key } = await putRawArtifact(env.RAW_ARTIFACTS, {
       practiceId: otherUuid,
-      sourceKind: "google",
+      sourceKind: "opendental",
       content: JSON.stringify({ some: "page" }),
     });
     const dlqSend = vi.fn().mockResolvedValue(undefined);
@@ -289,7 +290,7 @@ describe("normalize stage on a real workerd batch (issue #104)", () => {
         id: "ingest-3",
         timestamp,
         attempts: 1,
-        body: { ...validIngest, rawArtifactKey: key },
+        body: { ...validIngest, rawArtifactKey: key, sourceKind: "opendental" },
       },
     ]);
     const ctx = createExecutionContext();
@@ -302,7 +303,7 @@ describe("normalize stage on a real workerd batch (issue #104)", () => {
         stage: "ingest",
         reason: "non_retryable",
         error: expect.stringContaining(
-          'no SourceAdapter registered for sourceKind "google"',
+          'no SourceAdapter registered for sourceKind "opendental"',
         ),
       }),
     );

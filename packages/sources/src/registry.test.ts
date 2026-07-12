@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { csvFixtureAdapter } from "./contract/csvFixtureAdapter.js";
 import { fixtureAdapter } from "./contract/fixtureAdapter.js";
+import { googleReviewsAdapter } from "./google/adapter.js";
 import {
   getAdapter,
   registerAdapter,
@@ -17,8 +18,12 @@ describe("adapter registry", () => {
     expect(getAdapter("manual")).toBe(fixtureAdapter);
   });
 
+  it("resolves the default google adapter by kind (#125)", () => {
+    expect(getAdapter("google")).toBe(googleReviewsAdapter);
+  });
+
   it("returns undefined for a kind with no adapter", () => {
-    expect(getAdapter("google")).toBeUndefined();
+    expect(getAdapter("opendental")).toBeUndefined();
   });
 
   it("registers additional adapters and resolves each by its own kind", () => {

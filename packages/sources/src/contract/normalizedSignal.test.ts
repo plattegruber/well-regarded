@@ -22,6 +22,14 @@ const valid: NormalizedSignal = {
   providerHint: { text: "Dr. Patel", basis: "inferred_text" },
   locationHint: { text: "Main Street office", basis: "source_metadata" },
   consentHint: "imported_unknown",
+  sourceMetadata: {
+    sourceUpdatedAt: "2026-03-05T08:00:00Z",
+    existingReply: {
+      comment: "Thanks for the kind words!",
+      updateTime: "2026-03-04T10:00:00Z",
+      state: "APPROVED",
+    },
+  },
 };
 
 describe("normalizedSignalSchema", () => {
@@ -114,6 +122,49 @@ describe("normalizedSignalSchema", () => {
         locationHint: { text: "Main Street office" },
       }).success,
     ).toBe(false);
+  });
+
+  it("sourceMetadata is strict: unknown keys and bad values fail loudly", () => {
+    expect(
+      normalizedSignalSchema.safeParse({
+        ...valid,
+        sourceMetadata: { sourceUpdatedAt: "2026-03-05T08:00:00Z" },
+      }).success,
+    ).toBe(true);
+    // Empty metadata is valid (both fields optional) — adapters simply
+    // omit the field when they have nothing to say.
+    expect(
+      normalizedSignalSchema.safeParse({ ...valid, sourceMetadata: {} })
+        .success,
+    ).toBe(true);
+    expect(
+      normalizedSignalSchema.safeParse({
+        ...valid,
+        sourceMetadata: { sourceUpdatedat: "2026-03-05T08:00:00Z" },
+      }).success,
+    ).toBe(false);
+    expect(
+      normalizedSignalSchema.safeParse({
+        ...valid,
+        sourceMetadata: { sourceUpdatedAt: "yesterday" },
+      }).success,
+    ).toBe(false);
+    expect(
+      normalizedSignalSchema.safeParse({
+        ...valid,
+        sourceMetadata: {
+          existingReply: { comment: "Thanks!", state: "SHADOWBANNED" },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      normalizedSignalSchema.safeParse({
+        ...valid,
+        sourceMetadata: {
+          existingReply: { updateTime: "2026-03-04T10:00:00Z" },
+        },
+      }).success,
+    ).toBe(false); // a reply without its comment is not a reply
   });
 
   it("accepts every value of the standard basis vocabulary", () => {
