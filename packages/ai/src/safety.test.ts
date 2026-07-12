@@ -702,6 +702,30 @@ const llmJudgments: Record<string, SafetyJudgment> = {
       },
     ],
   },
+  "dental-family-duration": {
+    findings: [
+      {
+        category: "confirms_care_relationship",
+        quote: "being part of our dental family for the past five years",
+        reason:
+          "Publicly confirms the reviewer has been a patient, and for how long.",
+        suggestion:
+          "Thank them warmly without referencing their patient history.",
+      },
+    ],
+  },
+  "reply-here-line-by-line": {
+    findings: [
+      {
+        category: "invites_public_dispute",
+        quote: "Reply right here with exactly what you were charged",
+        reason:
+          "Invites a public back-and-forth about billing specifics instead of a private channel.",
+        suggestion:
+          "Ask them to call the office so the details stay out of public view.",
+      },
+    ],
+  },
 };
 
 describe("labeled examples (evals/fixtures/safety.jsonl) through the full detector", () => {

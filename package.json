@@ -16,6 +16,7 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "typecheck": "turbo run typecheck",
+    "eval": "pnpm --filter \"@wellregarded/ai^...\" build && pnpm --filter @wellregarded/ai eval",
     "gen:docs": "pnpm --filter @wellregarded/core gen:docs",
     "seed": "pnpm --filter @wellregarded/db seed",
     "db:generate": "pnpm --filter @wellregarded/db db:generate",

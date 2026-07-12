@@ -1,0 +1,16 @@
+{
+  "$comment": "Regression gates for `pnpm eval` (issue #73). Metrics pass at >= their minimum; *_max counts pass at <=. Starting values come from the issue; ratchet them up as the prompts improve, never down to make a red run green.",
+  "judgments": {
+    "enum_accuracy_per_dimension": 0.85,
+    "missed_urgent_max": 0
+  },
+  "excerpts": {
+    "span_f1_mean": 0.75,
+    "verbatim_violations_max": 0
+  },
+  "safety": {
+    "block_recall_min": 1.0,
+    "block_precision_min": 0.8,
+    "missed_must_block_max": 0
+  }
+}
