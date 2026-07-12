@@ -18,12 +18,14 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/papaparse": "^5.5.2",
     "@wellregarded/tsconfig": "workspace:*",
     "tsx": "^4.23.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "papaparse": "^5.5.4",
     "zod": "^4.4.3"
   }
 }

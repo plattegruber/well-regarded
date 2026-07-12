@@ -29,6 +29,16 @@ export default [
     // CSV import entry point (#133): upload + hand-off to the mapping
     // wizard (#134). Same non-nested placement rationale as above.
     route("settings/imports", "routes/settings.imports.tsx"),
+    // Column-mapping wizard (#134): one nested route per step so the
+    // browser back button walks the steps, and an index that resumes from
+    // the draft's saved wizard_step.
+    route("settings/imports/:draftId", "routes/settings.imports.$draftId.tsx", [
+      index("routes/settings.imports.$draftId._index.tsx"),
+      route("map", "routes/settings.imports.$draftId.map.tsx"),
+      route("validate", "routes/settings.imports.$draftId.validate.tsx"),
+      route("consent", "routes/settings.imports.$draftId.consent.tsx"),
+      route("confirm", "routes/settings.imports.$draftId.confirm.tsx"),
+    ]),
     // Integrations (#121): the Google Business Profile connection card and
     // the location-mapping screen. The mapping route is reachable both
     // mid-onboarding (right after the OAuth callback) and later from

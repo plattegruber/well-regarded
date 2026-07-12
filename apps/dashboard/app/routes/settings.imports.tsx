@@ -1,7 +1,7 @@
 // Settings → Imports → New import (#133): the deliberately minimal entry
 // point of the CSV import journey — pick a file, upload with progress,
-// hand the draft id to the mapping wizard (#134, the UX centerpiece; a
-// placeholder note stands in until it lands).
+// hand the draft id to the mapping wizard (#134) at
+// /settings/imports/:draftId/map.
 //
 // The upload deliberately does NOT go through a React Router action: the
 // file goes browser → API worker as a raw `text/csv` body (`POST
@@ -186,16 +186,20 @@ export default function Imports({ loaderData }: Route.ComponentProps) {
         </Card>
         {state.phase === "done" && (
           <Card title="Uploaded" sunken>
-            <p className="m-0 text-small text-gray-600">
+            <p className="m-0 mb-3.5 text-small text-gray-600">
               Found {state.headers.length} columns
               {state.rowsPreviewed > 0
                 ? ` and previewed ${state.rowsPreviewed} rows`
                 : ""}
-              . Import draft{" "}
-              <span className="font-mono">{state.importDraftId}</span> is saved
-              — the column-mapping wizard picks it up from here (arrives with
-              #134).
+              . Next, match the file's columns to Well Regarded fields — your
+              progress saves at each step.
             </p>
+            <Link
+              to={`/settings/imports/${state.importDraftId}/map`}
+              className="inline-flex items-center border border-ink-900 bg-ink-900 px-4.5 py-3 font-mono text-xs font-semibold uppercase leading-none tracking-label text-on-dark no-underline hover:bg-ink-700"
+            >
+              Map columns
+            </Link>
           </Card>
         )}
         <p className="m-0 text-small text-gray-500">

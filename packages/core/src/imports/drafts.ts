@@ -21,6 +21,21 @@ export const IMPORT_DRAFT_STATUSES = [
 export type ImportDraftStatus = (typeof IMPORT_DRAFT_STATUSES)[number];
 
 /**
+ * The mapping wizard's four steps (issue #134), in walking order. The
+ * draft row remembers the furthest step reached (`wizard_step`) so a
+ * closed tab resumes where the office manager left off — never client-only
+ * state.
+ */
+export const IMPORT_WIZARD_STEPS = [
+  "map",
+  "validate",
+  "consent",
+  "confirm",
+] as const;
+
+export type ImportWizardStep = (typeof IMPORT_WIZARD_STEPS)[number];
+
+/**
  * Hard cap on an uploaded CSV, enforced by the upload endpoint via both
  * the `Content-Length` header and a streamed byte counter. 50MB is far
  * beyond any realistic review export (hundreds of thousands of rows) and

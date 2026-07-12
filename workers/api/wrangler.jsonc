@@ -71,6 +71,19 @@
     { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
   ],
 
+  "workflows": [
+    // Cross-script binding to the CSV import Workflow (#135, defined in
+    // workers/jobs): the start endpoint (#134) creates one instance per
+    // confirmed draft. Locally this resolves only when the jobs worker
+    // runs alongside (`pnpm dev`); code treats the binding as optional.
+    {
+      "binding": "CSV_IMPORT",
+      "name": "wr-csv-import-local",
+      "class_name": "CsvImport",
+      "script_name": "wr-jobs-local"
+    }
+  ],
+
   "env": {
     "preview": {
       "name": "wr-api-preview",
@@ -94,6 +107,14 @@
       "hyperdrive": [
         // <TBD>: id of Hyperdrive config `wr-hyperdrive-preview` — Epic #2.
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
+      ],
+      "workflows": [
+        {
+          "binding": "CSV_IMPORT",
+          "name": "wr-csv-import-preview",
+          "class_name": "CsvImport",
+          "script_name": "wr-jobs-preview"
+        }
       ]
     },
     "prod": {
@@ -116,6 +137,14 @@
       "hyperdrive": [
         // <TBD>: id of Hyperdrive config `wr-hyperdrive-prod` — Epic #2.
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
+      ],
+      "workflows": [
+        {
+          "binding": "CSV_IMPORT",
+          "name": "wr-csv-import-prod",
+          "class_name": "CsvImport",
+          "script_name": "wr-jobs-prod"
+        }
       ]
     }
   }

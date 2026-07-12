@@ -26,6 +26,9 @@ importers:
       '@wellregarded/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@wellregarded/sources':
+        specifier: workspace:*
+        version: link:../../packages/sources
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -142,10 +145,16 @@ importers:
 
   packages/core:
     dependencies:
+      papaparse:
+        specifier: ^5.5.4
+        version: 5.5.4
       zod:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@types/papaparse':
+        specifier: ^5.5.2
+        version: 5.5.2
       '@wellregarded/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig
@@ -252,9 +261,6 @@ importers:
       hono:
         specifier: ^4.12.29
         version: 4.12.29
-      papaparse:
-        specifier: ^5.5.4
-        version: 5.5.4
       svix:
         specifier: ^1.96.1
         version: 1.96.1
@@ -274,9 +280,6 @@ importers:
       '@types/node':
         specifier: ^26.1.1
         version: 26.1.1
-      '@types/papaparse':
-        specifier: ^5.5.2
-        version: 5.5.2
       '@wellregarded/tsconfig':
         specifier: workspace:*
         version: link:../../packages/tsconfig

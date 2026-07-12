@@ -1,6 +1,8 @@
 /**
  * CSV sniffing + preview parsing for the import upload endpoint
- * (issue #133 reqs. 2 and 8). Pure functions over bytes — no I/O — so the
+ * (issue #133 reqs. 2 and 8), shared with the mapping wizard (#134), which
+ * re-reads the same ranged window to render its preview table and
+ * validation preview. Pure functions over bytes — no I/O — so the
  * nasty cases (BOMs, quoted newlines, semicolon delimiters, truncated
  * tails, XLSX masquerading as CSV) are unit-testable without a database.
  *

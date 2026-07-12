@@ -63,6 +63,27 @@
     { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
   ],
 
+  "r2_buckets": [
+    // Same bucket the api worker writes uploads into: the mapping wizard
+    // (#134) reads back the 256KB preview window of a draft's stored CSV
+    // in its loaders — read-only use here. Local dev uses Miniflare's R2
+    // simulator; the bucket is not provisioned.
+    { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-local" }
+  ],
+
+  "workflows": [
+    // Cross-script binding to the CSV import Workflow (#135, defined in
+    // workers/jobs): the wizard's confirm action creates one instance per
+    // confirmed draft. Locally this resolves only when the jobs worker
+    // runs alongside (`pnpm dev`); code treats the binding as optional.
+    {
+      "binding": "CSV_IMPORT",
+      "name": "wr-csv-import-local",
+      "class_name": "CsvImport",
+      "script_name": "wr-jobs-local"
+    }
+  ],
+
   "env": {
     "preview": {
       "name": "wr-dashboard-preview",
@@ -74,6 +95,17 @@
       "hyperdrive": [
         // <TBD>: id of Hyperdrive config `wr-hyperdrive-preview` — Epic #2.
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
+      ],
+      "r2_buckets": [
+        { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-preview" }
+      ],
+      "workflows": [
+        {
+          "binding": "CSV_IMPORT",
+          "name": "wr-csv-import-preview",
+          "class_name": "CsvImport",
+          "script_name": "wr-jobs-preview"
+        }
       ]
     },
     "prod": {
@@ -86,6 +118,17 @@
       "hyperdrive": [
         // <TBD>: id of Hyperdrive config `wr-hyperdrive-prod` — Epic #2.
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
+      ],
+      "r2_buckets": [
+        { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-prod" }
+      ],
+      "workflows": [
+        {
+          "binding": "CSV_IMPORT",
+          "name": "wr-csv-import-prod",
+          "class_name": "CsvImport",
+          "script_name": "wr-jobs-prod"
+        }
       ]
     }
   }

@@ -12,6 +12,7 @@ import {
   resetEnvCache,
 } from "@wellregarded/core";
 import { schema } from "@wellregarded/db";
+import { validateCsvPreviewRows } from "@wellregarded/sources";
 import { InMemoryRawArtifactBucket } from "@wellregarded/sources/testing";
 import { and, eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -569,6 +570,315 @@ describe("PUT /api/imports/csv/:draftId/mapping", () => {
     });
 
     const res = await putMapping(token, bucket, draftId, VALID_MAPPING);
+    expect(res.status).toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wizard endpoints (issue #134): GET draft+preview, validate, start.
+// ---------------------------------------------------------------------------
+
+async function uploadedDraftFixture(csv: string = FIXTURE_CSV) {
+  const bucket = new InMemoryRawArtifactBucket();
+  const caller = await staffCaller("owner");
+  const res = await uploadCsv(caller.token, bucket, { body: csv });
+  expect(res.status).toBe(201);
+  const body = (await res.json()) as UploadResponseBody;
+  return { ...caller, bucket, draftId: body.importDraftId };
+}
+
+function apiRequest(
+  token: string,
+  bucket: InMemoryRawArtifactBucket,
+  method: "GET" | "POST",
+  path: string,
+  body?: unknown,
+) {
+  return app.request(
+    `http://localhost/api/imports${path}`,
+    {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    },
+    env(bucket),
+  );
+}
+
+describe("GET /api/imports/csv/:draftId (resume a draft)", () => {
+  it("returns the draft, its preview rows, detection, and wizard state", async () => {
+    const { token, bucket, draftId } = await uploadedDraftFixture();
+    await putMapping(token, bucket, draftId, VALID_MAPPING);
+
+    const res = await apiRequest(token, bucket, "GET", `/csv/${draftId}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      importDraftId: draftId,
+      status: "draft",
+      originalFilename: "upload.csv",
+      headers: ["Date", "Stars", "Review", "Reviewer", "Patient Email"],
+      mapping: VALID_MAPPING,
+      attestationNote: null,
+      wizardStep: null,
+    });
+    expect(body.previewRows).toHaveLength(3);
+    const detected = body.detected as {
+      columns: Array<{ suggestedTarget: string | null }>;
+    };
+    expect(detected.columns.map((c) => c.suggestedTarget)).toEqual([
+      "occurredAt",
+      "rating",
+      "text",
+      "author",
+      "patientEmail",
+    ]);
+  });
+
+  it("cross-practice reads are 404", async () => {
+    const { bucket, draftId } = await uploadedDraftFixture();
+    const other = await staffCaller("owner");
+    const res = await apiRequest(other.token, bucket, "GET", `/csv/${draftId}`);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /api/imports/csv/:draftId/validate", () => {
+  const MESSY_CSV = [
+    "Date,Stars,Review,Reviewer,Patient Email",
+    "01/13/2024,5,Great cleaning,Pat L.,pat@example.com",
+    "13/45/2023,4,Nice visit,Sam K.,sam@example.com", // bad date
+    "02/02/2024,9,Too good,Ana P.,ana@example.com", // rating off scale
+    "02/03/2024,5,Lovely,,", // empty optionals → warnings only
+    "",
+  ].join("\n");
+
+  it("returns EXACTLY what the Workflow's validator (#135) produces for the fixture", async () => {
+    const { token, bucket, draftId } = await uploadedDraftFixture(MESSY_CSV);
+
+    const res = await apiRequest(
+      token,
+      bucket,
+      "POST",
+      `/csv/${draftId}/validate`,
+      { mapping: VALID_MAPPING },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+
+    // The shared-code-path requirement, asserted literally: the endpoint's
+    // answer must equal a direct call to the shared validator over the
+    // same rows.
+    const headers = ["Date", "Stars", "Review", "Reviewer", "Patient Email"];
+    const rows = [
+      ["01/13/2024", "5", "Great cleaning", "Pat L.", "pat@example.com"],
+      ["13/45/2023", "4", "Nice visit", "Sam K.", "sam@example.com"],
+      ["02/02/2024", "9", "Too good", "Ana P.", "ana@example.com"],
+      ["02/03/2024", "5", "Lovely", "", ""],
+    ];
+    expect(body).toEqual({
+      importDraftId: draftId,
+      ...JSON.parse(
+        JSON.stringify(validateCsvPreviewRows(VALID_MAPPING, headers, rows)),
+      ),
+    });
+    expect(body.rowCount).toBe(4);
+    expect(body.okCount).toBe(2);
+    expect(body.failingRowCount).toBe(2);
+  });
+
+  it("falls back to the saved mapping; 422 mapping_missing when there is none", async () => {
+    const { token, bucket, draftId } = await uploadedDraftFixture(MESSY_CSV);
+
+    const missing = await apiRequest(
+      token,
+      bucket,
+      "POST",
+      `/csv/${draftId}/validate`,
+    );
+    expect(missing.status).toBe(422);
+    expect(((await missing.json()) as { error: string }).error).toBe(
+      "mapping_missing",
+    );
+
+    await putMapping(token, bucket, draftId, VALID_MAPPING);
+    const saved = await apiRequest(
+      token,
+      bucket,
+      "POST",
+      `/csv/${draftId}/validate`,
+    );
+    expect(saved.status).toBe(200);
+    expect(((await saved.json()) as { rowCount: number }).rowCount).toBe(4);
+  });
+
+  it("422s a candidate mapping that names columns the file lacks", async () => {
+    const { token, bucket, draftId } = await uploadedDraftFixture();
+    const res = await apiRequest(
+      token,
+      bucket,
+      "POST",
+      `/csv/${draftId}/validate`,
+      { mapping: { ...VALID_MAPPING, text: { column: "Reviews" } } },
+    );
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      "unknown_columns",
+    );
+  });
+});
+
+describe("POST /api/imports/csv/:draftId/start (server-side guardrail)", () => {
+  it("rejects an unmapped draft with the shared issues", async () => {
+    const { token, bucket, draftId } = await uploadedDraftFixture();
+    const res = await apiRequest(
+      token,
+      bucket,
+      "POST",
+      `/csv/${draftId}/start`,
+    );
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as {
+      error: string;
+      issues: Array<{ code: string }>;
+    };
+    expect(body.error).toBe("not_ready");
+    expect(body.issues.map((i) => i.code)).toEqual(["mapping_missing"]);
+  });
+
+  it("rejects a private+PII mapping whose consent question is unanswered", async () => {
+    const { token, bucket, draftId } = await uploadedDraftFixture();
+    const { consentHint: _drop, ...noConsent } = VALID_MAPPING;
+    await putMapping(token, bucket, draftId, noConsent);
+
+    const res = await apiRequest(
+      token,
+      bucket,
+      "POST",
+      `/csv/${draftId}/start`,
+    );
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { issues: Array<{ code: string }> };
+    expect(body.issues.map((i) => i.code)).toEqual(["consent_missing"]);
+  });
+
+  it("confirms a complete draft, audits, and refuses to run twice", async () => {
+    const {
+      practice: p,
+      token,
+      bucket,
+      draftId,
+    } = await uploadedDraftFixture();
+    await putMapping(token, bucket, draftId, VALID_MAPPING);
+
+    const res = await apiRequest(
+      token,
+      bucket,
+      "POST",
+      `/csv/${draftId}/start`,
+    );
+    expect(res.status).toBe(200);
+    // No CSV_IMPORT binding in this env: confirmed, workflow not started.
+    expect(await res.json()).toEqual({
+      importDraftId: draftId,
+      status: "confirmed",
+      workflowInstanceId: null,
+    });
+
+    const [row] = await t.db
+      .select()
+      .from(importDrafts)
+      .where(eq(importDrafts.id, draftId));
+    expect(row?.status).toBe("confirmed");
+
+    const audits = await t.db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.practiceId, p.id),
+          eq(auditLog.action, "import_draft.confirmed"),
+        ),
+      );
+    expect(audits).toHaveLength(1);
+
+    const again = await apiRequest(
+      token,
+      bucket,
+      "POST",
+      `/csv/${draftId}/start`,
+    );
+    expect(again.status).toBe(409);
+    expect(await again.json()).toEqual({
+      error: "not_editable",
+      status: "confirmed",
+    });
+  });
+
+  it("creates one wr-csv-import Workflow instance when the binding exists", async () => {
+    const {
+      practice: p,
+      token,
+      bucket,
+      draftId,
+    } = await uploadedDraftFixture();
+    await putMapping(token, bucket, draftId, VALID_MAPPING);
+
+    const created: unknown[] = [];
+    const workflowEnv = {
+      ...env(bucket),
+      CSV_IMPORT: {
+        create: async (options: { params?: unknown }) => {
+          created.push(options.params);
+          return { id: "wf-instance-1" };
+        },
+      },
+    };
+    const res = await app.request(
+      `http://localhost/api/imports/csv/${draftId}/start`,
+      { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+      workflowEnv,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      importDraftId: draftId,
+      status: "confirmed",
+      workflowInstanceId: "wf-instance-1",
+    });
+    expect(created).toEqual([
+      {
+        importDraftId: draftId,
+        practiceId: p.id,
+        requestId: expect.any(String),
+      },
+    ]);
+  });
+  it("front_desk cannot start an import", async () => {
+    const {
+      practice: p,
+      bucket,
+      token,
+      draftId,
+    } = await uploadedDraftFixture();
+    await putMapping(token, bucket, draftId, VALID_MAPPING);
+    const clerk = await staffMember(t.db, {
+      practiceId: p.id,
+      clerkUserId: `user_frontdesk_${Math.random().toString(36).slice(2, 8)}`,
+      role: "front_desk",
+    });
+    const clerkToken = await signSessionToken(keys, {
+      sub: clerk.clerkUserId,
+      claims: { o: { id: p.clerkOrgId, rol: "member" } },
+    });
+    const res = await apiRequest(
+      clerkToken,
+      bucket,
+      "POST",
+      `/csv/${draftId}/start`,
+    );
     expect(res.status).toBe(403);
   });
 });
