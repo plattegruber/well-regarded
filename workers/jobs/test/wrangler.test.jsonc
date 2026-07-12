@@ -1,0 +1,53 @@
+// Wrangler config for the workerd test pool ONLY (vitest.config.ts's
+// `workers` project) — never used by `wrangler dev` or deploys.
+//
+// Why not the real wrangler.jsonc, like workers/pipeline does? The jobs
+// worker binds Workers `AI`, and AI bindings are always REMOTE: the test
+// pool would try to open a remote proxy session, which requires a
+// Cloudflare login that CI does not have (the same constraint that keeps
+// AI out of pipeline's local block — see docs/architecture-bindings.md).
+// This config is the real one minus `ai`/`workflows`; the real config's
+// validity is covered by `wrangler deploy --dry-run` and local dev runs.
+//
+// Keep the bindings the SyncLock tests touch in sync with wrangler.jsonc:
+// the DO binding + migration (the class under test), the queue producer,
+// the raw-artifact bucket, and Hyperdrive (overridden to a dead end in
+// vitest.config.ts — no workerd test may touch a real database).
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "wr-jobs-workerd-tests",
+  "main": "../src/worker.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "vars": {
+    "ENVIRONMENT": "local"
+  },
+
+  "queues": {
+    "producers": [{ "binding": "INGEST_QUEUE", "queue": "wr-ingest" }]
+  },
+
+  "r2_buckets": [
+    { "binding": "RAW_ARTIFACTS", "bucket_name": "wr-raw-artifacts-local" }
+  ],
+
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "TBD-tests-override-via-miniflare",
+      "localConnectionString": "postgresql://workerd-tests-must-not-touch-postgres:x@127.0.0.1:9/none"
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [{ "name": "SYNC_LOCK", "class_name": "SyncLock" }]
+  },
+
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["SyncLock"]
+    }
+  ]
+}

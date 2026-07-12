@@ -12,6 +12,7 @@
 import {
   IMPORT_RUN_ERROR_SAMPLE_CAP,
   type ImportRunErrorSample,
+  type ImportRunStatus,
   type ImportRunTrigger,
   type SourceKind,
 } from "@wellregarded/core";
@@ -173,6 +174,31 @@ export async function finalizeImportRun(
         ELSE 'completed'::import_run_status
       END`,
     })
+    .where(eq(importRuns.id, importRunId))
+    .returning();
+  return row;
+}
+
+/**
+ * Close a run with an owner-decided terminal status (issue #123).
+ *
+ * Why this exists alongside {@link finalizeImportRun}: for queue-fed runs
+ * (the GBP poller), the counts belong to the *pipeline stages* and land
+ * asynchronously — at the moment the poll finishes, `created`/`merged`/
+ * `skipped` are still 0, so the count-derived CASE would misreport (e.g.
+ * a quota-aborted sync that enqueued half its pages must finalize as
+ * `completed_with_errors`, not `failed`). The run owner observed the sync
+ * first-hand; it states the outcome. Batch owners whose counts are final
+ * at close time (the CSV Workflow) keep using {@link finalizeImportRun}.
+ */
+export async function finalizeImportRunWithStatus(
+  db: Db | Tx,
+  importRunId: string,
+  status: Exclude<ImportRunStatus, "running">,
+): Promise<ImportRun | undefined> {
+  const [row] = await db
+    .update(importRuns)
+    .set({ finishedAt: sql`now()`, status })
     .where(eq(importRuns.id, importRunId))
     .returning();
   return row;

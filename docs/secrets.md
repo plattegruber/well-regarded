@@ -54,12 +54,13 @@ files contain placeholder values only, and secrets never go in `vars` in
 | `ANTHROPIC_API_KEY` | **Yes** | pipeline (classify stage, Epic #9); other AI callers add it when their paths land | `workers/pipeline/.dev.vars` (no dev value — leave unset until needed) | `wrangler secret put ANTHROPIC_API_KEY --env preview\|prod` |
 | `PIPELINE_MODEL` | No | pipeline | `.dev.vars` (optional — defaults to `claude-haiku-4-5-20251001` in the schema) | `vars` in `wrangler.jsonc` (only to override the default) |
 | `DRAFTING_MODEL` | No | pipeline | `.dev.vars` (optional — defaults to `claude-sonnet-5` in the schema) | `vars` in `wrangler.jsonc` (only to override the default) |
-| `GOOGLE_CLIENT_ID` | No (public identifier) | api (Google connect flow, #118) | `workers/api/.dev.vars` (placeholder — the fake GBP server ignores it) | `vars` in `wrangler.jsonc` |
-| `GOOGLE_CLIENT_SECRET` | **Yes** | api | `workers/api/.dev.vars` (placeholder) | `wrangler secret put GOOGLE_CLIENT_SECRET --env preview\|prod` |
+| `GOOGLE_CLIENT_ID` | No (public identifier) | api (Google connect flow, #118), jobs (token refresh in the poller, #123) | `workers/api/.dev.vars` + `workers/jobs/.dev.vars` (placeholders — the fake GBP server ignores them) | `vars` in `wrangler.jsonc` |
+| `GOOGLE_CLIENT_SECRET` | **Yes** | api, jobs | `workers/api/.dev.vars` + `workers/jobs/.dev.vars` (placeholders) | `wrangler secret put GOOGLE_CLIENT_SECRET --env preview\|prod` (per worker) |
 | `GOOGLE_OAUTH_STATE_SECRET` | **Yes** | api (signs the OAuth `state` param, #118) | `workers/api/.dev.vars` (dev-only value in `.dev.vars.example`) | `wrangler secret put GOOGLE_OAUTH_STATE_SECRET --env preview\|prod` |
-| `GOOGLE_OAUTH_AUTH_URL`, `GOOGLE_OAUTH_TOKEN_URL`, `GOOGLE_OAUTH_REVOKE_URL` | No | api | `workers/api/.dev.vars`, pointed at the fake GBP server (`http://localhost:8799/...`, #130) | leave unset — the schema defaults are the real Google endpoints |
+| `GOOGLE_OAUTH_AUTH_URL`, `GOOGLE_OAUTH_TOKEN_URL`, `GOOGLE_OAUTH_REVOKE_URL` | No | api (all three), jobs (`TOKEN_URL` only) | `workers/api/.dev.vars` / `workers/jobs/.dev.vars`, pointed at the fake GBP server (`http://localhost:8799/...`, #130) | leave unset — the schema defaults are the real Google endpoints |
 | `GOOGLE_OAUTH_REDIRECT_URL` | No | api | leave unset (derived from the request origin) | `vars` only when the worker sits behind a rewriting proxy |
 | `GOOGLE_ACCOUNT_MANAGEMENT_URL`, `GOOGLE_BUSINESS_INFORMATION_URL` | No | api (location discovery, #121) | `workers/api/.dev.vars`, pointed at the fake GBP server (`http://localhost:8799`) | leave unset — the schema defaults are the real Google endpoints |
+| `GOOGLE_MYBUSINESS_V4_BASE_URL` | No | jobs (GBP review poller, #123) | `workers/jobs/.dev.vars`, pointed at the fake GBP server (`http://localhost:8799`, #130) | leave unset — the schema default is the real v4 host |
 | `DASHBOARD_ORIGIN` | No | api (OAuth callback redirect target) | leave unset (defaults to `http://localhost:5173`) | `vars` in `wrangler.jsonc` (all env stanzas) |
 
 Every `CLERK_*` var is **optional in the schemas until the real Clerk

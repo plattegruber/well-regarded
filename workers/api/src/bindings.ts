@@ -53,8 +53,52 @@ export interface ApiBindings {
   CSV_IMPORT?:
     | { create(options?: { params?: unknown }): Promise<{ id: string }> }
     | undefined;
+  /**
+   * Cross-script Durable Object namespace for the jobs worker's
+   * per-connection `SyncLock` (issue #123; `script_name: wr-jobs-<env>` in
+   * wrangler.jsonc). The manual "Sync now" endpoint calls the same
+   * `runSync` entry point the cron uses — the DO's lock naturally rejects
+   * it while a sync is in flight. Structural + optional: tests inject a
+   * plain fake, and a local dev session without the jobs worker running
+   * simply lacks it (the route answers 503 with instructions).
+   */
+  SYNC_LOCK?: SyncLockNamespace | undefined;
   /** String vars/secrets, validated by `getEnv(c.env, apiEnvSchema)`. */
   [key: string]: unknown;
+}
+
+/**
+ * What a `SyncLock.runSync` reports back — a structural mirror of the jobs
+ * worker's `RunSyncResult` (workers never import each other's source; the
+ * DO RPC boundary is the contract).
+ */
+export interface SyncLockRunResult {
+  outcome:
+    | "already_running"
+    | "error"
+    | "skipped"
+    | "completed"
+    | "completed_with_errors"
+    | "failed";
+  heldForMs?: number;
+  importRunId?: string;
+  reason?: string;
+  message?: string;
+  stats?: Record<string, number>;
+}
+
+/** The `SyncLock` RPC surface the manual-sync route calls. */
+export interface SyncLockStub {
+  runSync(input: {
+    connectionId: string;
+    trigger: "manual";
+    requestId: string;
+  }): Promise<SyncLockRunResult>;
+}
+
+export interface SyncLockNamespace {
+  idFromName(name: string): unknown;
+  get(id: unknown): SyncLockStub;
 }
 
 /**

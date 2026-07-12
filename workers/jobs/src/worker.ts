@@ -5,19 +5,23 @@
  * the `cloudflare:workers` runtime module cannot resolve — never import
  * runtime-only code. Exports:
  *
- * - `SyncLock` Durable Object (stub until Epic #20);
+ * - `SyncLock` Durable Object (issue #123) — per-connection GBP sync lock
+ *   AND runner (`runSync` is the entry point cron and the manual "Sync
+ *   now" endpoint share);
  * - `EmbeddingBackfill` Workflow (issue #71) — the class behind the
  *   `EMBEDDING_BACKFILL` binding / `wr-embedding-backfill-<env>` workflow;
  * - `CsvImport` Workflow (issue #135) — the class behind the
  *   `CSV_IMPORT` binding / `wr-csv-import-<env>` workflow;
+ * - `scheduled`: the 6-hourly GBP poll tick (issue #123; src/scheduled.ts).
+ *   Test locally with `wrangler dev --test-scheduled` and
+ *   `curl "http://localhost:8789/cdn-cgi/handler/scheduled?cron=0+*%2F6+*+*+*"`;
  * - `fetch`: local-only debug triggers for the workflows (404 outside
  *   local).
- *
- * Real scheduled/queue handlers land in later epics.
  */
 
 import type { JobsBindings } from "./bindings";
 import { handleLocalTrigger } from "./localTrigger";
+import { handleScheduled } from "./scheduled";
 
 export { CsvImport } from "./csvImport.workflow";
 export { EmbeddingBackfill } from "./embeddingBackfill.workflow";
@@ -26,5 +30,8 @@ export { SyncLock } from "./sync-lock";
 export default {
   async fetch(request, env, _ctx) {
     return handleLocalTrigger(request, env);
+  },
+  async scheduled(controller, env, _ctx) {
+    await handleScheduled(controller, env);
   },
 } satisfies ExportedHandler<JobsBindings>;

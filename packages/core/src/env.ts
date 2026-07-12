@@ -128,31 +128,56 @@ const aiEnvSchema = z.object({
 });
 
 /**
+ * Google OAuth client credentials + token endpoint — the subset of the
+ * Google OAuth config every worker that *refreshes* access tokens needs
+ * (issue #118's provider). Split out of `googleOauthEnvSchema` so the jobs
+ * worker's poller (#123) composes exactly this without dragging in the
+ * browser-flow vars (auth URL, state secret, dashboard origin).
+ */
+const googleOauthClientEnvSchema = z.object({
+  // TODO(#7-gbp-epic): make CLIENT_ID/SECRET required once the real Google
+  // Cloud OAuth client exists (Appendix C of ADR 0002) — until then the
+  // routes/jobs that need them check at use time with an actionable error.
+  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  GOOGLE_OAUTH_TOKEN_URL: z
+    .url()
+    .default("https://oauth2.googleapis.com/token"),
+});
+
+/**
+ * Google Business Profile data-plane base URLs (Epic #7). Origin-only (the
+ * path segments live in the client functions), defaulting to the real
+ * hosts; local dev and tests point them at the fake GBP server (#130),
+ * which serves every Google host from one origin.
+ */
+const googleGbpApiEnvSchema = z.object({
+  /** My Business v4 (reviews — never migrated off v4; ADR 0002 §2). */
+  GOOGLE_MYBUSINESS_V4_BASE_URL: z
+    .url()
+    .default("https://mybusiness.googleapis.com"),
+});
+
+/**
  * Google OAuth for the Business Profile integration (issue #118, Epic #7).
  *
- * The three `*_URL` vars exist so local dev and tests point at the fake GBP
+ * The `*_URL` vars exist so local dev and tests point at the fake GBP
  * server (#130) instead of real Google — the defaults are the real hosts,
  * so deployed environments only set the credentials. `business.manage` is
  * the only scope (ADR 0002 §4).
  */
-const googleOauthEnvSchema = z.object({
-  // TODO(#7-gbp-epic): make CLIENT_ID/SECRET/STATE_SECRET required once the
-  // real Google Cloud OAuth client exists (Appendix C of ADR 0002) — until
-  // then the connect route checks at request time with an actionable error.
-  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
-  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+const googleOauthEnvSchema = googleOauthClientEnvSchema.extend({
   /**
    * HMAC key signing the OAuth `state` parameter (anti-CSRF binding of
    * practice + staff + nonce): base64 of >= 32 random bytes
    * (`openssl rand -base64 32`).
    */
+  // TODO(#7-gbp-epic): make required once the real Google Cloud OAuth
+  // client exists (Appendix C of ADR 0002).
   GOOGLE_OAUTH_STATE_SECRET: z.string().min(1).optional(),
   GOOGLE_OAUTH_AUTH_URL: z
     .url()
     .default("https://accounts.google.com/o/oauth2/v2/auth"),
-  GOOGLE_OAUTH_TOKEN_URL: z
-    .url()
-    .default("https://oauth2.googleapis.com/token"),
   GOOGLE_OAUTH_REVOKE_URL: z
     .url()
     .default("https://oauth2.googleapis.com/revoke"),
@@ -204,7 +229,12 @@ export const apiEnvSchema = baseEnvSchema
 export const pipelineEnvSchema = baseEnvSchema
   .extend(piiKeyringEnvSchema.shape)
   .extend(aiEnvSchema.shape);
-export const jobsEnvSchema = baseEnvSchema.extend(piiKeyringEnvSchema.shape);
+// jobs refreshes Google access tokens (decrypting credentials via the PII
+// keyring) and fetches reviews from the v4 data plane (#123).
+export const jobsEnvSchema = baseEnvSchema
+  .extend(piiKeyringEnvSchema.shape)
+  .extend(googleOauthClientEnvSchema.shape)
+  .extend(googleGbpApiEnvSchema.shape);
 export const dashboardEnvSchema = baseEnvSchema
   .extend(clerkEnvSchema.shape)
   .extend(sessionEnvSchema.shape);

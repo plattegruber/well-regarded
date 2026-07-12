@@ -88,6 +88,7 @@ export {
   type CreateImportRunInput,
   createImportRun,
   finalizeImportRun,
+  finalizeImportRunWithStatus,
   getImportRunSummary,
   type ImportRun,
   type ImportRunCountDelta,
@@ -146,9 +147,12 @@ export {
 export {
   disconnectSourceConnection,
   getSourceConnection,
+  getSourceConnectionById,
+  listActiveSourceConnections,
   markSourceConnectionNeedsReauth,
   patchSourceConnectionMetadata,
   type SourceConnection,
+  setSourceConnectionLastSyncAt,
   type UpsertSourceConnectionInput,
   upsertSourceConnection,
 } from "./queries/sourceConnections.js";

@@ -42,11 +42,12 @@
     "ENVIRONMENT": "local"
   },
 
-  // Placeholder cron proving trigger config parses; real schedules land with
-  // the sync jobs (Epic #20). Test locally with:
-  //   curl "http://localhost:8789/cdn-cgi/handler/scheduled?cron=0+6+*+*+*"
+  // The GBP review poll (issue #123): every 6 hours. MUST stay in sync with
+  // GBP_POLL_CRON in src/gbpPolling.ts — the scheduled handler dispatches on
+  // the expression. Test locally with `wrangler dev --test-scheduled` and:
+  //   curl "http://localhost:8789/cdn-cgi/handler/scheduled?cron=0+*%2F6+*+*+*"
   "triggers": {
-    "crons": ["0 6 * * *"]
+    "crons": ["0 */6 * * *"]
   },
 
   "queues": {
@@ -79,8 +80,9 @@
     // the confirmed draft's file from here. Same bucket the api worker
     // writes ({practiceId}/imports/{sha256}.csv).
     { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-local" },
-    // Immutable raw artifacts (#100) — the Workflow writes its batch
-    // envelopes here (store-before-enqueue) for the pipeline to read.
+    // Immutable raw artifacts (#100) — the CSV Workflow writes its batch
+    // envelopes and the GBP poller (#123) its review pages here
+    // (store-before-enqueue) for the pipeline to read.
     { "binding": "RAW_ARTIFACTS", "bucket_name": "wr-raw-artifacts-local" }
   ],
 
@@ -107,7 +109,7 @@
 
   "durable_objects": {
     "bindings": [
-      // Sync lock DO; stub class today, real implementation in Epic #20.
+      // Per-connection GBP sync lock + runner (issue #123, src/sync-lock.ts).
       { "name": "SYNC_LOCK", "class_name": "SyncLock" }
     ]
   },
@@ -128,7 +130,7 @@
         "ENVIRONMENT": "preview"
       },
       "triggers": {
-        "crons": ["0 6 * * *"]
+        "crons": ["0 */6 * * *"]
       },
       "queues": {
         "producers": [
@@ -169,7 +171,7 @@
         "ENVIRONMENT": "prod"
       },
       "triggers": {
-        "crons": ["0 6 * * *"]
+        "crons": ["0 */6 * * *"]
       },
       "queues": {
         "producers": [{ "binding": "INGEST_QUEUE", "queue": "wr-ingest-prod" }]

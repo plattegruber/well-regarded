@@ -76,6 +76,7 @@ describe("permission gate — manage_settings", () => {
     ["front_desk", "GET", "/integrations/google/connect"],
     ["provider", "GET", "/integrations/google/callback"],
     ["external_partner", "POST", "/integrations/google/disconnect"],
+    ["front_desk", "POST", "/integrations/google/sync"],
     ["marketing", "GET", "/integrations/google/connect"],
     ["front_desk", "POST", "/integrations/google/locations/discover"],
     ["provider", "PUT", "/integrations/google/mappings"],

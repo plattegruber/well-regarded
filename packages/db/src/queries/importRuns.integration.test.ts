@@ -17,6 +17,7 @@ import {
   appendImportRunError,
   createImportRun,
   finalizeImportRun,
+  finalizeImportRunWithStatus,
   getImportRunSummary,
   incrementImportRunCounts,
   listImportRuns,
@@ -255,5 +256,39 @@ describe("recordPipelineFailure (import_runs persistence)", () => {
       payloadRef: "p/google/dead.json",
     });
     vi.restoreAllMocks();
+  });
+});
+
+describe("finalizeImportRunWithStatus", () => {
+  it("closes with the owner-decided status, ignoring the (still-zero) counts", async () => {
+    // The GBP poller's reality (issue #123): counts land asynchronously via
+    // the pipeline, so at close time everything is 0 — a quota-aborted sync
+    // must still finalize as completed_with_errors, not the count-derived
+    // status.
+    const run = await importRun(t.db, { sourceKind: "google" });
+    await appendImportRunError(t.db, run.id, sample(1)); // failed = 1
+
+    const closed = await finalizeImportRunWithStatus(
+      t.db,
+      run.id,
+      "completed_with_errors",
+    );
+    expect(closed?.status).toBe("completed_with_errors");
+    expect(closed?.finishedAt).not.toBeNull();
+
+    // Contrast: the count-derived close would have said `failed` here.
+    const derived = await importRun(t.db, { sourceKind: "google" });
+    await appendImportRunError(t.db, derived.id, sample(2));
+    expect((await finalizeImportRun(t.db, derived.id))?.status).toBe("failed");
+  });
+
+  it("returns undefined for an unknown run", async () => {
+    expect(
+      await finalizeImportRunWithStatus(
+        t.db,
+        "7b1e64a0-0000-4000-8000-000000000000",
+        "completed",
+      ),
+    ).toBeUndefined();
   });
 });

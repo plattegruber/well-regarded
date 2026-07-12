@@ -17,13 +17,51 @@
  */
 
 import type { SourceConnectionKind } from "@wellregarded/core";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 
 import type { Tx } from "../audit.js";
 import type { Db } from "../client.js";
 import { sourceConnections } from "../schema/sourceConnections.js";
 
 export type SourceConnection = typeof sourceConnections.$inferSelect;
+
+/**
+ * Connection lookup by primary key — the poller's per-sync re-read (#123):
+ * the Durable Object holds only the connection id; credentials and status
+ * are always read fresh at sync start, never carried across the lock.
+ */
+export async function getSourceConnectionById(
+  db: Db | Tx,
+  connectionId: string,
+): Promise<SourceConnection | null> {
+  const [row] = await db
+    .select()
+    .from(sourceConnections)
+    .where(eq(sourceConnections.id, connectionId))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Every `active` connection of a kind, across practices — the cron
+ * handler's enumeration (#123 requirement 1). Ordered by id so the poll
+ * schedule is deterministic run to run.
+ */
+export async function listActiveSourceConnections(
+  db: Db | Tx,
+  kind: SourceConnectionKind,
+): Promise<SourceConnection[]> {
+  return db
+    .select()
+    .from(sourceConnections)
+    .where(
+      and(
+        eq(sourceConnections.kind, kind),
+        eq(sourceConnections.status, "active"),
+      ),
+    )
+    .orderBy(asc(sourceConnections.id));
+}
 
 /** The one row for (practice, kind), whatever its status. */
 export async function getSourceConnection(
@@ -163,4 +201,16 @@ export async function patchSourceConnectionMetadata(
     .where(eq(sourceConnections.id, connectionId))
     .returning();
   return row ?? null;
+}
+
+/** Stamp `last_sync_at` — the poller calls this at each successful sync end. */
+export async function setSourceConnectionLastSyncAt(
+  db: Db | Tx,
+  connectionId: string,
+  at: Date = new Date(),
+): Promise<void> {
+  await db
+    .update(sourceConnections)
+    .set({ lastSyncAt: at, updatedAt: new Date() })
+    .where(eq(sourceConnections.id, connectionId));
 }
