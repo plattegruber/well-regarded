@@ -62,6 +62,12 @@ export {
   type ProofExcerpt,
 } from "./queries/hybridSearch.js";
 export {
+  getImportDraft,
+  type ImportDraft,
+  linkImportRunToDraft,
+  markImportDraftSuperseded,
+} from "./queries/importDrafts.js";
+export {
   appendImportRunError,
   type CreateImportRunInput,
   createImportRun,
@@ -74,6 +80,7 @@ export {
   incrementImportRunCounts,
   type ListImportRunsOptions,
   listImportRuns,
+  setImportRunArtifactKeys,
 } from "./queries/importRuns.js";
 export {
   type ContactPoint,

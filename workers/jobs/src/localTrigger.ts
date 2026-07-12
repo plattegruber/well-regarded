@@ -1,20 +1,27 @@
 /**
- * Local-only debug endpoint: `POST /__local/trigger/embedding-backfill`
- * with an optional JSON params body creates one instance of the
- * `wr-embedding-backfill` Workflow, so the backfill is drivable under
- * `wrangler dev` (which runs Workflows locally but has no CLI trigger for
- * a dev session). Mirrors the pipeline worker's `/__local/enqueue/<stage>`
- * pattern: hard-gated on `ENVIRONMENT === "local"`, 404 everywhere else.
+ * Local-only debug endpoints: `POST /__local/trigger/<workflow>` with an
+ * optional JSON params body creates one instance of the named Workflow,
+ * so each is drivable under `wrangler dev` (which runs Workflows locally
+ * but has no CLI trigger for a dev session). Mirrors the pipeline
+ * worker's `/__local/enqueue/<stage>` pattern: hard-gated on
+ * `ENVIRONMENT === "local"`, 404 everywhere else.
  *
- * Deployed environments trigger via the Wrangler CLI instead — see
- * docs/embedding-backfill.md.
+ * Deployed environments trigger differently — the backfill via the
+ * Wrangler CLI (docs/embedding-backfill.md); the CSV import via #134's
+ * `POST /imports/csv/:draftId/start` endpoint (docs/csv-import.md).
  */
 
 import { getEnv, jobsEnvSchema } from "@wellregarded/core";
 
-import type { JobsBindings } from "./bindings";
+import type { JobsBindings, WorkflowBinding } from "./bindings";
 
-const TRIGGER_PATH = "/__local/trigger/embedding-backfill";
+const TRIGGER_PREFIX = "/__local/trigger/";
+
+/** Trigger slug → the Workflow binding it creates an instance of. */
+const WORKFLOW_TRIGGERS: Record<string, keyof JobsBindings & string> = {
+  "embedding-backfill": "EMBEDDING_BACKFILL",
+  "csv-import": "CSV_IMPORT",
+};
 
 export async function handleLocalTrigger(
   request: Request,
@@ -26,22 +33,36 @@ export async function handleLocalTrigger(
   }
 
   const { pathname } = new URL(request.url);
-  if (pathname !== TRIGGER_PATH || request.method !== "POST") {
+  if (!pathname.startsWith(TRIGGER_PREFIX)) {
     return new Response(
-      `Local jobs debug endpoint. POST optional JSON params to ${TRIGGER_PATH}.`,
-      { status: pathname === TRIGGER_PATH ? 405 : 404 },
+      `Local jobs debug endpoint. POST optional JSON params to ${TRIGGER_PREFIX}<workflow> ` +
+        `(one of: ${Object.keys(WORKFLOW_TRIGGERS).join(", ")}).`,
+      { status: 404 },
     );
   }
+  const slug = pathname.slice(TRIGGER_PREFIX.length);
+  const bindingName = WORKFLOW_TRIGGERS[slug];
+  if (bindingName === undefined) {
+    return new Response(
+      `Unknown workflow "${slug}". Known triggers: ${Object.keys(WORKFLOW_TRIGGERS).join(", ")}.`,
+      { status: 404 },
+    );
+  }
+  if (request.method !== "POST") {
+    return new Response(`POST optional JSON params to ${pathname}.`, {
+      status: 405,
+    });
+  }
 
-  const workflow = env.EMBEDDING_BACKFILL;
+  const workflow = env[bindingName] as WorkflowBinding | undefined;
   if (workflow === undefined) {
     return new Response(
-      "No EMBEDDING_BACKFILL workflow binding in this environment.",
+      `No ${bindingName} workflow binding in this environment.`,
       { status: 500 },
     );
   }
 
-  // Params are optional; an empty body means "defaults, global sweep".
+  // Params are optional; an empty body means "the workflow's defaults".
   let params: unknown;
   const raw = await request.text();
   if (raw.trim().length > 0) {
@@ -56,7 +77,7 @@ export async function handleLocalTrigger(
     params === undefined ? undefined : { params },
   );
   return Response.json(
-    { triggered: "embedding-backfill", instanceId: instance.id },
+    { triggered: slug, instanceId: instance.id },
     { status: 202 },
   );
 }

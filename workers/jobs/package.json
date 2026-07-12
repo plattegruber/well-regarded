@@ -27,6 +27,8 @@
   "dependencies": {
     "@wellregarded/ai": "workspace:*",
     "@wellregarded/core": "workspace:*",
-    "@wellregarded/db": "workspace:*"
+    "@wellregarded/db": "workspace:*",
+    "@wellregarded/sources": "workspace:*",
+    "zod": "^4.4.3"
   }
 }

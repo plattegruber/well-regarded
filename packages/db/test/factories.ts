@@ -39,6 +39,7 @@ import {
 } from "../src/queries/patients.js";
 import { apiKeys } from "../src/schema/apiKeys.js";
 import { derivations } from "../src/schema/derivations.js";
+import { importDrafts } from "../src/schema/importDrafts.js";
 import { importRuns } from "../src/schema/importRuns.js";
 import { patients } from "../src/schema/pii.js";
 import { proofExcerpts } from "../src/schema/proofExcerpts.js";
@@ -81,6 +82,7 @@ function must<T>(row: T | undefined, what: string): T {
 }
 
 type ApiKeyInsert = typeof apiKeys.$inferInsert;
+type ImportDraftInsert = typeof importDrafts.$inferInsert;
 type ImportRunInsert = typeof importRuns.$inferInsert;
 type PracticeInsert = typeof practices.$inferInsert;
 type LocationInsert = typeof locations.$inferInsert;
@@ -152,6 +154,39 @@ export async function importRun(
     })
     .returning();
   return must(row, "import run");
+}
+
+/**
+ * Inserts an `import_drafts` row (issue #133/#135). Defaults to a
+ * `confirmed` draft with a two-column mapping — what the import Workflow
+ * consumes — creating the practice and uploading staff member on demand.
+ */
+export async function importDraft(
+  db: Db,
+  overrides: Partial<ImportDraftInsert> = {},
+): Promise<typeof importDrafts.$inferSelect> {
+  const n = nextSeq();
+  const practiceId = overrides.practiceId ?? (await practice(db)).id;
+  const createdBy =
+    overrides.createdBy ?? (await staffMember(db, { practiceId })).id;
+  const [row] = await db
+    .insert(importDrafts)
+    .values({
+      r2Key: `${practiceId}/imports/${"0".repeat(63)}${n % 10}.csv`,
+      originalFilename: `export-${n}.csv`,
+      byteSize: 1024,
+      headers: ["Date", "Review"],
+      mapping: {
+        occurredAt: { column: "Date", dateFormat: "ISO" },
+        text: { column: "Review" },
+      },
+      status: "confirmed",
+      ...overrides,
+      practiceId,
+      createdBy,
+    })
+    .returning();
+  return must(row, "import draft");
 }
 
 export async function location(
