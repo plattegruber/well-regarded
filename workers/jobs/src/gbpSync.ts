@@ -386,14 +386,20 @@ export async function syncGoogleConnection(
     let maxUpdateTime = cursor;
     let pages = 0;
     let storedAnything = false;
+    let sawUnparseablePage = false;
 
     while (true) {
       if (pages >= GBP_MAX_PAGES_PER_LOCATION) {
-        // Runaway guard — resumable: the cursor advance below covers what
-        // was stored; the rest arrives next tick.
+        // Runaway guard. Honest limitation: the walk is newest-first, so
+        // an updateTime cursor cannot resume a capped FIRST sync — history
+        // older than cap×50 (~1,000) reviews is not backfilled (issue #123
+        // sized the cap on "hundreds of reviews, not millions"). On
+        // incremental syncs the cap only bites if >1,000 reviews changed
+        // inside one poll interval, i.e. never in practice.
         locationLog.warn("gbp.sync.page_cap_hit", {
           pages,
           cap: GBP_MAX_PAGES_PER_LOCATION,
+          olderHistoryNotBackfilled: cursor === undefined,
         });
         break;
       }
@@ -412,6 +418,7 @@ export async function syncGoogleConnection(
         // no poller-side retry loop: the next tick re-sends once.
         locationLog.warn("gbp.sync.page_unparseable", { pages });
         await storePageAndEnqueue(mapping.v4LocationName, rawPage);
+        sawUnparseablePage = true;
         break;
       }
       const reviews = parsed.data.reviews ?? [];
@@ -456,7 +463,12 @@ export async function syncGoogleConnection(
     }
 
     stats.locationsPolled++;
-    if (storedAnything && maxUpdateTime !== undefined) {
+    // An unparseable page blocks the advance even when earlier pages
+    // stored fine: advancing past it would permanently skip its reviews.
+    // Held back, the next tick re-walks to the same page (earlier pages
+    // re-send; dedupe absorbs them) — a visible once-per-tick drumbeat
+    // until the shape drift is fixed, after which the walk recovers.
+    if (!sawUnparseablePage && storedAnything && maxUpdateTime !== undefined) {
       // ONLY now — every page above is durable in R2 and enqueued. Persist
       // the full map (this sync holds the lock; nothing else writes it).
       cursors[mapping.googleLocationName] = maxUpdateTime;

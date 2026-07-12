@@ -45,6 +45,11 @@ export class GbpApiError extends Error {
     super(`GBP ${what} failed with status ${status}`);
     this.name = "GbpApiError";
     this.status = status;
+    // Known nuance, deferred until observed against real Google: some
+    // Google APIs signal quota exhaustion as 403 (rateLimitExceeded), which
+    // this classifies as permanent. Distinguishing that from a genuine
+    // permission 403 needs the error body's reason — add it when the real
+    // quota behavior is measurable (ADR 0002 §3 plans to 429 + 5xx).
     this.retryable = status === 429 || status >= 500;
     this.retryAfterMs = retryAfterMs;
   }

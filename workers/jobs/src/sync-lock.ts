@@ -13,6 +13,11 @@
  * - `acquire` — takes the lock, or reports how long the current holder has
  *   held it. A holder older than {@link SYNC_LOCK_STALE_MS} is presumed
  *   crashed and is STOLEN (fresh token) — logged loudly by `runSync`.
+ *   Residual risk, accepted at M1: a still-alive sync that legitimately
+ *   outlives the cap (≈7,000 paced Google calls — far beyond any real
+ *   practice) would briefly run concurrently with its thief; the token
+ *   fences the lock, not the zombie's in-flight DB writes. The loud
+ *   `lock_stolen` error log is the tripwire for revisiting the cap.
  * - `release(token)` — token-fenced: only the current holder's token
  *   releases, so a stolen-from zombie finishing late cannot clobber the
  *   thief's lock.

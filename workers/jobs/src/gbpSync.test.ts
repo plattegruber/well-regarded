@@ -494,6 +494,34 @@ describe("syncGoogleConnection — guards", () => {
     expect(h.storeState.cursors["locations/1"]).toBeDefined();
   });
 
+  it("an unparseable page AFTER stored pages blocks the cursor advance (no permanent skip)", async () => {
+    const h = seededHarness({ locations: 1 });
+    // Page 1 parses and stores; page 2 is shape-drifted garbage.
+    let call = 0;
+    h.deps.listReviewsPage = () => {
+      call++;
+      if (call === 1) {
+        return Promise.resolve({
+          reviews: Array.from({ length: 50 }, (_, i) => ({
+            name: `accounts/1/locations/1/reviews/${i}`,
+            starRating: "FIVE",
+            createTime: "2026-06-01T00:00:00Z",
+            updateTime: `2026-06-01T00:00:${String(i % 60).padStart(2, "0")}Z`,
+          })),
+          nextPageToken: "page-2",
+        });
+      }
+      return Promise.resolve({ reviews: [{ name: "shape-drift" }] });
+    };
+
+    const outcome = await syncGoogleConnection(h.deps, input);
+    expect(outcome.outcome).toBe("completed");
+    expect(h.sent).toHaveLength(2); // both pages stored + enqueued
+    // Advancing past the drifted page would permanently skip its reviews —
+    // the cursor stays put so the next tick re-walks to it.
+    expect(h.storeState.cursors).toEqual({});
+  });
+
   it("stores an unparseable page verbatim without advancing the cursor", async () => {
     const h = seededHarness({ locations: 1 });
     const garbage = { reviews: [{ name: "not-a-review-resource-name" }] };

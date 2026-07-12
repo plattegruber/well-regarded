@@ -79,7 +79,15 @@ export const GBP_BACKOFF_MAX_ATTEMPTS = 3;
 /** Backoff schedule after attempt N (1-based): 1 s, 4 s, 16 s (pre-jitter). */
 export const GBP_BACKOFF_BASE_DELAY_MS = 1_000;
 
-/** Cap on any single backoff delay, jitter and Retry-After included. */
+/**
+ * Cap on any single backoff delay, jitter AND Retry-After included —
+ * deliberate: a sync sleeps inside its DO invocation (and the cron tick
+ * awaits it), so one throttled location must never hold a tick hostage
+ * for an arbitrary server-sent duration. A `Retry-After` beyond the cap
+ * means Google wants a longer pause than a sync will give it: attempts
+ * exhaust, the sync aborts gracefully, and the NEXT tick (hours away —
+ * far beyond any Retry-After) resumes from the kept cursors.
+ */
 export const GBP_BACKOFF_MAX_DELAY_MS = 60_000;
 
 /**
