@@ -15,6 +15,7 @@ export * from "./contract/normalizedSignal.js";
 export * from "./contract/sourceAdapter.js";
 export * from "./google/adapter.js";
 export * from "./google/auth.js";
+export * from "./google/replies.js";
 export * from "./google/schema.js";
 export * from "./rawArtifacts.js";
 export * from "./registry.js";
