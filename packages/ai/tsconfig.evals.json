@@ -1,0 +1,4 @@
+{
+  "extends": "@wellregarded/tsconfig/base.json",
+  "include": ["evals", "src"]
+}

@@ -1,0 +1,139 @@
+# Evals (#73): live-model scoring of the prompt golden sets.
+#
+# Deliberately NOT part of the default PR pipeline (ci.yml) — model calls
+# cost money and add latency, so this runs only on manual dispatch and on
+# PRs that touch the prompts or the eval harness itself. It is not a
+# required status check; the gate is `pnpm eval`'s non-zero exit on any
+# threshold regression (evals/thresholds.json).
+#
+# Secret handling: the job needs the ANTHROPIC_API_KEY repo secret. Until
+# that secret exists (and on fork PRs, where secrets are never exposed),
+# the job SKIPS LOUDLY — a warning annotation plus a step summary — rather
+# than passing silently: a green check must never imply the prompts were
+# actually scored. The moment the secret is added, the same workflow runs
+# for real with no further changes.
+name: Evals
+
+on:
+  workflow_dispatch:
+    inputs:
+      set:
+        description: "Golden set to run"
+        type: choice
+        options: [all, judgments, excerpts, safety]
+        default: all
+  pull_request:
+    paths:
+      - "packages/ai/src/prompts/**"
+      - "packages/ai/evals/**"
+      - ".github/workflows/evals.yml"
+
+# pull-requests: write is for the report comment; on fork PRs the token is
+# read-only, but fork PRs also have no secrets, so they take the skip path
+# and never reach the comment step.
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # The gate on the secret. `secrets.*` can't be read in a job-level
+      # `if`, so it is materialized into a step output here. Everything
+      # after this step is conditioned on it.
+      - name: Check for ANTHROPIC_API_KEY
+        id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Evals SKIPPED — ANTHROPIC_API_KEY is not configured::The eval job did NOT score the prompts. Add the ANTHROPIC_API_KEY repository secret (Settings → Secrets and variables → Actions) to enable live eval runs. A green check on this job currently means 'skipped', not 'passed'. (Fork PRs never see secrets and always skip.)"
+            {
+              echo "## Evals skipped"
+              echo ""
+              echo "**\`ANTHROPIC_API_KEY\` is not available to this run, so the golden sets were NOT scored.**"
+              echo ""
+              echo "- Repo maintainers: add the \`ANTHROPIC_API_KEY\` repository secret to enable live evals."
+              echo "- Fork PRs never receive secrets; a maintainer can re-run the evals via workflow_dispatch after review."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.present == 'true'
+      - uses: ./.github/actions/setup
+        if: steps.key.outputs.present == 'true'
+
+      # The eval runner executes evals/run.ts with tsx, which imports
+      # @wellregarded/core at runtime through its dist build.
+      - name: Build workspace dependencies
+        if: steps.key.outputs.present == 'true'
+        run: pnpm --filter "@wellregarded/ai^..." build
+
+      - name: Run evals against the live model
+        if: steps.key.outputs.present == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: pnpm --filter @wellregarded/ai eval ${{ inputs.set || 'all' }}
+
+      # Reports are useful evidence on failure too — always() so a
+      # threshold regression still uploads what was written.
+      - name: Upload eval reports
+        if: always() && steps.key.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-reports-${{ github.run_id }}
+          path: packages/ai/evals/reports/*.md
+          if-no-files-found: warn
+
+      - name: Comment the report on the PR
+        if: always() && steps.key.outputs.present == 'true' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const path = require("path");
+            const marker = "<!-- evals-report -->";
+            const dir = "packages/ai/evals/reports";
+            let body = `${marker}\n# Eval run for ${context.payload.pull_request.head.sha.slice(0, 7)}\n\n`;
+            const files = fs.existsSync(dir)
+              ? fs.readdirSync(dir).filter((f) => f.endsWith(".md")).sort()
+              : [];
+            if (files.length === 0) {
+              body += "_No reports were produced — check the job logs._\n";
+            }
+            for (const file of files) {
+              const content = fs.readFileSync(path.join(dir, file), "utf8");
+              body += `<details><summary><code>${file}</code></summary>\n\n${content}\n</details>\n\n`;
+            }
+            // GitHub comment size cap; truncate defensively and point at the artifact.
+            if (body.length > 60000) {
+              body = `${body.slice(0, 60000)}\n\n…truncated — full reports are in the run's \`eval-reports\` artifact.`;
+            }
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => c.body?.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

@@ -14,10 +14,12 @@
     "build": "tsc",
     "test": "vitest run",
     "lint": "biome check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.evals.json",
+    "eval": "tsx evals/run.ts"
   },
   "devDependencies": {
     "@wellregarded/tsconfig": "workspace:*",
+    "tsx": "^4.23.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },
