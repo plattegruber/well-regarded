@@ -104,7 +104,11 @@ export interface IncomingVersion {
   /** Canonical `numeric(2,1)` string — same representation as the column. */
   rating: string | null;
   occurredAt: Date;
-  /** Source-reported edit time; null until an adapter carries one. */
+  /**
+   * Source-reported edit time, from `sourceMetadata.sourceUpdatedAt`
+   * (carried by the google adapter, #125); null when the source/adapter
+   * reports none.
+   */
   sourceUpdatedAt: Date | null;
 }
 
@@ -338,9 +342,13 @@ async function loadIncomingVersion(
         text: match.originalText,
         rating: canonicalizeRating(match.rating),
         occurredAt: new Date(match.occurredAt),
-        // NormalizedSignal carries no source update time yet; adapters that
-        // learn one (Epic #7/#8) extend the contract and thread it here.
-        sourceUpdatedAt: null,
+        // Source-reported edit time, when the adapter carries one (e.g. a
+        // Google review's updateTime, #125) — lands on the version row as
+        // `source_updated_at`.
+        sourceUpdatedAt:
+          match.sourceMetadata?.sourceUpdatedAt === undefined
+            ? null
+            : new Date(match.sourceMetadata.sourceUpdatedAt),
       };
     }
   }

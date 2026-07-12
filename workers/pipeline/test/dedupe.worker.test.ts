@@ -249,6 +249,65 @@ describe("dedupe exact path (reason: conflict_reimport)", () => {
 
     expect(calls.edited).toHaveLength(1);
     expect(calls.edited[0]?.incoming.rating).toBe("4.0");
+    // The manual adapter carries no source update time — version rows get
+    // null until a source reports one.
+    expect(calls.edited[0]?.incoming.sourceUpdatedAt).toBeNull();
+    expect(classifySend).toHaveBeenCalledOnce();
+  });
+
+  it("an edited google review threads updateTime into the version's sourceUpdatedAt (#125)", async () => {
+    const reviewName = "accounts/1/locations/1/reviews/9";
+    const createTime = "2026-03-02T14:30:00.000Z";
+    const editedText = `${reviewText} Edit: still thrilled a month later.`;
+    // The re-imported artifact, exactly as the poller (#123) stores it: the
+    // envelope around the fetched reviews page, with updateTime > createTime.
+    const { key } = await putRawArtifact(env.RAW_ARTIFACTS, {
+      practiceId,
+      sourceKind: "google",
+      content: JSON.stringify({
+        kind: "gbp.reviews.page",
+        envelopeVersion: 1,
+        practiceId,
+        googleLocationName: "accounts/1/locations/1",
+        fetchedAt: "2026-07-01T00:00:00.000Z",
+        page: {
+          reviews: [
+            {
+              name: reviewName,
+              reviewId: "9",
+              reviewer: { displayName: "Brad Huang" },
+              starRating: "FIVE",
+              comment: editedText,
+              createTime,
+              updateTime: "2026-04-01T09:00:00.000Z",
+            },
+          ],
+          totalReviewCount: 1,
+        },
+      }),
+    });
+    const { store, calls } = makeStore({
+      record: signalRecord({ sourceKind: "google", sourceId: reviewName }),
+      artifactKeys: [key],
+    });
+    const classifySend = vi.fn().mockResolvedValue(undefined);
+
+    await deliver(
+      { ...baseMessage, reason: "conflict_reimport" },
+      { store, embedder: new FakeEmbeddingProvider() },
+      { CLASSIFY_QUEUE: { send: classifySend } },
+    );
+
+    expect(calls.edited).toHaveLength(1);
+    expect(calls.edited[0]?.incoming).toMatchObject({
+      text: editedText,
+      rating: "5.0",
+      // occurredAt stays the experience time (createTime)…
+      occurredAt: new Date(createTime),
+      // …while the source-reported edit time rides through to the version
+      // row's source_updated_at (#106's version chain).
+      sourceUpdatedAt: new Date("2026-04-01T09:00:00.000Z"),
+    });
     expect(classifySend).toHaveBeenCalledOnce();
   });
 

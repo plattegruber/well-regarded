@@ -50,7 +50,10 @@ function toSignalsColumns(
   // pipeline context, patientId/providerId/locationId from entity resolution
   // of the hints (#104), availability/retentionState from lifecycle defaults.
   // authorDisplayName/authorExternalId have no signals column yet — they ride
-  // the wire contract for dedupe and future author storage.
+  // the wire contract for dedupe and future author storage. sourceMetadata
+  // (#125) likewise has no column: dedupe threads its sourceUpdatedAt into
+  // signal_versions.source_updated_at; persisting existingReply is an
+  // Epic #3/#10 question.
 }
 
 describe("NormalizedSignal ↔ signals table drift guard", () => {
