@@ -76,42 +76,27 @@ beforeEach(() => {
 });
 
 describe("worker.queue", () => {
-  it("acks a valid message on each stub-stage main queue", async () => {
-    // wr-classify, wr-ingest, and wr-route are deliberately absent: since
-    // #67/#104/#108 their handlers do real work (Postgres, R2, AI
-    // provider) and are exercised with injected deps in their own
-    // describes below.
-    const cases = [["wr-dedupe", validSignalStage]] as const;
-    for (const [queue, body] of cases) {
-      const batch = createMessageBatch(queue, [
-        { id: `${queue}-1`, timestamp, attempts: 1, body },
-      ]);
-      const ctx = createExecutionContext();
-      await worker.queue(batch, env, ctx);
-      const result = await getQueueResult(batch, ctx);
-      expect(result.explicitAcks).toEqual([`${queue}-1`]);
-      expect(result.retryMessages).toEqual([]);
-      expect(result.ackAll).toBe(false);
-      expect(result.retryBatch.retry).toBe(false);
-    }
-  });
-
   it("logs from the workerd consumer carry the message's requestId (issue #64)", async () => {
+    // Every stage handler does real work now (#67/#104/#106/#108), so the
+    // last stub is gone. Run the real dedupe handler with HYPERDRIVE
+    // unbound (never the dead-end socket — opening it crashes workerd):
+    // its missing-binding RetryableError is thrown before any I/O, and the
+    // resulting retry log must carry the message's propagated requestId.
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const batch = createMessageBatch("wr-dedupe", [
       { id: "trace-1", timestamp, attempts: 1, body: validSignalStage },
     ]);
     const ctx = createExecutionContext();
-    await worker.queue(batch, env, ctx);
+    await worker.queue(batch, { ...env, HYPERDRIVE: undefined }, ctx);
     const result = await getQueueResult(batch, ctx);
-    expect(result.explicitAcks).toEqual(["trace-1"]);
+    expect(result.retryMessages).toEqual([{ msgId: "trace-1" }]);
     const records = logSpy.mock.calls.map((call) =>
       JSON.parse(String(call[0])),
     );
-    const stubLine = records.find(
-      (record) => record.msg === "pipeline.stage.stub",
+    const retryLine = records.find(
+      (record) => record.msg === "pipeline.dispatch.retry",
     );
-    expect(stubLine).toMatchObject({
+    expect(retryLine).toMatchObject({
       worker: "pipeline",
       stage: "dedupe",
       requestId,

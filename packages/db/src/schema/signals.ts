@@ -32,6 +32,7 @@ import {
 } from "@wellregarded/core";
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   index,
   jsonb,
   numeric,
@@ -41,8 +42,13 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  vector,
 } from "drizzle-orm/pg-core";
 
+// Circular on purpose: signals points at its current version, versions point
+// back at their signal. ESM handles the cycle because drizzle FK references
+// are lazy callbacks (hence the `AnyPgColumn` annotation below).
+import { signalVersions } from "./dedupe.js";
 import { importRuns } from "./importRuns.js";
 import { patients } from "./pii.js";
 import { sourceKindEnum } from "./sourceKind.js";
@@ -129,6 +135,23 @@ export const signals = pgTable(
      */
     originalRating: numeric("original_rating", { precision: 2, scale: 1 }),
 
+    /**
+     * Current-content pointer (issue #106): null means the original content
+     * IS current; set when an edited re-import recorded a `signal_versions`
+     * row (the original columns above stay untouched — see module doc).
+     */
+    currentVersionId: uuid("current_version_id").references(
+      (): AnyPgColumn => signalVersions.id,
+    ),
+
+    /**
+     * bge-m3 embedding of the signal's text (Workers AI `@cf/baai/bge-m3`,
+     * Epic #9), written by the dedupe stage on first computation (#106) and
+     * reused by classify/coverage instead of re-embedding. Null until then,
+     * and always null for text-less signals.
+     */
+    embedding: vector("embedding", { dimensions: 1024 }),
+
     // State.
     /**
      * Position in the pipeline spine (Epic #6): normalize (#104) inserts
@@ -178,5 +201,11 @@ export const signals = pgTable(
     index("signals_import_run_id_idx")
       .on(table.importRunId)
       .where(sql`${table.importRunId} IS NOT NULL`),
+    // Fuzzy-duplicate candidate ANN (#106): cosine over signal embeddings,
+    // practice/window predicates post-filtered during the HNSW scan.
+    index("signals_embedding_hnsw_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops"),
+    ),
   ],
 );
