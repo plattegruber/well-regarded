@@ -84,6 +84,20 @@
     }
   ],
 
+  "durable_objects": {
+    "bindings": [
+      // Cross-script binding to the jobs worker's per-connection GBP sync
+      // lock (issue #123) — the manual "Sync now" endpoint calls the same
+      // DO entry point the cron uses. Local dev: wrangler's dev registry
+      // wires this when `wrangler dev` runs in workers/jobs alongside.
+      {
+        "name": "SYNC_LOCK",
+        "class_name": "SyncLock",
+        "script_name": "wr-jobs-local"
+      }
+    ]
+  },
+
   "env": {
     "preview": {
       "name": "wr-api-preview",
@@ -115,7 +129,16 @@
           "class_name": "CsvImport",
           "script_name": "wr-jobs-preview"
         }
-      ]
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "SYNC_LOCK",
+            "class_name": "SyncLock",
+            "script_name": "wr-jobs-preview"
+          }
+        ]
+      }
     },
     "prod": {
       "name": "wr-api-prod",
@@ -145,7 +168,16 @@
           "class_name": "CsvImport",
           "script_name": "wr-jobs-prod"
         }
-      ]
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "SYNC_LOCK",
+            "class_name": "SyncLock",
+            "script_name": "wr-jobs-prod"
+          }
+        ]
+      }
     }
   }
 }

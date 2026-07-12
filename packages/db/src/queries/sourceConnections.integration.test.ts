@@ -21,7 +21,11 @@ import { sourceConnections } from "../schema/sourceConnections.js";
 import {
   disconnectSourceConnection,
   getSourceConnection,
+  getSourceConnectionById,
+  listActiveSourceConnections,
   markSourceConnectionNeedsReauth,
+  patchSourceConnectionMetadata,
+  setSourceConnectionLastSyncAt,
   upsertSourceConnection,
 } from "./sourceConnections.js";
 
@@ -133,5 +137,96 @@ describe("source_connections (integration)", () => {
     // Unknown practice/kind combos are nulls, not errors.
     const p = await practice(t.db);
     expect(await disconnectSourceConnection(t.db, p.id, "google")).toBeNull();
+  });
+});
+
+describe("poller queries (issue #123, integration)", () => {
+  const t = setupTestDb();
+
+  it("getSourceConnectionById fetches by pk; null for unknown", async () => {
+    const row = await sourceConnection(t.db);
+    expect((await getSourceConnectionById(t.db, row.id))?.id).toBe(row.id);
+    expect(
+      await getSourceConnectionById(
+        t.db,
+        "7b1e64a0-0000-4000-8000-000000000000",
+      ),
+    ).toBeNull();
+  });
+
+  it("listActiveSourceConnections returns only active google rows, id-ordered", async () => {
+    const active1 = await sourceConnection(t.db);
+    const active2 = await sourceConnection(t.db);
+    const reauth = await sourceConnection(t.db, { status: "needs_reauth" });
+    const disconnected = await sourceConnection(t.db, {
+      status: "disconnected",
+      encryptedCredentials: null,
+    });
+
+    const listed = await listActiveSourceConnections(t.db, "google");
+    const ids = listed.map((row) => row.id);
+    expect(ids).toContain(active1.id);
+    expect(ids).toContain(active2.id);
+    expect(ids).not.toContain(reauth.id);
+    expect(ids).not.toContain(disconnected.id);
+    expect(ids).toEqual([...ids].sort());
+  });
+
+  it("the poller's syncCursors patch never disturbs the #121 keys in the same jsonb", async () => {
+    // The metadata object is shared: #121 owns googleLocations +
+    // locationMappings, #123 owns syncCursors — each writer patches only
+    // its own top-level key (patchSourceConnectionMetadata).
+    const row = await sourceConnection(t.db, {
+      metadata: {
+        googleLocations: [
+          { googleLocationName: "locations/1" },
+          { googleLocationName: "locations/2" },
+        ],
+        locationMappings: [
+          {
+            googleLocationName: "locations/1",
+            locationId: "5d4c3b2a-1908-4756-8493-a1b2c3d4e5f6",
+          },
+        ],
+      },
+    });
+
+    await patchSourceConnectionMetadata(t.db, row.id, {
+      syncCursors: { "locations/1": "2026-07-01T00:00:00.000Z" },
+    });
+    // Advance: the poller re-patches its own key with the updated map.
+    await patchSourceConnectionMetadata(t.db, row.id, {
+      syncCursors: {
+        "locations/1": "2026-07-03T00:00:00.000Z",
+        "locations/2": "2026-07-02T00:00:00.000Z",
+      },
+    });
+
+    const [updated] = await t.db
+      .select()
+      .from(sourceConnections)
+      .where(eq(sourceConnections.id, row.id));
+    const metadata = updated?.metadata as {
+      syncCursors: Record<string, string>;
+      googleLocations: unknown[];
+      locationMappings: unknown[];
+    };
+    expect(metadata.syncCursors).toEqual({
+      "locations/1": "2026-07-03T00:00:00.000Z",
+      "locations/2": "2026-07-02T00:00:00.000Z",
+    });
+    expect(metadata.googleLocations).toHaveLength(2);
+    expect(metadata.locationMappings).toHaveLength(1);
+  });
+
+  it("setSourceConnectionLastSyncAt stamps the poll time", async () => {
+    const row = await sourceConnection(t.db);
+    const at = new Date("2026-07-11T06:00:00.000Z");
+    await setSourceConnectionLastSyncAt(t.db, row.id, at);
+    const [updated] = await t.db
+      .select()
+      .from(sourceConnections)
+      .where(eq(sourceConnections.id, row.id));
+    expect(updated?.lastSyncAt?.toISOString()).toBe(at.toISOString());
   });
 });

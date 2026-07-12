@@ -41,6 +41,7 @@ import {
   withDatabase,
 } from "../../../packages/db/test/support.js";
 import { app } from "../src/app";
+import type { SyncLockNamespace, SyncLockRunResult } from "../src/bindings";
 import { signOauthState } from "../src/lib/oauthState";
 import { TEST_OAUTH_STATE_SECRET, type TestEnv, testEnv } from "./support/env";
 import { FakeKv } from "./support/fakeKv";
@@ -446,5 +447,123 @@ describe("disconnect (integration)", () => {
       "source_connection.disconnected",
       "source_connection.reauthorized",
     ]);
+  });
+});
+
+describe("manual sync now (integration)", () => {
+  /** A scriptable fake of the jobs worker's SyncLock namespace. */
+  function fakeSyncLock(result: SyncLockRunResult) {
+    const calls: Array<{ doName: string; input: unknown }> = [];
+    const namespace: SyncLockNamespace = {
+      idFromName: (name: string) => name,
+      get: (id: unknown) => ({
+        runSync: (input) => {
+          calls.push({ doName: String(id), input });
+          return Promise.resolve(result);
+        },
+      }),
+    };
+    return { namespace, calls };
+  }
+
+  it("invokes the connection's SyncLock with trigger=manual and relays the outcome", async () => {
+    const { p, token } = await ownerSession();
+    await app.request(await browseConnectFlow(token), authed(token), env());
+    const row = await connectionRow(p.id);
+    if (!row) throw new Error("expected a connection");
+
+    const lock = fakeSyncLock({
+      outcome: "completed",
+      importRunId: "5d4c3b2a-1908-4756-8493-a1b2c3d4e5f6",
+      stats: { pages_stored: 1 },
+    });
+    const res = await app.request(
+      "/api/integrations/google/sync",
+      { method: "POST", ...authed(token) },
+      env({ SYNC_LOCK: lock.namespace }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      outcome: "completed",
+      importRunId: "5d4c3b2a-1908-4756-8493-a1b2c3d4e5f6",
+    });
+
+    // The DO instance is derived from the connection id, and the trigger
+    // is manual — the same entry point the cron uses.
+    expect(lock.calls).toHaveLength(1);
+    expect(lock.calls[0]?.doName).toBe(row.id);
+    expect(lock.calls[0]?.input).toMatchObject({
+      connectionId: row.id,
+      trigger: "manual",
+    });
+  });
+
+  it("maps a held lock to 409 already_syncing", async () => {
+    const { token } = await ownerSession();
+    await app.request(await browseConnectFlow(token), authed(token), env());
+
+    const lock = fakeSyncLock({ outcome: "already_running", heldForMs: 1234 });
+    const res = await app.request(
+      "/api/integrations/google/sync",
+      { method: "POST", ...authed(token) },
+      env({ SYNC_LOCK: lock.namespace }),
+    );
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: "already_syncing",
+      heldForMs: 1234,
+    });
+  });
+
+  it("refuses to sync a needs_reauth connection without touching the DO", async () => {
+    const { p, token } = await ownerSession();
+    await app.request(await browseConnectFlow(token), authed(token), env());
+    const row = await connectionRow(p.id);
+    if (!row) throw new Error("expected a connection");
+    await markSourceConnectionNeedsReauth(t.db, row.id);
+
+    const lock = fakeSyncLock({ outcome: "completed" });
+    const res = await app.request(
+      "/api/integrations/google/sync",
+      { method: "POST", ...authed(token) },
+      env({ SYNC_LOCK: lock.namespace }),
+    );
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "needs_reauth" });
+    expect(lock.calls).toHaveLength(0);
+  });
+
+  it("404s without a connection, 503s without the binding, 502s on a failed run", async () => {
+    const { token } = await ownerSession();
+
+    const unconnected = await app.request(
+      "/api/integrations/google/sync",
+      { method: "POST", ...authed(token) },
+      env({ SYNC_LOCK: fakeSyncLock({ outcome: "completed" }).namespace }),
+    );
+    expect(unconnected.status).toBe(404);
+
+    await app.request(await browseConnectFlow(token), authed(token), env());
+
+    // No SYNC_LOCK binding (e.g. jobs dev session not running) → 503.
+    const unbound = await app.request(
+      "/api/integrations/google/sync",
+      { method: "POST", ...authed(token) },
+      env(),
+    );
+    expect(unbound.status).toBe(503);
+    expect(await unbound.json()).toMatchObject({ error: "sync_unavailable" });
+
+    // The DO reports the run itself failed → 502.
+    const failed = await app.request(
+      "/api/integrations/google/sync",
+      { method: "POST", ...authed(token) },
+      env({
+        SYNC_LOCK: fakeSyncLock({ outcome: "error", message: "boom" })
+          .namespace,
+      }),
+    );
+    expect(failed.status).toBe(502);
+    expect(await failed.json()).toEqual({ error: "sync_failed" });
   });
 });

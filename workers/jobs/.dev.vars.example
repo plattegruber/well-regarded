@@ -16,8 +16,13 @@ ENVIRONMENT=local
 PII_ENCRYPTION_KEYS={"1":"JB0/YtR2n0wh265yN8SRYBs45Lp0yt7sE2m+Ty6LOaE="}
 PII_HASH_KEY=JKTMICa0vU/Ori8626X0AqH4D+At4aJ3cPg5JQBKqwI=
 
-# Google Business Profile base URLs (Epic #7) — see workers/api/.dev.vars.example
-# for the full note. Point at the fake GBP server locally: `pnpm dev:fake-gbp`
-# (issue #130, port 8799). Real entries arrive with the polling work (#123).
-# GOOGLE_MYBUSINESS_V4_BASE_URL=http://localhost:8799
-# GOOGLE_BUSINESS_INFO_BASE_URL=http://localhost:8799
+# Google Business Profile (Epic #7) — the review poller (#123) refreshes
+# access tokens and fetches v4 reviews. Point everything at the fake GBP
+# server locally: `pnpm dev:fake-gbp` (issue #130, port 8799). The client
+# id/secret are placeholders — the fake ignores their values; real ones
+# arrive with the GCP OAuth client (ADR 0002 Appendix C) and must match the
+# api worker's (one OAuth client mints the refresh tokens both workers use).
+GOOGLE_CLIENT_ID=fake-local-client-id
+GOOGLE_CLIENT_SECRET=fake-local-client-secret
+GOOGLE_OAUTH_TOKEN_URL=http://localhost:8799/oauth/token
+GOOGLE_MYBUSINESS_V4_BASE_URL=http://localhost:8799

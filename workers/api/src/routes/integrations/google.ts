@@ -619,3 +619,76 @@ googleIntegrationRoutes.put("/mappings", async (c) => {
     })),
   });
 });
+
+/**
+ * Manual "Sync now" (issue #123 requirement 7, settings-card button):
+ * invokes the SAME `SyncLock` DO entry point the cron uses, with trigger
+ * `manual` — the per-connection lock naturally rejects it while a sync is
+ * already in flight (mapped to 409 "already syncing" for the UI).
+ *
+ * The response waits for the sync: an incremental poll is a handful of
+ * paced calls (seconds). A first-ever sync of a large multi-location
+ * practice can take longer — acceptable at M1; if it ever isn't, the DO
+ * can grow an alarm-based fire-and-forget start without changing this
+ * contract.
+ */
+googleIntegrationRoutes.post("/sync", async (c) => {
+  const actor = c.get("actor");
+  const connection = await getSourceConnection(
+    c.get("db"),
+    actor.practiceId,
+    "google",
+  );
+  if (!connection || connection.status === "disconnected") {
+    return c.json({ error: "not_found" as const }, 404);
+  }
+  if (connection.status === "needs_reauth") {
+    // Syncing a dead grant would just fail again — the card should show
+    // the Reconnect prompt instead.
+    return c.json({ error: "needs_reauth" as const }, 409);
+  }
+
+  const syncLock = c.env.SYNC_LOCK;
+  if (syncLock === undefined) {
+    // Misconfiguration (or a local dev session without the jobs worker):
+    // actionable, not a silent no-op.
+    return c.json(
+      {
+        error: "sync_unavailable" as const,
+        detail:
+          "SYNC_LOCK binding is missing — the jobs worker's Durable Object " +
+          "namespace is not bound (local dev: run the jobs worker dev " +
+          "session too; deployed: check wrangler.jsonc).",
+      },
+      503,
+    );
+  }
+
+  const result = await syncLock
+    .get(syncLock.idFromName(connection.id))
+    .runSync({
+      connectionId: connection.id,
+      trigger: "manual",
+      requestId: c.get("requestId"),
+    });
+
+  if (result.outcome === "already_running") {
+    return c.json(
+      {
+        error: "already_syncing" as const,
+        heldForMs: result.heldForMs,
+      },
+      409,
+    );
+  }
+  if (result.outcome === "error") {
+    // The DO already logged the details under this requestId.
+    return c.json({ error: "sync_failed" as const }, 502);
+  }
+  return c.json({
+    outcome: result.outcome,
+    importRunId: result.importRunId,
+    reason: result.reason,
+    stats: result.stats,
+  });
+});
