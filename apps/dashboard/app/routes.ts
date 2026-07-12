@@ -13,6 +13,8 @@ export default [
     index("routes/home.tsx"),
     route("today", "routes/today.tsx"),
     route("signals", "routes/signals.tsx"),
+    // Signal detail (#90): provenance, derivations, consent, related items.
+    route("signals/:signalId", "routes/signals.$signalId.tsx"),
     route("reviews", "routes/reviews.tsx"),
     route("recovery", "routes/recovery.tsx"),
     route("proof", "routes/proof.tsx"),

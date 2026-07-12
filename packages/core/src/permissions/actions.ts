@@ -11,6 +11,7 @@ export const ACTIONS = [
   "view_patient_identity",
   "view_private_feedback",
   "assign_recovery",
+  "resolve_duplicates",
   "draft_response",
   "approve_response",
   "publish_public",

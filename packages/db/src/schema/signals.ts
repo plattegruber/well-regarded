@@ -53,6 +53,7 @@ import { importRuns } from "./importRuns.js";
 import { patients } from "./pii.js";
 import { sourceKindEnum } from "./sourceKind.js";
 import { locations, practices, providers } from "./tenancy.js";
+import { tsvector } from "./tsvector.js";
 
 /**
  * A provider/location hint the normalize stage (#104) could not confidently
@@ -152,6 +153,18 @@ export const signals = pgTable(
      */
     embedding: vector("embedding", { dimensions: 1024 }),
 
+    /**
+     * Full-text index over `original_text` (issue #88): stored generated
+     * column, so the inbox's FTS branch can never drift from the text.
+     * Deliberately over the ORIGINAL text only — versions record edits, but
+     * search finds the words as first captured (the immutable record).
+     * Queried with `websearch_to_tsquery('english', ...)` by `listSignals`.
+     */
+    tsv: tsvector("tsv").generatedAlwaysAs(
+      (): ReturnType<typeof sql> =>
+        sql`to_tsvector('english', coalesce("original_text", ''))`,
+    ),
+
     // State.
     /**
      * Position in the pipeline spine (Epic #6): normalize (#104) inserts
@@ -207,5 +220,11 @@ export const signals = pgTable(
       "hnsw",
       table.embedding.op("vector_cosine_ops"),
     ),
+    // Inbox full-text search (#88). The FTS query is practice-scoped first;
+    // plain GIN + the practice filter is fine at M1 volume. Future hook (do
+    // not build now): a composite (practice_id, tsv) via btree_gin, or
+    // practice-level partitioning, once a single practice's corpus makes
+    // the post-filter hurt.
+    index("signals_tsv_gin_idx").using("gin", table.tsv),
   ],
 );

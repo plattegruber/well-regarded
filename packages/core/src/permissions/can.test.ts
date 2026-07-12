@@ -41,6 +41,15 @@ const EXPECTED: Record<Action, Record<StaffRole, PermissionCell>> = {
     multi_location_admin: "allow",
     external_partner: "deny",
   },
+  resolve_duplicates: {
+    owner: "allow",
+    office_manager: "allow",
+    front_desk: "scoped",
+    marketing: "deny",
+    provider: "deny",
+    multi_location_admin: "allow",
+    external_partner: "deny",
+  },
   draft_response: {
     owner: "allow",
     office_manager: "allow",

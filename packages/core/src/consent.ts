@@ -101,12 +101,7 @@ export function evaluateConsent<T extends ConsentRow>(
   channel: ConsentChannel,
   now: Date,
 ): ConsentDecision<T> {
-  let winning: T | undefined;
-  for (const row of rows) {
-    if (winning === undefined || row.consentVersion > winning.consentVersion) {
-      winning = row;
-    }
-  }
+  const winning = winningConsent(rows);
 
   if (winning === undefined) {
     return { publishable: false, reason: "no_consent" };
@@ -128,4 +123,106 @@ export function evaluateConsent<T extends ConsentRow>(
     return { publishable: false, reason: "expired", consent: winning };
   }
   return { publishable: true, reason: "ok", consent: winning };
+}
+
+/** The row with the highest `consent_version` — the complete current state. */
+function winningConsent<T extends ConsentRow>(
+  rows: readonly T[],
+): T | undefined {
+  let winning: T | undefined;
+  for (const row of rows) {
+    if (winning === undefined || row.consentVersion > winning.consentVersion) {
+      winning = row;
+    }
+  }
+  return winning;
+}
+
+/** Display labels for consent channels — sentence case, per the voice rules. */
+export const CONSENT_CHANNEL_LABELS: Record<ConsentChannel, string> = {
+  website: "Website",
+  gbp: "Google profile",
+  email: "Email",
+  in_office: "In office",
+};
+
+/** The channel-independent current consent state of one signal. */
+export type ConsentStateStatus = "none" | "granted" | "revoked" | "expired";
+
+/**
+ * What the consent panel (issue #90) and the inbox's rights column (issue
+ * #88) render. `summary` is one calm line — sentence case, no exclamation
+ * points — that states publishability strictly in terms of recorded
+ * consent, never a default-open state.
+ */
+export interface ConsentStateDescription<T extends ConsentRow = ConsentRow> {
+  /** True when the current grant is active on at least one channel. */
+  publishable: boolean;
+  status: ConsentStateStatus;
+  summary: string;
+  /** The winning (highest-version) consent row, when one exists. */
+  consent?: T;
+}
+
+/**
+ * Channel-independent counterpart of `evaluateConsent` (issue #90): the ONE
+ * interpretation of "what does this signal's recorded consent say", shared
+ * by the signal detail's consent panel, the inbox's rights column, and the
+ * proof surfaces (Epics #12/#13). Publication paths still gate per channel
+ * through `isPublishable` in `@wellregarded/db` — this is display logic,
+ * not the publication gate.
+ *
+ * Rules mirror `evaluateConsent`: only the highest-version row is
+ * consulted; no rows is the honest default ("No consent recorded — not
+ * publishable"); revoked and expired state their reason.
+ */
+export function describeConsentState<T extends ConsentRow>(
+  rows: readonly T[],
+  now: Date,
+): ConsentStateDescription<T> {
+  const winning = winningConsent(rows);
+
+  if (winning === undefined) {
+    return {
+      publishable: false,
+      status: "none",
+      summary: "No consent recorded — not publishable",
+    };
+  }
+  if (winning.revokedAt !== null) {
+    return {
+      publishable: false,
+      status: "revoked",
+      summary: "Consent revoked — not publishable",
+      consent: winning,
+    };
+  }
+  if (
+    winning.expiresAt !== null &&
+    winning.expiresAt.getTime() <= now.getTime()
+  ) {
+    return {
+      publishable: false,
+      status: "expired",
+      summary: "Consent expired — not publishable",
+      consent: winning,
+    };
+  }
+  if (winning.channels.length === 0) {
+    return {
+      publishable: false,
+      status: "granted",
+      summary: "No channels granted — not publishable",
+      consent: winning,
+    };
+  }
+  const channels = winning.channels
+    .map((channel) => CONSENT_CHANNEL_LABELS[channel])
+    .join(" + ");
+  return {
+    publishable: true,
+    status: "granted",
+    summary: `${channels} permission granted`,
+    consent: winning,
+  };
 }

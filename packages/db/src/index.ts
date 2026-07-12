@@ -36,7 +36,9 @@ export {
   insertSuspectedDuplicates,
   listSuspectedDuplicatesForPractice,
   type RecordSignalVersionInput,
+  type ResolveSuspectedDuplicateInput,
   recordSignalVersion,
+  resolveSuspectedDuplicate,
   type SignalVersion,
   type SignalWithCurrentContent,
   type SuspectedDuplicate,
@@ -99,4 +101,29 @@ export {
   type Signal,
   type SignalInsert,
 } from "./queries/signals.js";
+export {
+  decodeSignalsCursor,
+  type GetSignalDetailParams,
+  getSignalDetail,
+  type ListSignalsParams,
+  listSignalFilterOptions,
+  listSignals,
+  SIGNALS_PAGE_SIZE,
+  type SignalDetail,
+  type SignalDetailDuplicate,
+  type SignalDetailExcerpt,
+  type SignalFilterOptions,
+  type SignalListFilters,
+  type SignalListItem,
+  type SignalListJudgment,
+  type SignalListPage,
+  type SignalListPatient,
+  type SignalViewerPermissions,
+} from "./queries/signalsInbox.js";
+export {
+  getPracticeByClerkOrgId,
+  getStaffMemberByRole,
+  type Practice,
+  type StaffMember,
+} from "./queries/tenancy.js";
 export * as schema from "./schema/index.js";

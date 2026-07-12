@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   type ConsentChannel,
   type ConsentRow,
+  describeConsentState,
   evaluateConsent,
 } from "./consent";
 
@@ -134,5 +135,79 @@ describe("evaluateConsent", () => {
     for (const channel of channels) {
       expect(evaluateConsent([all], channel, NOW).publishable).toBe(true);
     }
+  });
+});
+
+describe("describeConsentState", () => {
+  it("states the honest default when no rows exist — never default-open", () => {
+    const state = describeConsentState([], NOW);
+    expect(state).toEqual({
+      publishable: false,
+      status: "none",
+      summary: "No consent recorded — not publishable",
+    });
+    expect(state.consent).toBeUndefined();
+  });
+
+  it("summarizes an active grant's channels, publishable", () => {
+    const granted = row({ channels: ["website"] });
+    const state = describeConsentState([granted], NOW);
+    expect(state.publishable).toBe(true);
+    expect(state.status).toBe("granted");
+    expect(state.summary).toBe("Website permission granted");
+    expect(state.consent).toBe(granted);
+  });
+
+  it("labels multiple channels in grant order", () => {
+    const granted = row({ channels: ["gbp", "in_office"] });
+    const state = describeConsentState([granted], NOW);
+    expect(state.summary).toBe("Google profile + In office permission granted");
+  });
+
+  it("reports revoked with its reason", () => {
+    const revoked = row({ revokedAt: new Date("2026-03-01T00:00:00Z") });
+    const state = describeConsentState([revoked], NOW);
+    expect(state).toMatchObject({
+      publishable: false,
+      status: "revoked",
+      summary: "Consent revoked — not publishable",
+    });
+    expect(state.consent).toBe(revoked);
+  });
+
+  it("reports expired with its reason", () => {
+    const expired = row({ expiresAt: new Date("2026-05-31T23:59:59Z") });
+    const state = describeConsentState([expired], NOW);
+    expect(state).toMatchObject({
+      publishable: false,
+      status: "expired",
+      summary: "Consent expired — not publishable",
+    });
+  });
+
+  it("a grant expiring in the future is still active", () => {
+    const state = describeConsentState(
+      [row({ expiresAt: new Date("2026-06-02T00:00:00Z") })],
+      NOW,
+    );
+    expect(state.publishable).toBe(true);
+    expect(state.status).toBe("granted");
+  });
+
+  it("only the highest version is consulted — a narrowing supersedes", () => {
+    const v1 = row({ channels: ["website", "gbp"], consentVersion: 1 });
+    const v2 = row({ channels: ["email"], consentVersion: 2 });
+    const state = describeConsentState([v1, v2], NOW);
+    expect(state.summary).toBe("Email permission granted");
+    expect(state.consent).toBe(v2);
+  });
+
+  it("an empty channels array is honest: granted but not publishable", () => {
+    const state = describeConsentState([row({ channels: [] })], NOW);
+    expect(state).toMatchObject({
+      publishable: false,
+      status: "granted",
+      summary: "No channels granted — not publishable",
+    });
   });
 });

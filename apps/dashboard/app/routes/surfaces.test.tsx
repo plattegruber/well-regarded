@@ -34,28 +34,20 @@ import Settings, {
   loader as settingsLoader,
   meta as settingsMeta,
 } from "./settings";
-import Signals, {
-  loader as signalsLoader,
-  meta as signalsMeta,
-} from "./signals";
 import Today, { loader as todayLoader, meta as todayMeta } from "./today";
 
 // biome-ignore lint/suspicious/noExplicitAny: route component/loader prop types are per-route; the table erases them on purpose
 type AnyComponent = (props: any) => React.ReactNode;
 
+// /signals graduated to a data-backed loader in #88 — its rendering is
+// covered by signals.route.test.tsx, not this static table.
 const EMPTY_STATE_ROUTES: Array<{
-  key: keyof typeof SURFACES;
+  key: Exclude<keyof typeof SURFACES, "signals" | "settings">;
   Component: AnyComponent;
   loader: () => unknown;
   meta: () => Array<{ title: string }>;
 }> = [
   { key: "today", Component: Today, loader: todayLoader, meta: todayMeta },
-  {
-    key: "signals",
-    Component: Signals,
-    loader: signalsLoader,
-    meta: signalsMeta,
-  },
   {
     key: "reviews",
     Component: Reviews,
@@ -129,7 +121,6 @@ describe.each(EMPTY_STATE_ROUTES)("$key route", ({
 
 describe("empty-state actions", () => {
   it.each([
-    { key: "signals", label: "Import feedback" },
     { key: "presence", label: "Connect Google" },
   ] as const)("$key renders '$label' disabled with a coming-soon tooltip", ({
     key,
@@ -146,7 +137,7 @@ describe("empty-state actions", () => {
 
   it("all other surfaces have no action", () => {
     for (const { key, Component, loader } of EMPTY_STATE_ROUTES) {
-      if (key === "signals" || key === "presence") {
+      if (key === "presence") {
         continue;
       }
       const html = renderToString(<Component loaderData={loader()} />);

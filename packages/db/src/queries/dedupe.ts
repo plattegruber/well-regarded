@@ -10,9 +10,10 @@
  * ANN query shaped for the HNSW index's happy path.
  */
 
+import type { Actor, SuspectedDuplicateResolution } from "@wellregarded/core";
 import { and, eq, sql } from "drizzle-orm";
 
-import type { Tx } from "../audit.js";
+import { audit, type Tx } from "../audit.js";
 import type { Db } from "../client.js";
 import { signalVersions, suspectedDuplicates } from "../schema/dedupe.js";
 import { importRuns } from "../schema/importRuns.js";
@@ -287,6 +288,62 @@ export async function listSuspectedDuplicatesForPractice(
       ),
     )
     .orderBy(suspectedDuplicates.createdAt);
+}
+
+export interface ResolveSuspectedDuplicateInput {
+  practiceId: string;
+  /** The `suspected_duplicates` row id. */
+  duplicateId: string;
+  resolution: SuspectedDuplicateResolution;
+  /** Who resolved it — audited in the same transaction. */
+  actor: Actor;
+}
+
+/**
+ * Resolve a pending suspected-duplicate link (issue #90): `same` →
+ * `confirmed`, `different` → `dismissed`; the status change and its
+ * audit row commit in one transaction. Only `pending_review` rows resolve —
+ * an already-resolved (or cross-practice, or unknown) id returns
+ * `undefined`, so double submits are harmless.
+ *
+ * Deliberately NOT a merge. The epic's hard rule is no silent merges: both
+ * signals stay fully visible and both raws are kept; `confirmed` records
+ * the human's verdict that they describe the same event. Canonical-choice /
+ * merge mechanics, if any, land with #93 on top of this status.
+ */
+export async function resolveSuspectedDuplicate(
+  db: Db,
+  input: ResolveSuspectedDuplicateInput,
+): Promise<SuspectedDuplicate | undefined> {
+  const status = input.resolution === "same" ? "confirmed" : "dismissed";
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(suspectedDuplicates)
+      .set({ status })
+      .where(
+        and(
+          eq(suspectedDuplicates.id, input.duplicateId),
+          eq(suspectedDuplicates.practiceId, input.practiceId),
+          eq(suspectedDuplicates.status, "pending_review"),
+        ),
+      )
+      .returning();
+    if (!row) return undefined;
+    await audit(tx, {
+      practiceId: input.practiceId,
+      actor: input.actor,
+      action: `suspected_duplicate.${status}`,
+      entityType: "suspected_duplicates",
+      entityId: row.id,
+      payload: {
+        resolution: input.resolution,
+        signalIdA: row.signalIdA,
+        signalIdB: row.signalIdB,
+        similarity: row.similarity,
+      },
+    });
+    return row;
+  });
 }
 
 /**

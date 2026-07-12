@@ -115,6 +115,19 @@ export function meetsUrgencyThreshold(
 export const DEFAULT_URGENCY_ROUTING_THRESHOLD: UrgencyLevel = "high";
 
 /**
+ * Inbox filter vocabularies (issue #88): the judged values plus
+ * `unclassified` — "no current derivation for this dimension", which the
+ * inbox filters on honestly rather than hiding.
+ */
+export const SENTIMENT_FILTERS = [...SENTIMENTS, "unclassified"] as const;
+
+export type SentimentFilter = (typeof SENTIMENT_FILTERS)[number];
+
+export const URGENCY_FILTERS = [...URGENCY_LEVELS, "unclassified"] as const;
+
+export type UrgencyFilter = (typeof URGENCY_FILTERS)[number];
+
+/**
  * If the practice replied publicly, how easy is the reply to get wrong?
  * `high` = any reply risks confirming a care relationship or disclosing
  * details; `low` = a generic thank-you is safe.
