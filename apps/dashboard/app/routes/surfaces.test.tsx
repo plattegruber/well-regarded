@@ -25,10 +25,6 @@ import Recovery, {
   loader as recoveryLoader,
   meta as recoveryMeta,
 } from "./recovery";
-import Reviews, {
-  loader as reviewsLoader,
-  meta as reviewsMeta,
-} from "./reviews";
 import Settings, {
   SETTINGS_SECTIONS,
   loader as settingsLoader,
@@ -39,21 +35,16 @@ import Today, { loader as todayLoader, meta as todayMeta } from "./today";
 // biome-ignore lint/suspicious/noExplicitAny: route component/loader prop types are per-route; the table erases them on purpose
 type AnyComponent = (props: any) => React.ReactNode;
 
-// /signals graduated to a data-backed loader in #88 — its rendering is
-// covered by signals.route.test.tsx, not this static table.
+// /signals graduated to a data-backed loader in #88, /reviews in #76 —
+// their rendering is covered by signals.route.test.tsx and
+// reviews.route.test.tsx, not this static table.
 const EMPTY_STATE_ROUTES: Array<{
-  key: Exclude<keyof typeof SURFACES, "signals" | "settings">;
+  key: Exclude<keyof typeof SURFACES, "signals" | "reviews" | "settings">;
   Component: AnyComponent;
   loader: () => unknown;
   meta: () => Array<{ title: string }>;
 }> = [
   { key: "today", Component: Today, loader: todayLoader, meta: todayMeta },
-  {
-    key: "reviews",
-    Component: Reviews,
-    loader: reviewsLoader,
-    meta: reviewsMeta,
-  },
   {
     key: "recovery",
     Component: Recovery,

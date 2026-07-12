@@ -119,6 +119,21 @@ export {
   signalHasProofExcerpts,
 } from "./queries/proofExcerpts.js";
 export {
+  countReviewInboxStatuses,
+  decodeReviewsCursor,
+  getReviewDetail,
+  type ListReviewInboxParams,
+  listReviewInbox,
+  REVIEWS_PAGE_SIZE,
+  type ReviewDetail,
+  type ReviewInboxCounts,
+  type ReviewInboxFilters,
+  type ReviewInboxItem,
+  type ReviewInboxPage,
+  type ReviewInboxSort,
+  type ReviewResponseThreadEntry,
+} from "./queries/reviewsInbox.js";
+export {
   getSignal,
   insertNormalizedSignals,
   type NormalizedSignalOutcome,

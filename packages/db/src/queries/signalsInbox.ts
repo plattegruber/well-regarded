@@ -190,8 +190,9 @@ export function decodeSignalsCursor(
 
 /** DISTINCT ON current-derivation subquery for one dimension (see
  * `../queries/derivations.js` for the manual-outranks-inferred rule the
- * ordering encodes). */
-function currentDimensionSubquery(
+ * ordering encodes). Exported for the review inbox (`reviewsInbox.ts`),
+ * which resolves current sentiment/response-risk the same way. */
+export function currentDimensionSubquery(
   db: Db | Tx,
   practiceId: string,
   dimension: DerivationDimension,
