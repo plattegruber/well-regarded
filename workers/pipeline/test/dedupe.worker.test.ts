@@ -26,7 +26,11 @@ import type {
   SignalWithCurrentContent,
   SuspectedDuplicateLink,
 } from "@wellregarded/db";
-import { putRawArtifact } from "@wellregarded/sources";
+import {
+  buildCsvImportBatchArtifact,
+  csvRowSourceId,
+  putRawArtifact,
+} from "@wellregarded/sources";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleQueueBatch, type StageHandlers } from "../src/dispatch";
@@ -60,8 +64,8 @@ function signalRecord(
     patientId: null,
     locationId: null,
     providerId: null,
-    sourceKind: "manual",
-    sourceId: "entry-1",
+    sourceKind: "csv_import",
+    sourceId: "csv-row-1-source-id",
     sourceUrl: null,
     occurredAt: new Date("2026-03-02T14:30:00Z"),
     rawArtifactKey: null,
@@ -152,11 +156,31 @@ async function deliver(
 
 const baseMessage = { signalId, practiceId, importRunId, requestId };
 
-async function storeArtifact(entries: object[]): Promise<string> {
+// One-row CSV batch envelope, exactly as the import Workflow (#135)
+// stores it — same draft + row number means the same deterministic
+// sourceId, which is what makes a re-stored batch a re-import of a KNOWN
+// source identity (the exact path's subject).
+const DRAFT_ID = "5c85c1f8-7e8d-4d65-8ea1-0b6c3a5d9f45";
+
+async function storeCsvBatch(text: string, rating: string): Promise<string> {
   const { key } = await putRawArtifact(env.RAW_ARTIFACTS, {
     practiceId,
-    sourceKind: "manual",
-    content: JSON.stringify({ entries }),
+    sourceKind: "csv_import",
+    content: JSON.stringify(
+      buildCsvImportBatchArtifact({
+        practiceId,
+        draftId: DRAFT_ID,
+        batchIndex: 0,
+        firstRowNumber: 1,
+        headers: ["Date", "Review", "Rating"],
+        mapping: {
+          occurredAt: { column: "Date", dateFormat: "ISO" },
+          text: { column: "Review" },
+          rating: { column: "Rating", ratingScale: 5 },
+        },
+        rows: [["2026-03-02T14:30:00Z", text, rating]],
+      }),
+    ),
   });
   return key;
 }
@@ -168,17 +192,10 @@ beforeEach(() => {
 });
 
 describe("dedupe exact path (reason: conflict_reimport)", () => {
-  const entry = {
-    id: "entry-1",
-    when: "2026-03-02T14:30:00Z",
-    text: reviewText,
-    rating: 5,
-  };
-
   it("unchanged re-import → skipped, acked, nothing downstream", async () => {
-    const key = await storeArtifact([entry]);
+    const key = await storeCsvBatch(reviewText, "5");
     const { store, calls } = makeStore({
-      record: signalRecord(),
+      record: signalRecord({ sourceId: await csvRowSourceId(DRAFT_ID, 1) }),
       artifactKeys: [key],
     });
     const classifySend = vi.fn().mockResolvedValue(undefined);
@@ -200,9 +217,9 @@ describe("dedupe exact path (reason: conflict_reimport)", () => {
 
   it("edited re-import → version recorded with re-embedded content, classify re-enqueued, merged path", async () => {
     const editedText = `${reviewText} EDIT: still thrilled a month later.`;
-    const key = await storeArtifact([{ ...entry, text: editedText }]);
+    const key = await storeCsvBatch(editedText, "5");
     const { store, calls } = makeStore({
-      record: signalRecord(),
+      record: signalRecord({ sourceId: await csvRowSourceId(DRAFT_ID, 1) }),
       artifactKeys: [key],
     });
     const classifySend = vi.fn().mockResolvedValue(undefined);
@@ -236,9 +253,9 @@ describe("dedupe exact path (reason: conflict_reimport)", () => {
   });
 
   it("a rating-only edit (same text, changed rating) is also a new version", async () => {
-    const key = await storeArtifact([{ ...entry, rating: 4 }]);
+    const key = await storeCsvBatch(reviewText, "4");
     const { store, calls } = makeStore({
-      record: signalRecord(),
+      record: signalRecord({ sourceId: await csvRowSourceId(DRAFT_ID, 1) }),
       artifactKeys: [key],
     });
     const classifySend = vi.fn().mockResolvedValue(undefined);
@@ -251,7 +268,7 @@ describe("dedupe exact path (reason: conflict_reimport)", () => {
 
     expect(calls.edited).toHaveLength(1);
     expect(calls.edited[0]?.incoming.rating).toBe("4.0");
-    // The manual adapter carries no source update time — version rows get
+    // The CSV adapter carries no source update time — version rows get
     // null until a source reports one.
     expect(calls.edited[0]?.incoming.sourceUpdatedAt).toBeNull();
     expect(classifySend).toHaveBeenCalledOnce();
@@ -314,9 +331,10 @@ describe("dedupe exact path (reason: conflict_reimport)", () => {
   });
 
   it("no matching entry in the run's artifacts → DLQ forward (contract violation), acked", async () => {
-    const key = await storeArtifact([{ ...entry, id: "someone-else" }]);
+    const key = await storeCsvBatch(reviewText, "5");
     const { store } = makeStore({
-      record: signalRecord(),
+      // A sourceId no row of the stored batch can produce.
+      record: signalRecord({ sourceId: await csvRowSourceId(DRAFT_ID, 99) }),
       artifactKeys: [key],
     });
     const dlqSend = vi.fn().mockResolvedValue(undefined);
@@ -410,8 +428,8 @@ describe("dedupe fuzzy path (new signals)", () => {
           id: otherSignalId,
           similarity: 0.99,
           rating: "5.0",
-          sourceKind: "manual",
-          sourceId: "entry-1",
+          sourceKind: "csv_import",
+          sourceId: "csv-row-1-source-id",
         },
       ],
     });

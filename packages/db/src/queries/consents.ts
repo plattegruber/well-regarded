@@ -18,6 +18,7 @@ import {
 } from "@wellregarded/core";
 import { eq, sql } from "drizzle-orm";
 
+import type { Tx } from "../audit.js";
 import type { Db } from "../client.js";
 import { consents } from "../schema/consents.js";
 
@@ -67,9 +68,13 @@ export interface GrantConsentInput {
  * the same signal surface as a unique violation on
  * `(signal_id, consent_version)` (Postgres error 23505): retryable, never
  * silently mis-versioned.
+ *
+ * Accepts a transaction handle too (issue #138: the normalize stage's
+ * consent seam grants inside its per-artifact transaction); the inner
+ * `transaction` then runs as a savepoint within the caller's.
  */
 export async function grantConsent(
-  db: Db,
+  db: Db | Tx,
   input: GrantConsentInput,
 ): Promise<Consent> {
   return db.transaction(async (tx) => {

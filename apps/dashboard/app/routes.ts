@@ -13,6 +13,10 @@ export default [
     index("routes/home.tsx"),
     route("today", "routes/today.tsx"),
     route("signals", "routes/signals.tsx"),
+    // Manual single-signal entry (#138). Registered before the dynamic
+    // detail route for readability; React Router ranks the static segment
+    // higher regardless.
+    route("signals/new", "routes/signals.new.tsx"),
     // Signal detail (#90): provenance, derivations, consent, related items.
     route("signals/:signalId", "routes/signals.$signalId.tsx"),
     route("reviews", "routes/reviews.tsx"),
@@ -28,9 +32,19 @@ export default [
     // mutation copies. Not nested under settings.tsx: the section list is
     // an index of pages, not a layout.
     route("settings/practice", "routes/settings.practice.tsx"),
-    // CSV import entry point (#133): upload + hand-off to the mapping
-    // wizard (#134). Same non-nested placement rationale as above.
+    // Imports list (#137): the practice's import runs, with the "New
+    // import" entry point. Same non-nested placement rationale as above.
     route("settings/imports", "routes/settings.imports.tsx"),
+    // CSV import entry point (#133): upload + hand-off to the mapping
+    // wizard (#134). Static segment, so it outranks :draftId below.
+    route("settings/imports/new", "routes/settings.imports.new.tsx"),
+    // Import report (#137): counts, error table, failures CSV, duplicates.
+    // Under the static "runs" segment so run ids can never collide with
+    // the wizard's :draftId at the same path position.
+    route(
+      "settings/imports/runs/:importRunId",
+      "routes/settings.imports.runs.$importRunId.tsx",
+    ),
     // Column-mapping wizard (#134): one nested route per step so the
     // browser back button walks the steps, and an index that resumes from
     // the draft's saved wizard_step.

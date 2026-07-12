@@ -20,6 +20,7 @@ import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 
 import type { Tx } from "../audit.js";
 import type { Db } from "../client.js";
+import { importDrafts } from "../schema/importDrafts.js";
 import { importRuns } from "../schema/importRuns.js";
 
 /** An `import_runs` row. */
@@ -249,6 +250,41 @@ export async function getImportRunSummary(
     errorCount: run.failed,
     errorSamples: run.errorSamples.slice(0, opts?.errorSampleLimit ?? 10),
   };
+}
+
+/** What the report header shows about a CSV run's originating draft. */
+export interface ImportRunDraftInfo {
+  draftId: string;
+  originalFilename: string;
+  byteSize: number;
+}
+
+/**
+ * The import draft a run was started from (`import_drafts.import_run_id`,
+ * linked by the CSV Workflow's validate step) — the report page's source
+ * filename. `undefined` for runs without a draft (manual entry, GBP
+ * polls). Practice-scoped like every read here.
+ */
+export async function getImportRunDraftInfo(
+  db: Db | Tx,
+  practiceId: string,
+  importRunId: string,
+): Promise<ImportRunDraftInfo | undefined> {
+  const [row] = await db
+    .select({
+      draftId: importDrafts.id,
+      originalFilename: importDrafts.originalFilename,
+      byteSize: importDrafts.byteSize,
+    })
+    .from(importDrafts)
+    .where(
+      and(
+        eq(importDrafts.practiceId, practiceId),
+        eq(importDrafts.importRunId, importRunId),
+      ),
+    )
+    .limit(1);
+  return row;
 }
 
 export interface ListImportRunsOptions {

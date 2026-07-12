@@ -23,6 +23,7 @@ import { withDb } from "./middleware/withDb";
 import { apiKeyRoutes } from "./routes/apiKeys";
 import { importRoutes } from "./routes/imports";
 import { googleIntegrationRoutes } from "./routes/integrations/google";
+import { signalRoutes } from "./routes/signals";
 import { clerkWebhook } from "./routes/webhooks/clerk";
 
 export const app = new Hono<AppEnv>();
@@ -90,6 +91,9 @@ staff.route("/imports", importRoutes);
 
 /** Google Business Profile OAuth (issue #118): gated via manage_settings. */
 staff.route("/integrations/google", googleIntegrationRoutes);
+
+/** Manual signal entry (issue #138): permission checks in the handler. */
+staff.route("/signals", signalRoutes);
 
 app.route("/api", staff);
 

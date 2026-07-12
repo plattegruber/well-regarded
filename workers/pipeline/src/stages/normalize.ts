@@ -46,8 +46,10 @@ import {
   RetryableError,
 } from "@wellregarded/core";
 import {
+  audit,
   createDb,
   type Db,
+  grantConsent,
   incrementImportRunCounts,
   insertNormalizedSignals,
   matchOrCreatePatientByContact,
@@ -212,14 +214,19 @@ export function createNormalizeStore(
       db.transaction(async (tx) => {
         const entities = await loadPracticeEntities(tx, message.practiceId);
 
-        const rows: SignalInsert[] = [];
+        const pairs: Array<{ signal: NormalizedSignal; row: SignalInsert }> =
+          [];
         for (const signal of signals) {
-          rows.push(
-            await buildSignalRow(tx, message, signal, entities, keyring),
-          );
+          pairs.push({
+            signal,
+            row: await buildSignalRow(tx, message, signal, entities, keyring),
+          });
         }
 
-        const outcomes = await insertNormalizedSignals(tx, rows);
+        const outcomes = await insertNormalizedSignals(
+          tx,
+          pairs.map((pair) => pair.row),
+        );
         const created = outcomes.filter((o) => o.outcome === "created").length;
         const conflicts = outcomes.filter(
           (o) => o.outcome === "conflict",
@@ -235,9 +242,87 @@ export function createNormalizeStore(
           conflicts > 0 ? { normalize_conflicts: conflicts } : undefined,
         );
 
+        await recordAttestedConsents(tx, message, pairs, outcomes);
+
         return outcomes;
       }),
   };
+}
+
+/**
+ * The consent seam (issue #138, Epic #8): a signal that arrived with a
+ * `practice_attested` consent hint AND its attestation specifics
+ * (`consentDetail`: channels, note, attester) gets a real `consents` row —
+ * source `practice_attested` — in the same transaction as its insert, plus
+ * the attestation's own audit entry.
+ *
+ * Deliberate boundaries:
+ * - CREATED rows only. A conflict means the signal already exists and its
+ *   consent (if any) was recorded when it was first created — re-granting
+ *   on redelivery would stack duplicate versions.
+ * - `consentDetail` is required, not just the hint: a bare hint (e.g. the
+ *   CSV wizard's bulk attestation, whose channels were never captured)
+ *   records nothing here — channels cannot be invented downstream. The
+ *   CSV bulk-consent write is a separate Epic #12 seam.
+ * - `imported_unknown` writes NOTHING: the absence of a `consents` row IS
+ *   the state (the epic's structural rule).
+ * - Attribution is pinned `anonymous` — the entry form does not ask how
+ *   the patient may be identified, and the most conservative reading of an
+ *   attestation is "the words may be used, the identity may not".
+ *   Widening attribution is Epic #12's re-permission territory.
+ */
+async function recordAttestedConsents(
+  tx: Tx,
+  message: IngestMessage,
+  pairs: ReadonlyArray<{ signal: NormalizedSignal; row: SignalInsert }>,
+  outcomes: readonly NormalizedSignalOutcome[],
+): Promise<void> {
+  const bySourceId = new Map(
+    pairs
+      .filter((pair) => pair.signal.sourceId !== null)
+      .map((pair) => [pair.signal.sourceId as string, pair]),
+  );
+  for (const outcome of outcomes) {
+    if (outcome.outcome !== "created" || outcome.sourceId === null) continue;
+    const pair = bySourceId.get(outcome.sourceId);
+    if (
+      pair === undefined ||
+      pair.signal.consentHint !== "practice_attested" ||
+      pair.signal.consentDetail === undefined
+    ) {
+      continue;
+    }
+    const detail = pair.signal.consentDetail;
+    const consent = await grantConsent(tx, {
+      practiceId: message.practiceId,
+      signalId: outcome.signalId,
+      patientId: pair.row.patientId ?? null,
+      channels: detail.channels,
+      attribution: "anonymous",
+      grantedAt: new Date(detail.grantedAt),
+      source: "practice_attested",
+    });
+    // The attestation's own audit entry (issue #138 requirement 5): the
+    // actor is the staff member who attested; the note (where the
+    // permission lives) rides the payload — `consents` has no note column.
+    await audit(tx, {
+      practiceId: message.practiceId,
+      actor:
+        detail.grantedBy !== undefined
+          ? { type: "staff", id: detail.grantedBy }
+          : { type: "system", id: "pipeline:normalize" },
+      action: "consent.granted",
+      entityType: "consents",
+      entityId: consent.id,
+      payload: {
+        signalId: outcome.signalId,
+        importRunId: message.importRunId,
+        source: "practice_attested",
+        channels: detail.channels,
+        note: detail.note,
+      },
+    });
+  }
 }
 
 interface PracticeEntities {

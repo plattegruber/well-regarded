@@ -1,213 +1,185 @@
-// Settings → Imports → New import (#133): the deliberately minimal entry
-// point of the CSV import journey — pick a file, upload with progress,
-// hand the draft id to the mapping wizard (#134) at
-// /settings/imports/:draftId/map.
+// Settings → Imports (#137): the practice's import runs — date, source,
+// trigger, status, counts — newest first, polling while anything is
+// running, each row linking to the report page. The "New import" button
+// (#133's upload screen, now at /settings/imports/new) lives here.
 //
-// The upload deliberately does NOT go through a React Router action: the
-// file goes browser → API worker as a raw `text/csv` body (`POST
-// /api/imports/csv`), which streams cleanly and keeps the 50MB payload
-// out of the dashboard worker entirely (issue #133 implementation note).
-// XHR rather than fetch for one reason only: upload progress events.
-//
-// TODO(auth): requireAuth — Epic #4 (#59). Until Clerk wiring lands in the
-// dashboard, the API call authenticates only in local dev setups where a
-// session cookie is present; the screen's file-picker/progress/hand-off
-// loop is the deliverable here, matching the stubbed practice-store state
-// of the other settings pages.
-import { CSV_IMPORT_MAX_BYTES } from "@wellregarded/core";
-import { useRef, useState } from "react";
-import { Link } from "react-router";
+// TODO(#59): auth flows through requirePracticeContext (the demo-practice
+// seam) until Epic #4 wires Clerk.
+import { can, type ImportRunStatus } from "@wellregarded/core";
+import { type ImportRun, listImportRuns } from "@wellregarded/db";
+import { data, Link } from "react-router";
 
-import { PageHeader } from "~/components/shell/page-header";
-import { Button } from "~/components/ui/button";
-import { Card } from "~/components/ui/card";
+import {
+  isImportRunStale,
+  RunStatusBadge,
+} from "~/components/imports/run-status";
+import { useImportRunPolling } from "~/components/imports/use-run-polling";
+import { Overline, PageHeader } from "~/components/shell/page-header";
+import { formatAge, SOURCE_KIND_LABELS } from "~/components/signals/labels";
+import { withRequestDb } from "~/lib/db.server";
+import { requirePracticeContext } from "~/lib/practice-context.server";
 import type { Route } from "./+types/settings.imports";
 
 export function meta() {
   return [{ title: "Imports · Well Regarded" }];
 }
 
-/**
- * The env slice this page needs, structural on purpose (same pattern as
- * FlashEnv in flash.server.ts): `API_URL` is set per environment in
- * wrangler.jsonc; local dev falls back to the api worker's fixed port.
- */
-export interface ImportsEnv {
-  API_URL?: string;
+const TRIGGER_LABELS: Record<ImportRun["trigger"], string> = {
+  manual: "Manual",
+  cron: "Scheduled",
+  webhook: "Webhook",
+};
+
+/** Row view-model: display-ready strings only; dates format server-side. */
+export interface ImportRunRow {
+  id: string;
+  startedAgo: string;
+  sourceLabel: string;
+  triggerLabel: string;
+  status: ImportRunStatus;
+  stale: boolean;
+  countsSummary: string;
+  failed: number;
 }
 
-export async function loader({ context }: Route.LoaderArgs) {
-  const env = context.cloudflare.env as ImportsEnv;
-  return { apiUrl: env.API_URL ?? "http://localhost:8787" };
+function countsSummary(run: ImportRun): string {
+  const parts = [
+    `${run.created} created`,
+    `${run.merged} merged`,
+    `${run.skipped} skipped`,
+  ];
+  if (run.failed > 0) parts.push(`${run.failed} failed`);
+  return parts.join(" · ");
 }
 
-type UploadState =
-  | { phase: "idle" }
-  | { phase: "uploading"; percent: number }
-  | {
-      phase: "done";
-      importDraftId: string;
-      headers: string[];
-      rowsPreviewed: number;
+function toRow(run: ImportRun, now: Date): ImportRunRow {
+  return {
+    id: run.id,
+    startedAgo: formatAge(run.startedAt, now),
+    sourceLabel: SOURCE_KIND_LABELS[run.sourceKind],
+    triggerLabel: TRIGGER_LABELS[run.trigger],
+    status: run.status,
+    stale: isImportRunStale(run.status, run.startedAt, now),
+    countsSummary: countsSummary(run),
+    failed: run.failed,
+  };
+}
+
+export async function loader({ request, context }: Route.LoaderArgs) {
+  const cursor = new URL(request.url).searchParams.get("cursor");
+  return withRequestDb(context, async (db) => {
+    const ctx = await requirePracticeContext(db);
+    if (!can(ctx.actor, "manage_settings", { practiceId: ctx.practiceId })) {
+      throw data(null, { status: 403 });
     }
-  | { phase: "error"; message: string };
-
-/** Upload via XHR (for progress events) and resolve with the response. */
-function uploadCsv(
-  apiUrl: string,
-  file: File,
-  onProgress: (percent: number) => void,
-): Promise<{ status: number; body: Record<string, unknown> }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const url = `${apiUrl}/api/imports/csv?filename=${encodeURIComponent(file.name)}`;
-    xhr.open("POST", url);
-    xhr.setRequestHeader("Content-Type", "text/csv");
-    // Same-site session cookie (__session) authenticates the staff call.
-    xhr.withCredentials = true;
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        onProgress(Math.round((event.loaded / event.total) * 100));
-      }
+    const page = await listImportRuns(db, ctx.practiceId, {
+      ...(cursor !== null ? { cursor } : {}),
+    });
+    const now = new Date();
+    return {
+      rows: page.runs.map((run) => toRow(run, now)),
+      nextCursor: page.nextCursor ?? null,
+      paginated: cursor !== null,
+      anyRunning: page.runs.some(
+        (run) =>
+          run.status === "running" &&
+          !isImportRunStale(run.status, run.startedAt, now),
+      ),
     };
-    xhr.onload = () => {
-      try {
-        resolve({
-          status: xhr.status,
-          body: JSON.parse(xhr.responseText) as Record<string, unknown>,
-        });
-      } catch {
-        resolve({ status: xhr.status, body: {} });
-      }
-    };
-    xhr.onerror = () => reject(new Error("network error"));
-    xhr.send(file);
   });
 }
 
+function Row({ row }: { row: ImportRunRow }) {
+  return (
+    <Link
+      to={`/settings/imports/runs/${row.id}`}
+      data-testid="import-run-row"
+      className="grid grid-cols-[90px_1fr] items-baseline gap-x-4 gap-y-1.5 border-t border-hairline py-3.5 text-inherit no-underline hover:bg-gray-50 md:grid-cols-[90px_140px_110px_1fr_max-content]"
+    >
+      <span className="font-mono text-label text-gray-500">
+        {row.startedAgo}
+      </span>
+      <span className="text-small font-semibold text-ink-900">
+        {row.sourceLabel}
+      </span>
+      <span className="font-mono text-label text-gray-500">
+        {row.triggerLabel}
+      </span>
+      <span className="text-small text-gray-600">{row.countsSummary}</span>
+      <span className="justify-self-start md:justify-self-end">
+        <RunStatusBadge status={row.status} stale={row.stale} />
+      </span>
+    </Link>
+  );
+}
+
 export default function Imports({ loaderData }: Route.ComponentProps) {
-  const { apiUrl } = loaderData;
-  const fileInput = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [state, setState] = useState<UploadState>({ phase: "idle" });
-
-  async function handleUpload() {
-    if (!file) return;
-    if (file.size > CSV_IMPORT_MAX_BYTES) {
-      setState({
-        phase: "error",
-        message: "CSV uploads are capped at 50MB. Split the export and retry.",
-      });
-      return;
-    }
-    setState({ phase: "uploading", percent: 0 });
-    try {
-      const { status, body } = await uploadCsv(apiUrl, file, (percent) =>
-        setState({ phase: "uploading", percent }),
-      );
-      if (status === 201 && typeof body.importDraftId === "string") {
-        setState({
-          phase: "done",
-          importDraftId: body.importDraftId,
-          headers: (body.headers as string[]) ?? [],
-          rowsPreviewed: Array.isArray(body.previewRows)
-            ? body.previewRows.length
-            : 0,
-        });
-      } else {
-        setState({
-          phase: "error",
-          message:
-            typeof body.message === "string"
-              ? body.message
-              : "Upload failed. Check the file and try again.",
-        });
-      }
-    } catch {
-      setState({
-        phase: "error",
-        message: "Couldn't reach the server. Check your connection and retry.",
-      });
-    }
-  }
-
-  const uploading = state.phase === "uploading";
+  const { rows, nextCursor, paginated, anyRunning } = loaderData;
+  useImportRunPolling(anyRunning);
 
   return (
     <>
       <PageHeader
         overline="Settings · imports"
-        title="New import"
-        description="Bring past reviews and testimonials in from another system's CSV export."
+        title="Imports"
+        description="Every import into this practice — what came in, what was skipped, and what needs fixing."
       />
-      <div className="flex max-w-130 flex-col gap-3.5">
-        <Card title="Upload a CSV">
-          <p className="m-0 mb-3.5 text-small text-gray-600">
-            Export as CSV (UTF-8) from your old system — up to 50MB. You'll
-            match its columns to Well Regarded fields in the next step.
-          </p>
-          <div className="flex items-center gap-3">
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".csv,text/csv"
-              className="text-small text-ink-900 file:mr-3 file:cursor-pointer file:border file:border-ink-900 file:bg-surface-card file:px-3 file:py-2 file:font-mono file:text-label file:font-semibold file:uppercase file:tracking-label"
-              onChange={(event) => {
-                setFile(event.target.files?.[0] ?? null);
-                setState({ phase: "idle" });
-              }}
-              disabled={uploading}
-            />
-            <Button
-              onClick={handleUpload}
-              disabled={file === null || uploading}
-            >
-              {uploading ? "Uploading…" : "Upload"}
-            </Button>
-          </div>
-          {state.phase === "uploading" && (
-            <div className="mt-3.5">
-              <div className="h-1.5 w-full bg-gray-100">
-                <div
-                  className="h-1.5 bg-ink-900 transition-[width] duration-150 ease-out"
-                  style={{ width: `${state.percent}%` }}
-                />
-              </div>
-              <p className="m-0 mt-1.5 font-mono text-2xs uppercase tracking-label text-gray-500">
-                {state.percent}%
-              </p>
-            </div>
-          )}
-          {state.phase === "error" && (
-            <p className="m-0 mt-3.5 text-small text-red-700" role="alert">
-              {state.message}
-            </p>
-          )}
-        </Card>
-        {state.phase === "done" && (
-          <Card title="Uploaded" sunken>
-            <p className="m-0 mb-3.5 text-small text-gray-600">
-              Found {state.headers.length} columns
-              {state.rowsPreviewed > 0
-                ? ` and previewed ${state.rowsPreviewed} rows`
-                : ""}
-              . Next, match the file's columns to Well Regarded fields — your
-              progress saves at each step.
-            </p>
-            <Link
-              to={`/settings/imports/${state.importDraftId}/map`}
-              className="inline-flex items-center border border-ink-900 bg-ink-900 px-4.5 py-3 font-mono text-xs font-semibold uppercase leading-none tracking-label text-on-dark no-underline hover:bg-ink-700"
-            >
-              Map columns
-            </Link>
-          </Card>
-        )}
-        <p className="m-0 text-small text-gray-500">
-          <Link to="/settings" className="text-ink-900 underline">
-            Back to settings
-          </Link>
-        </p>
+      <div className="mb-5 flex items-center gap-3">
+        <Link
+          to="/settings/imports/new"
+          className="inline-flex items-center border border-ink-900 bg-ink-900 px-4.5 py-3 font-mono text-xs font-semibold uppercase leading-none tracking-label text-on-dark no-underline hover:bg-ink-700"
+        >
+          New import
+        </Link>
+        <Link to="/settings" className="text-small text-ink-900 underline">
+          Back to settings
+        </Link>
       </div>
+      {rows.length === 0 && !paginated ? (
+        <div
+          data-testid="imports-empty"
+          className="flex flex-col items-center border border-hairline bg-surface-card px-8 py-16 text-center"
+        >
+          <h2 className="m-0 text-title font-semibold text-ink-900">
+            Nothing imported yet
+          </h2>
+          <p className="mx-auto mt-2.5 mb-0 max-w-130 text-small text-gray-600">
+            Bring past reviews and testimonials in from another system's CSV
+            export — every import gets a report of what was created, merged, and
+            skipped.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col">
+          <div className="hidden grid-cols-[90px_140px_110px_1fr_max-content] gap-4 pb-2.5 md:grid">
+            <Overline>Started</Overline>
+            <Overline>Source</Overline>
+            <Overline>Trigger</Overline>
+            <Overline>Result</Overline>
+            <Overline>Status</Overline>
+          </div>
+          {rows.map((row) => (
+            <Row key={row.id} row={row} />
+          ))}
+        </div>
+      )}
+      {(nextCursor || paginated) && (
+        <div className="mt-5 flex items-center gap-4 border-t border-hairline pt-4 font-mono text-label font-medium uppercase tracking-label">
+          {paginated && (
+            <Link to="/settings/imports" className="text-link">
+              Back to latest
+            </Link>
+          )}
+          {nextCursor && (
+            <Link
+              to={`/settings/imports?cursor=${encodeURIComponent(nextCursor)}`}
+              className="text-link"
+            >
+              Older imports
+            </Link>
+          )}
+        </div>
+      )}
     </>
   );
 }

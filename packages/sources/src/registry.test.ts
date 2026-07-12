@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { fixtureAdapter } from "./contract/fixtureAdapter.js";
 import type { SourceAdapter } from "./contract/sourceAdapter.js";
 import { csvImportAdapter } from "./csv/adapter.js";
 import { googleReviewsAdapter } from "./google/adapter.js";
+import { manualEntryAdapter } from "./manual/adapter.js";
 import {
   getAdapter,
   registerAdapter,
@@ -26,8 +26,8 @@ afterEach(() => {
 });
 
 describe("adapter registry", () => {
-  it("resolves the default manual adapter by kind", () => {
-    expect(getAdapter("manual")).toBe(fixtureAdapter);
+  it("resolves the default manual-entry adapter by kind (#138)", () => {
+    expect(getAdapter("manual")).toBe(manualEntryAdapter);
   });
 
   it("resolves the default google adapter by kind (#125)", () => {
@@ -45,7 +45,7 @@ describe("adapter registry", () => {
   it("registers additional adapters and resolves each by its own kind", () => {
     registerAdapter(emailStubAdapter);
     expect(getAdapter("email")).toBe(emailStubAdapter);
-    expect(getAdapter("manual")).toBe(fixtureAdapter);
+    expect(getAdapter("manual")).toBe(manualEntryAdapter);
   });
 
   it("throws on a duplicate kind — two adapters for one kind is a wiring bug", () => {

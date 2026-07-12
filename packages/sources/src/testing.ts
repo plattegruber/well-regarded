@@ -21,5 +21,11 @@ export {
   fixtureAdapter,
   fixtureArtifact,
 } from "./contract/fixtureAdapter.js";
+export {
+  MANUAL_FIXTURE_PRACTICE_ID,
+  manualEntryEmptyArtifact,
+  manualEntryFullArtifact,
+  manualEntryMinimalArtifact,
+} from "./manual/fixtures.js";
 export type { RecordedGet, StoredArtifact } from "./testing/inMemoryBucket.js";
 export { InMemoryRawArtifactBucket } from "./testing/inMemoryBucket.js";

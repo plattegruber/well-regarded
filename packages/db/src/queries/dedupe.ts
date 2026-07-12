@@ -11,7 +11,8 @@
  */
 
 import type { Actor, SuspectedDuplicateResolution } from "@wellregarded/core";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 import { audit, type Tx } from "../audit.js";
 import type { Db } from "../client.js";
@@ -288,6 +289,72 @@ export async function listSuspectedDuplicatesForPractice(
       ),
     )
     .orderBy(suspectedDuplicates.createdAt);
+}
+
+/** One side of a per-run suspected-duplicate link (report page preview). */
+export interface ImportRunDuplicateSignal {
+  id: string;
+  sourceKind: Signal["sourceKind"];
+  visibility: Signal["visibility"];
+  occurredAt: Date;
+  /** Original text — a preview snippet, not the resolved current content. */
+  text: string | null;
+  /** True when this side was ingested by the run being reported on. */
+  fromThisRun: boolean;
+}
+
+export interface ImportRunDuplicate {
+  link: SuspectedDuplicate;
+  a: ImportRunDuplicateSignal;
+  b: ImportRunDuplicateSignal;
+}
+
+/**
+ * Suspected-duplicate links touching an import run — every pair where at
+ * least one side was ingested by the run (issue #137). Read-only
+ * visibility for the report page: resolution happens on the signal detail
+ * (issue #90), which these previews link to. Newest first, bounded — a
+ * run that trips more than `limit` links should send the user to the
+ * inbox's duplicates filter rather than render an endless report section.
+ */
+export async function listSuspectedDuplicatesForImportRun(
+  db: Db | Tx,
+  practiceId: string,
+  importRunId: string,
+  limit = 50,
+): Promise<ImportRunDuplicate[]> {
+  const a = alias(signals, "dup_signal_a");
+  const b = alias(signals, "dup_signal_b");
+  const rows = await db
+    .select({ link: suspectedDuplicates, a, b })
+    .from(suspectedDuplicates)
+    .innerJoin(a, eq(a.id, suspectedDuplicates.signalIdA))
+    .innerJoin(b, eq(b.id, suspectedDuplicates.signalIdB))
+    .where(
+      and(
+        eq(suspectedDuplicates.practiceId, practiceId),
+        or(eq(a.importRunId, importRunId), eq(b.importRunId, importRunId)),
+      ),
+    )
+    .orderBy(desc(suspectedDuplicates.createdAt))
+    .limit(limit);
+
+  const preview = (
+    signal: typeof a.$inferSelect,
+  ): ImportRunDuplicateSignal => ({
+    id: signal.id,
+    sourceKind: signal.sourceKind,
+    visibility: signal.visibility,
+    occurredAt: signal.occurredAt,
+    text: signal.originalText,
+    fromThisRun: signal.importRunId === importRunId,
+  });
+
+  return rows.map((row) => ({
+    link: row.link,
+    a: preview(row.a),
+    b: preview(row.b),
+  }));
 }
 
 export interface ResolveSuspectedDuplicateInput {

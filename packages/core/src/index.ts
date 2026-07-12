@@ -14,6 +14,7 @@ export * from "./googleLocations.js";
 export * from "./importRuns.js";
 export * from "./imports/index.js";
 export * from "./log/index.js";
+export * from "./manualEntry.js";
 export * from "./patients.js";
 export * from "./patientTokens.js";
 export * from "./permissions/index.js";

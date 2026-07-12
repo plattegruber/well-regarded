@@ -36,8 +36,12 @@ import {
   CSV_IMPORT_MAX_BYTES,
   columnMappingSchema,
   detectColumns,
+  IMPORT_RUN_ERROR_SAMPLE_CAP,
+  type ImportRunErrorSample,
   PREVIEW_WINDOW_BYTES,
   parseCsvPreview,
+  SOURCE_KINDS,
+  type SourceKind,
   type StaffActor,
   sniffCsvBytes,
   unknownMappingColumns,
@@ -46,14 +50,18 @@ import {
   audit,
   confirmImportDraft,
   getImportDraft,
+  getImportRunSummary,
   type ImportDraft,
+  listImportRuns,
   saveImportDraftMapping,
   schema,
 } from "@wellregarded/db";
 import {
   getRawImportHead,
+  parseRowRef,
   putRawImportArtifact,
   type RawImportBucket,
+  readCsvBatchRows,
   validateCsvPreviewRows,
 } from "@wellregarded/sources";
 import { Hono } from "hono";
@@ -475,6 +483,145 @@ importRoutes.post("/csv/:draftId/validate", async (c) => {
   return c.json({
     importDraftId: draft.id,
     ...validateCsvPreviewRows(mapping, draft.headers, preview.previewRows),
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Import runs (issue #137) — the report UI's API surface. Same
+// manage_settings gate as everything on this router (re-checked per
+// request by the group middleware — the failures CSV URL gets shared
+// around an office, and each GET re-authenticates and re-authorizes).
+// ---------------------------------------------------------------------------
+
+/** Newest-first practice-scoped run listing (cursor-paginated). */
+importRoutes.get("/runs", async (c) => {
+  const sourceKindParam = c.req.query("source_kind");
+  let sourceKind: SourceKind | undefined;
+  if (sourceKindParam !== undefined) {
+    if (!(SOURCE_KINDS as readonly string[]).includes(sourceKindParam)) {
+      return c.json({ error: "invalid_source_kind" as const }, 400);
+    }
+    sourceKind = sourceKindParam as SourceKind;
+  }
+  const actor = c.get("actor");
+  const page = await listImportRuns(c.get("db"), actor.practiceId, {
+    ...(sourceKind !== undefined ? { sourceKind } : {}),
+    ...(c.req.query("cursor") !== undefined
+      ? { cursor: c.req.query("cursor") as string }
+      : {}),
+  });
+  return c.json({
+    runs: page.runs.map((run) => ({
+      id: run.id,
+      sourceKind: run.sourceKind,
+      trigger: run.trigger,
+      status: run.status,
+      startedAt: run.startedAt.toISOString(),
+      finishedAt: run.finishedAt?.toISOString() ?? null,
+      created: run.created,
+      merged: run.merged,
+      skipped: run.skipped,
+      failed: run.failed,
+      stats: run.stats,
+    })),
+    nextCursor: page.nextCursor ?? null,
+  });
+});
+
+/** RFC 4180 cell escaping — quote when the value needs it. */
+function csvCell(value: string): string {
+  return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+}
+
+function csvLine(cells: readonly string[]): string {
+  return cells.map(csvCell).join(",");
+}
+
+/** Strip the Workflow's "Row N: " prefix — the CSV has a column for it. */
+function sampleReason(sample: ImportRunErrorSample, rowNumber: number | null) {
+  if (rowNumber !== null) {
+    return sample.message.replace(new RegExp(`^Row ${rowNumber}: `), "");
+  }
+  return sample.message;
+}
+
+/**
+ * Download a run's failures as CSV (issue #137 req. 1): `row_number,
+ * reason, <original columns...>` so the office manager can fix exactly
+ * those rows in Excel and re-import the corrected file as a new draft.
+ *
+ * Honesty contract (the report never guesses):
+ * - row-validation failures (`payloadRef: "row:N"`) get their ORIGINAL
+ *   cell values reconstructed from the run's batch artifacts in R2 — the
+ *   samples themselves don't store values, but the batches ship every row;
+ * - pipeline-stage failures (no row number) appear with their stage and
+ *   payload ref in the reason, values blank;
+ * - past the `error_samples` cap, a final note row states how many failed
+ *   rows were counted but not individually recorded.
+ */
+importRoutes.get("/runs/:importRunId/failures.csv", async (c) => {
+  const importRunId = z.uuid().safeParse(c.req.param("importRunId"));
+  if (!importRunId.success) return c.json({ error: "not_found" as const }, 404);
+
+  const actor = c.get("actor");
+  const summary = await getImportRunSummary(
+    c.get("db"),
+    actor.practiceId,
+    importRunId.data,
+    { errorSampleLimit: IMPORT_RUN_ERROR_SAMPLE_CAP },
+  );
+  if (!summary) return c.json({ error: "not_found" as const }, 404);
+
+  const samples = summary.errorSamples.map((sample) => ({
+    sample,
+    rowNumber: parseRowRef(sample.payloadRef),
+  }));
+  const rowNumbers = samples
+    .map((entry) => entry.rowNumber)
+    .filter((n): n is number => n !== null);
+  const lookup = await readCsvBatchRows(
+    c.env.RAW_ARTIFACTS,
+    summary.run.rawArtifactKeys,
+    rowNumbers,
+  );
+
+  const headers = lookup.headers ?? [];
+  const lines = [csvLine(["row_number", "reason", ...headers])];
+  // Row failures first, in row order; stage-level failures after.
+  samples.sort((a, b) => {
+    if (a.rowNumber === null && b.rowNumber === null) return 0;
+    if (a.rowNumber === null) return 1;
+    if (b.rowNumber === null) return -1;
+    return a.rowNumber - b.rowNumber;
+  });
+  for (const { sample, rowNumber } of samples) {
+    const values = rowNumber !== null ? (lookup.rows.get(rowNumber) ?? []) : [];
+    const reason =
+      rowNumber !== null
+        ? sampleReason(sample, rowNumber)
+        : `[${sample.stage}] ${sample.message} (ref: ${sample.payloadRef})`;
+    lines.push(
+      csvLine([
+        rowNumber !== null ? String(rowNumber) : "",
+        reason,
+        ...values.map(String),
+      ]),
+    );
+  }
+  const unrecorded = summary.errorCount - samples.length;
+  if (unrecorded > 0) {
+    // The cap is an Epic #6 decision (#111); the report is honest about it.
+    lines.push(
+      csvLine([
+        "",
+        `${unrecorded} additional failed row${unrecorded === 1 ? "" : "s"} not individually recorded (only the first ${IMPORT_RUN_ERROR_SAMPLE_CAP} failures keep details)`,
+      ]),
+    );
+  }
+
+  return c.body(`${lines.join("\r\n")}\r\n`, 200, {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": `attachment; filename="import-${importRunId.data}-failures.csv"`,
   });
 });
 

@@ -68,7 +68,11 @@
     // (#134) reads back the 256KB preview window of a draft's stored CSV
     // in its loaders — read-only use here. Local dev uses Miniflare's R2
     // simulator; the bucket is not provisioned.
-    { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-local" }
+    { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-local" },
+    // The pipeline's raw-artifact bucket (#100): the import report (#137)
+    // reads batch artifacts back to show a failed row's original values.
+    // Read-only use here.
+    { "binding": "RAW_ARTIFACTS", "bucket_name": "wr-raw-artifacts-local" }
   ],
 
   "workflows": [
@@ -97,7 +101,11 @@
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
       ],
       "r2_buckets": [
-        { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-preview" }
+        { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-preview" },
+        {
+          "binding": "RAW_ARTIFACTS",
+          "bucket_name": "wr-raw-artifacts-preview"
+        }
       ],
       "workflows": [
         {
@@ -120,7 +128,8 @@
         { "binding": "HYPERDRIVE", "id": "TBD-provision-in-epic-2" }
       ],
       "r2_buckets": [
-        { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-prod" }
+        { "binding": "RAW_IMPORTS", "bucket_name": "wr-raw-imports-prod" },
+        { "binding": "RAW_ARTIFACTS", "bucket_name": "wr-raw-artifacts-prod" }
       ],
       "workflows": [
         {

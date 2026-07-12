@@ -92,8 +92,9 @@ accounted for them in step 3.
 - Residual gap, on the record: if that last-resort step itself exhausts
   its retries (e.g. Postgres down for the whole retry window), the run
   does stay `running`. There is deliberately no auto-finalize timer in
-  `import_runs` (#111); the report UI (#137) should render a staleness
-  guard ("started 3h ago, still running") and a future sweeper can
+  `import_runs` (#111); the report UI (#137) renders a staleness guard
+  ("taking longer than expected" once a run is `running` past 3h —
+  `IMPORT_RUN_STALE_AFTER_MS` in the dashboard) and a future sweeper can
   finalize orphans — noted here so that decision is not re-litigated
   from scratch.
 

@@ -14,6 +14,7 @@
 
 import type { ConsentSource } from "@wellregarded/core";
 import {
+  CONSENT_CHANNELS,
   DERIVATION_BASES,
   SIGNAL_VISIBILITIES,
   SOURCE_KINDS,
@@ -80,6 +81,27 @@ export const SIGNAL_CONSENT_HINTS = [
 export const consentHintSchema = z.enum(SIGNAL_CONSENT_HINTS);
 
 export type ConsentHint = z.infer<typeof consentHintSchema>;
+
+/**
+ * The specifics behind a `practice_attested` consent hint (issue #138,
+ * Epic #8): which channels the permission covers, where it lives (the
+ * note), and who attested. Carried only by sources that capture a real
+ * attestation at entry time (manual entry today); the normalize stage's
+ * consent seam turns it into a `consents` row (source `practice_attested`)
+ * in the same transaction as the signal insert. A bare `consentHint`
+ * without detail records nothing — channels can't be invented downstream.
+ */
+export const consentDetailSchema = z.strictObject({
+  channels: z.array(z.enum(CONSENT_CHANNELS)).min(1),
+  /** Where the permission lives ("said yes over the phone, 3/2, Dana"). */
+  note: z.string().min(1),
+  /** Staff id of the attester — the audit entry's actor. */
+  grantedBy: z.string().min(1).optional(),
+  /** When the attestation was captured (ISO datetime). */
+  grantedAt: z.iso.datetime({ offset: true }),
+});
+
+export type ConsentDetail = z.infer<typeof consentDetailSchema>;
 
 /**
  * Rating kept on the source's own scale, e.g. `{ value: 4, scale: 5 }` for a
@@ -179,6 +201,9 @@ export const normalizedSignalSchema = z.strictObject({
   locationHint: entityHintSchema.optional(),
   /** Optional consent context — see {@link consentHintSchema}. */
   consentHint: consentHintSchema.optional(),
+  /** Attestation specifics behind a `practice_attested` hint — see
+   * {@link consentDetailSchema}. */
+  consentDetail: consentDetailSchema.optional(),
   /** Optional source context — see {@link signalSourceMetadataSchema}. */
   sourceMetadata: signalSourceMetadataSchema.optional(),
 });
