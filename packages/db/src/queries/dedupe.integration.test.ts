@@ -20,6 +20,7 @@ import {
   getImportRunArtifactKeys,
   getSignalWithCurrentContent,
   insertSuspectedDuplicates,
+  listSuspectedDuplicatesForImportRun,
   recordSignalVersion,
   updateSignalEmbedding,
 } from "./dedupe.js";
@@ -273,5 +274,73 @@ describe("getImportRunArtifactKeys", () => {
         "00000000-0000-4000-8000-000000000000",
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("listSuspectedDuplicatesForImportRun (issue #137: report links)", () => {
+  it("returns links where either side belongs to the run, with previews", async () => {
+    const p = await practice(t.db);
+    const oldRun = await importRun(t.db, { practiceId: p.id });
+    const newRun = await importRun(t.db, { practiceId: p.id });
+    const existing = await signal(t.db, {
+      practiceId: p.id,
+      importRunId: oldRun.id,
+      originalText: "Loved the gentle cleaning.",
+      sourceKind: "google",
+      sourceId: "reviews/1",
+      visibility: "public",
+    });
+    const imported = await signal(t.db, {
+      practiceId: p.id,
+      importRunId: newRun.id,
+      originalText: "Loved the gentle cleaning!",
+    });
+    await insertSuspectedDuplicates(t.db, [
+      {
+        practiceId: p.id,
+        signalIdX: existing.id,
+        signalIdY: imported.id,
+        similarity: 0.97,
+      },
+    ]);
+
+    const links = await listSuspectedDuplicatesForImportRun(
+      t.db,
+      p.id,
+      newRun.id,
+    );
+    expect(links).toHaveLength(1);
+    const link = links[0];
+    const sides = [link?.a, link?.b];
+    const fromRun = sides.find((side) => side?.fromThisRun);
+    const other = sides.find((side) => !side?.fromThisRun);
+    expect(fromRun?.id).toBe(imported.id);
+    expect(fromRun?.text).toBe("Loved the gentle cleaning!");
+    expect(other?.id).toBe(existing.id);
+    expect(other?.sourceKind).toBe("google");
+    expect(other?.visibility).toBe("public");
+    expect(link?.link.status).toBe("pending_review");
+
+    // The old run sees the same pair from its own perspective.
+    const fromOldRun = await listSuspectedDuplicatesForImportRun(
+      t.db,
+      p.id,
+      oldRun.id,
+    );
+    expect(fromOldRun).toHaveLength(1);
+
+    // Unrelated runs and other practices see nothing.
+    const unrelated = await importRun(t.db, { practiceId: p.id });
+    expect(
+      await listSuspectedDuplicatesForImportRun(t.db, p.id, unrelated.id),
+    ).toEqual([]);
+    const otherPractice = await practice(t.db);
+    expect(
+      await listSuspectedDuplicatesForImportRun(
+        t.db,
+        otherPractice.id,
+        newRun.id,
+      ),
+    ).toEqual([]);
   });
 });

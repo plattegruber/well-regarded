@@ -71,7 +71,7 @@ afterEach(() => {
 
 async function storeArtifact(
   practiceId: string,
-  sourceKind: "manual" | "csv_import",
+  sourceKind: "google" | "csv_import",
   artifact: unknown,
 ): Promise<string> {
   const { key } = await putRawArtifact(bucket, {
@@ -109,19 +109,38 @@ describe("acceptance: same review via two sources → linked, never merged", () 
   it("creates two signals plus one pending_review suspected_duplicates row, and both proceed to classify", async () => {
     const p = await practice(t.db);
 
-    // First arrival: the review through the (fixture) polling source.
-    const manualKey = await storeArtifact(p.id, "manual", {
-      entries: [{ id: "g-review-1", when, text: reviewText, rating: 5 }],
-    });
-    const manualRun = await importRun(t.db, {
+    // First arrival: the review through the Google polling source (#125)
+    // — a real registered adapter that carries a rating (the fuzzy path's
+    // same-rating predicate needs one on both sides).
+    const googleKey = await storeArtifact(p.id, "google", {
+      kind: "gbp.reviews.page",
+      envelopeVersion: 1,
       practiceId: p.id,
-      sourceKind: "manual",
-      rawArtifactKeys: [manualKey],
+      googleLocationName: "accounts/1/locations/1",
+      fetchedAt: "2026-07-01T00:00:00.000Z",
+      page: {
+        reviews: [
+          {
+            name: "accounts/1/locations/1/reviews/1",
+            reviewId: "1",
+            reviewer: { displayName: "A grateful parent" },
+            starRating: "FIVE",
+            comment: reviewText,
+            createTime: when,
+            updateTime: when,
+          },
+        ],
+      },
+    });
+    const googleRun = await importRun(t.db, {
+      practiceId: p.id,
+      sourceKind: "google",
+      rawArtifactKeys: [googleKey],
     });
     await ingestAndDedupe({
-      importRunId: manualRun.id,
-      rawArtifactKey: manualKey,
-      sourceKind: "manual",
+      importRunId: googleRun.id,
+      rawArtifactKey: googleKey,
+      sourceKind: "google",
       practiceId: p.id,
     });
 
@@ -168,7 +187,7 @@ describe("acceptance: same review via two sources → linked, never merged", () 
     expect(rows).toHaveLength(2);
     expect(rows.map((row) => row.sourceKind).sort()).toEqual([
       "csv_import",
-      "manual",
+      "google",
     ]);
     for (const row of rows) {
       expect(row.availability).toBe("available");
@@ -219,20 +238,41 @@ describe("exact path: re-imports of a known source identity", () => {
     handlers = stageHandlers;
   });
 
+  // Same draft + row number → the same deterministic sourceId (#135), so
+  // a re-stored batch with different content is a re-import of a KNOWN
+  // source identity — exactly what the exact path resolves.
+  const EXACT_DRAFT_ID = "5c85c1f8-7e8d-4d65-8ea1-0b6c3a5d9f45";
+  const exactBatch = (practiceId: string, text: string, rating: string) =>
+    buildCsvImportBatchArtifact({
+      practiceId,
+      draftId: EXACT_DRAFT_ID,
+      batchIndex: 0,
+      firstRowNumber: 1,
+      headers: ["Date", "Review", "Rating"],
+      mapping: {
+        occurredAt: { column: "Date", dateFormat: "ISO" },
+        text: { column: "Review" },
+        rating: { column: "Rating", ratingScale: 5 },
+      },
+      rows: [[when, text, rating]],
+    });
+
   async function seedOriginal() {
     const p = await practice(t.db);
-    const key = await storeArtifact(p.id, "manual", {
-      entries: [{ id: "entry-1", when, text: reviewText, rating: 5 }],
-    });
+    const key = await storeArtifact(
+      p.id,
+      "csv_import",
+      exactBatch(p.id, reviewText, "5"),
+    );
     const run = await importRun(t.db, {
       practiceId: p.id,
-      sourceKind: "manual",
+      sourceKind: "csv_import",
       rawArtifactKeys: [key],
     });
     await ingestAndDedupe({
       importRunId: run.id,
       rawArtifactKey: key,
-      sourceKind: "manual",
+      sourceKind: "csv_import",
       practiceId: p.id,
     });
     env.CLASSIFY_QUEUE.sent.length = 0;
@@ -249,18 +289,20 @@ describe("exact path: re-imports of a known source identity", () => {
 
     // The same artifact bytes arrive again in a NEW run (content-addressed
     // key is identical).
-    const key = await storeArtifact(p.id, "manual", {
-      entries: [{ id: "entry-1", when, text: reviewText, rating: 5 }],
-    });
+    const key = await storeArtifact(
+      p.id,
+      "csv_import",
+      exactBatch(p.id, reviewText, "5"),
+    );
     const rerun = await importRun(t.db, {
       practiceId: p.id,
-      sourceKind: "manual",
+      sourceKind: "csv_import",
       rawArtifactKeys: [key],
     });
     const { dedupeBodies, messages } = await ingestAndDedupe({
       importRunId: rerun.id,
       rawArtifactKey: key,
-      sourceKind: "manual",
+      sourceKind: "csv_import",
       practiceId: p.id,
     });
 
@@ -288,18 +330,20 @@ describe("exact path: re-imports of a known source identity", () => {
     const { p, original } = await seedOriginal();
 
     const editedText = `${reviewText} EDIT: still thrilled a month later.`;
-    const key = await storeArtifact(p.id, "manual", {
-      entries: [{ id: "entry-1", when, text: editedText, rating: 4 }],
-    });
+    const key = await storeArtifact(
+      p.id,
+      "csv_import",
+      exactBatch(p.id, editedText, "4"),
+    );
     const editRun = await importRun(t.db, {
       practiceId: p.id,
-      sourceKind: "manual",
+      sourceKind: "csv_import",
       rawArtifactKeys: [key],
     });
     const { messages } = await ingestAndDedupe({
       importRunId: editRun.id,
       rawArtifactKey: key,
-      sourceKind: "manual",
+      sourceKind: "csv_import",
       practiceId: p.id,
     });
     expect(messages[0]?.ack).toHaveBeenCalledOnce();

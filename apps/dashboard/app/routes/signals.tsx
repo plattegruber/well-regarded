@@ -408,6 +408,17 @@ export default function Signals({ loaderData }: Route.ComponentProps) {
         title={surface.title}
         description={surface.description}
       />
+      {/* Manual entry (#138): staff capture of a phoned-in or handwritten
+          compliment — placement on this surface per the issue. */}
+      <div className="mb-5">
+        <Link
+          to="/signals/new"
+          data-testid="add-signal"
+          className="inline-flex items-center border border-ink-900 bg-ink-900 px-4.5 py-3 font-mono text-xs font-semibold uppercase leading-none tracking-label text-on-dark no-underline hover:bg-ink-700"
+        >
+          Add signal
+        </Link>
+      </div>
       {empty ? (
         <EmptyState
           icon={surfaceIcon(surface)}

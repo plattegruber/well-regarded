@@ -9,15 +9,17 @@ import { IMPORT_RUN_ERROR_SAMPLE_CAP } from "@wellregarded/core";
 import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
-import { importRun, practice } from "../../test/factories.js";
+import { importDraft, importRun, practice } from "../../test/factories.js";
 import { setupTestDb } from "../../test/harness.js";
 import { recordPipelineFailure } from "../pipeline.js";
 import { importRuns } from "../schema/importRuns.js";
+import { linkImportRunToDraft } from "./importDrafts.js";
 import {
   appendImportRunError,
   createImportRun,
   finalizeImportRun,
   finalizeImportRunWithStatus,
+  getImportRunDraftInfo,
   getImportRunSummary,
   incrementImportRunCounts,
   listImportRuns,
@@ -290,5 +292,34 @@ describe("finalizeImportRunWithStatus", () => {
         "completed",
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("getImportRunDraftInfo (issue #137: report header filename)", () => {
+  it("returns the linked draft's filename, practice-scoped", async () => {
+    const p = await practice(t.db);
+    const draft = await importDraft(t.db, { practiceId: p.id });
+    const run = await importRun(t.db, { practiceId: p.id });
+    await linkImportRunToDraft(t.db, draft.id, run.id);
+
+    const info = await getImportRunDraftInfo(t.db, p.id, run.id);
+    expect(info).toEqual({
+      draftId: draft.id,
+      originalFilename: draft.originalFilename,
+      byteSize: draft.byteSize,
+    });
+
+    // Another practice's read never sees it.
+    const other = await practice(t.db);
+    expect(await getImportRunDraftInfo(t.db, other.id, run.id)).toBeUndefined();
+  });
+
+  it("returns undefined for runs without a draft (manual entry, polls)", async () => {
+    const p = await practice(t.db);
+    const run = await importRun(t.db, {
+      practiceId: p.id,
+      sourceKind: "manual",
+    });
+    expect(await getImportRunDraftInfo(t.db, p.id, run.id)).toBeUndefined();
   });
 });

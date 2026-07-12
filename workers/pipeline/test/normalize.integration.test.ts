@@ -19,13 +19,12 @@ import { resetEnvCache } from "@wellregarded/core";
 import { getImportRunSummary, schema } from "@wellregarded/db";
 import {
   buildCsvImportBatchArtifact,
+  buildManualEntryArtifact,
   csvRowSourceId,
+  type ManualEntryArtifact,
   putRawArtifact,
 } from "@wellregarded/sources";
-import {
-  fixtureArtifact,
-  InMemoryRawArtifactBucket,
-} from "@wellregarded/sources/testing";
+import { InMemoryRawArtifactBucket } from "@wellregarded/sources/testing";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -44,7 +43,7 @@ import {
 } from "./support/integrationEnv";
 
 const t = setupTestDb();
-const { signals, patients, contactPoints } = schema;
+const { signals, patients, contactPoints, consents, auditLog } = schema;
 
 let bucket: InMemoryRawArtifactBucket;
 let env: IntegrationEnv;
@@ -61,7 +60,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** A practice with entities matching the manual fixture artifact's hints. */
+/** A practice with entities matching the manual entry fixtures' hints. */
 async function fixturePractice() {
   const p = await practice(t.db);
   const patel = await provider(t.db, {
@@ -74,6 +73,49 @@ async function fixturePractice() {
   });
   const run = await importRun(t.db, { practiceId: p.id, sourceKind: "manual" });
   return { p, patel, mainStreet, run };
+}
+
+const STAFF_ID = "b3c58c7f-4e3d-4a32-8b78-7e3f0d2f6c12";
+
+/** The full manual-entry envelope (#138): patient + attested consent + hints. */
+function manualFullArtifact(practiceId: string): ManualEntryArtifact {
+  return buildManualEntryArtifact({
+    practiceId,
+    sourceId: "c4d69d80-5f4e-4b43-9c89-8f4a1e3a7d23",
+    enteredBy: STAFF_ID,
+    enteredAt: "2026-03-03T09:30:00Z",
+    entry: {
+      text:
+        "Dr. Patel was wonderful with my daughter — she actually looks " +
+        "forward to the dentist now.",
+      occurredAt: "2026-03-02T14:30:00Z",
+      sourceDescription: "phone call",
+      locationName: "Main Street office",
+      providerName: "Dr. Patel",
+      patient: { name: "Rosa Alvarez", email: "rosa.alvarez@example.com" },
+      consent: {
+        choice: "practice_attested",
+        channels: ["website", "gbp"],
+        note: "Said yes over the phone, 3/2, spoke with Dana.",
+      },
+    },
+  });
+}
+
+/** The minimal envelope: text only, consent not asked. */
+function manualMinimalArtifact(practiceId: string): ManualEntryArtifact {
+  return buildManualEntryArtifact({
+    practiceId,
+    sourceId: "a2f47b6e-3d2c-4f21-9a67-6d2f9c1e5b01",
+    enteredBy: STAFF_ID,
+    enteredAt: "2026-03-02T15:00:00Z",
+    entry: {
+      text: "Front desk fit me in the same day for a broken crown.",
+      occurredAt: "2026-03-02T00:00:00Z",
+      sourceDescription: "in person",
+      consent: { choice: "unknown" },
+    },
+  });
 }
 
 async function storeArtifact(
@@ -95,10 +137,11 @@ async function deliverIngest(body: unknown) {
   return message;
 }
 
-describe("normalize end-to-end (manual fixture adapter)", () => {
-  it("creates pending_dedupe signals with provenance, resolves confident hints, counts, and enqueues dedupe", async () => {
+describe("normalize end-to-end (manual entry adapter, #138)", () => {
+  it("creates one pending_dedupe signal with provenance, resolves manual hints, links the patient, and records the attested consent", async () => {
     const { p, patel, mainStreet, run } = await fixturePractice();
-    const key = await storeArtifact(p.id, "manual", fixtureArtifact);
+    const artifact = manualFullArtifact(p.id);
+    const key = await storeArtifact(p.id, "manual", artifact);
 
     const message = await deliverIngest({
       importRunId: run.id,
@@ -112,41 +155,118 @@ describe("normalize end-to-end (manual fixture adapter)", () => {
     const rows = await t.db
       .select()
       .from(signals)
-      .where(eq(signals.practiceId, p.id))
-      .orderBy(signals.sourceId);
-    expect(rows).toHaveLength(fixtureArtifact.entries.length);
-    for (const row of rows) {
-      expect(row.pipelineStatus).toBe("pending_dedupe");
-      expect(row.importRunId).toBe(run.id);
-      expect(row.rawArtifactKey).toBe(key);
-      expect(row.sourceKind).toBe("manual");
-    }
+      .where(eq(signals.practiceId, p.id));
+    expect(rows).toHaveLength(1);
+    const row = rows[0];
+    expect(row).toMatchObject({
+      pipelineStatus: "pending_dedupe",
+      importRunId: run.id,
+      rawArtifactKey: key,
+      sourceKind: "manual",
+      sourceId: artifact.sourceId,
+      visibility: "private",
+    });
 
-    // entry-1 carries confident hints: exact names → FKs set, hints null.
-    const first = rows.find((row) => row.sourceId === "entry-1");
-    expect(first?.providerId).toBe(patel.id);
-    expect(first?.locationId).toBe(mainStreet.id);
-    expect(first?.providerHint).toBeNull();
-    expect(first?.locationHint).toBeNull();
-    expect(first?.originalRating).toBe("5.0");
-    expect(first?.originalText).toContain("Dr. Patel was wonderful");
+    // Confident manual hints resolve: exact names → FKs set, hints null.
+    expect(row?.providerId).toBe(patel.id);
+    expect(row?.locationId).toBe(mainStreet.id);
+    expect(row?.providerHint).toBeNull();
+    expect(row?.locationHint).toBeNull();
+    expect(row?.originalText).toContain("Dr. Patel was wonderful");
+    expect(row?.originalRating).toBeNull();
+
+    // The patient hint went through pii.patients/contact_points and linked.
+    expect(row?.patientId).not.toBeNull();
+    const [patientRow] = await t.db
+      .select()
+      .from(patients)
+      .where(eq(patients.practiceId, p.id));
+    expect(patientRow?.id).toBe(row?.patientId);
+    expect(patientRow?.displayName).toBe("Rosa Alvarez");
+    const points = await t.db
+      .select()
+      .from(contactPoints)
+      .where(eq(contactPoints.patientId, patientRow?.id ?? ""));
+    expect(points).toHaveLength(1);
+    expect(points[0]?.kind).toBe("email");
+
+    // The attestation became a real consents row in the same transaction
+    // (#138 requirement 4), plus its own audit entry with the note.
+    const consentRows = await t.db
+      .select()
+      .from(consents)
+      .where(eq(consents.practiceId, p.id));
+    expect(consentRows).toHaveLength(1);
+    expect(consentRows[0]).toMatchObject({
+      signalId: row?.id,
+      patientId: row?.patientId,
+      source: "practice_attested",
+      channels: ["website", "gbp"],
+      attribution: "anonymous",
+      consentVersion: 1,
+      revokedAt: null,
+    });
+    const audits = await t.db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.practiceId, p.id));
+    const consentAudit = audits.find((a) => a.action === "consent.granted");
+    expect(consentAudit).toMatchObject({
+      actorType: "staff",
+      actorId: STAFF_ID,
+      entityType: "consents",
+      entityId: consentRows[0]?.id,
+    });
+    expect(consentAudit?.payload).toMatchObject({
+      note: "Said yes over the phone, 3/2, spoke with Dana.",
+      channels: ["website", "gbp"],
+    });
 
     // Counts committed with the rows; no failures.
     const summary = await getImportRunSummary(t.db, p.id, run.id);
-    expect(summary?.run.created).toBe(fixtureArtifact.entries.length);
+    expect(summary?.run.created).toBe(1);
     expect(summary?.errorCount).toBe(0);
 
-    // One dedupe message per signal, none flagged (all new).
-    expect(env.DEDUPE_QUEUE.sent).toHaveLength(fixtureArtifact.entries.length);
-    for (const sent of env.DEDUPE_QUEUE.sent) {
-      expect(sent).toMatchObject({ practiceId: p.id, importRunId: run.id });
-      expect(sent).not.toHaveProperty("reason");
-    }
+    // One dedupe message, not flagged (new row).
+    expect(env.DEDUPE_QUEUE.sent).toHaveLength(1);
+    expect(env.DEDUPE_QUEUE.sent[0]).toMatchObject({
+      practiceId: p.id,
+      importRunId: run.id,
+    });
+    expect(env.DEDUPE_QUEUE.sent[0]).not.toHaveProperty("reason");
   });
 
-  it("re-delivery creates no new rows and enqueues potential-update dedupe messages", async () => {
+  it('"not asked" consent writes NO consents row — the absence is the state', async () => {
     const { p, run } = await fixturePractice();
-    const key = await storeArtifact(p.id, "manual", fixtureArtifact);
+    const artifact = manualMinimalArtifact(p.id);
+    const key = await storeArtifact(p.id, "manual", artifact);
+
+    const message = await deliverIngest({
+      importRunId: run.id,
+      rawArtifactKey: key,
+      sourceKind: "manual",
+      practiceId: p.id,
+    });
+    expect(message.ack).toHaveBeenCalledOnce();
+
+    const rows = await t.db
+      .select()
+      .from(signals)
+      .where(eq(signals.practiceId, p.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.visibility).toBe("private");
+    expect(rows[0]?.patientId).toBeNull();
+
+    const consentRows = await t.db
+      .select()
+      .from(consents)
+      .where(eq(consents.practiceId, p.id));
+    expect(consentRows).toHaveLength(0);
+  });
+
+  it("re-delivery creates no new rows, no duplicate consents, and enqueues potential-update dedupe messages", async () => {
+    const { p, run } = await fixturePractice();
+    const key = await storeArtifact(p.id, "manual", manualFullArtifact(p.id));
     const body = {
       importRunId: run.id,
       rawArtifactKey: key,
@@ -163,6 +283,7 @@ describe("normalize end-to-end (manual fixture adapter)", () => {
     )
       .map((row) => row.id)
       .sort();
+    expect(firstIds).toHaveLength(1);
     env.DEDUPE_QUEUE.sent.length = 0;
 
     const second = await deliverIngest(body);
@@ -178,20 +299,27 @@ describe("normalize end-to-end (manual fixture adapter)", () => {
       .sort();
     expect(afterIds).toEqual(firstIds);
 
-    // Every re-delivered signal routes to dedupe as a potential update,
+    // The conflict is NOT re-granted: still exactly one consents row.
+    const consentRows = await t.db
+      .select()
+      .from(consents)
+      .where(eq(consents.practiceId, p.id));
+    expect(consentRows).toHaveLength(1);
+
+    // The re-delivered signal routes to dedupe as a potential update,
     // carrying the EXISTING row's id.
-    expect(env.DEDUPE_QUEUE.sent).toHaveLength(fixtureArtifact.entries.length);
-    for (const sent of env.DEDUPE_QUEUE.sent) {
-      expect(sent).toMatchObject({ reason: "conflict_reimport" });
-      expect(firstIds).toContain((sent as { signalId: string }).signalId);
-    }
+    expect(env.DEDUPE_QUEUE.sent).toHaveLength(1);
+    expect(env.DEDUPE_QUEUE.sent[0]).toMatchObject({
+      reason: "conflict_reimport",
+    });
+    expect(firstIds).toContain(
+      (env.DEDUPE_QUEUE.sent[0] as { signalId: string }).signalId,
+    );
 
     // Conflicts are not "created"; they leave a stats trace instead.
     const summary = await getImportRunSummary(t.db, p.id, run.id);
-    expect(summary?.run.created).toBe(fixtureArtifact.entries.length);
-    expect(summary?.run.stats).toEqual({
-      normalize_conflicts: fixtureArtifact.entries.length,
-    });
+    expect(summary?.run.created).toBe(1);
+    expect(summary?.run.stats).toEqual({ normalize_conflicts: 1 });
   });
 });
 

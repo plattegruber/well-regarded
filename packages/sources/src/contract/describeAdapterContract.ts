@@ -136,6 +136,26 @@ export const adapterContractChecks: Record<string, ContractCheck> = {
     for (const fixture of fixtures.valid) {
       for (const signal of await adapter.normalize(fixture.artifact)) {
         expect(signal.consentHint, `fixture "${fixture.name}"`).toBe(undefined);
+        expect(signal.consentDetail, `fixture "${fixture.name}"`).toBe(
+          undefined,
+        );
+      }
+    }
+  },
+
+  "consentDetail only accompanies a practice_attested hint": async (
+    adapter,
+    fixtures,
+  ) => {
+    // Detail is the attestation's specifics; it cannot exist without the
+    // attestation itself (the normalize seam keys the consents write on
+    // the hint and reads the channels/note from the detail).
+    for (const fixture of fixtures.valid) {
+      for (const signal of await adapter.normalize(fixture.artifact)) {
+        if (signal.consentDetail === undefined) continue;
+        expect(signal.consentHint, `fixture "${fixture.name}"`).toBe(
+          "practice_attested",
+        );
       }
     }
   },

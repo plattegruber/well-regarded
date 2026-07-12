@@ -8,8 +8,10 @@
 // non-fatal, since `confirmed` is the durable state the Workflow consumes
 // and a failed create leaves a retriable draft.
 //
-// TODO(#137): route to the import report page (live progress) instead of
-// the imports list once it exists.
+// On success the user lands on the imports LIST (#137), not the report
+// page: the Workflow opens the `import_runs` row asynchronously in its
+// validate step, so no run id exists yet at confirm time. The list shows
+// the running import within one poll and links through to its report.
 import {
   can,
   IMPORT_TARGET_FIELDS,
@@ -84,8 +86,8 @@ export async function action({ params, context }: Route.ActionArgs) {
             });
           }
         }
-        // 4 + 5. Flash, then back to imports (the report page, once #137
-        // lands, takes over from here).
+        // 4 + 5. Flash, then to the imports list (#137) — the run id is
+        // not known yet (see module doc); the list polls it into view.
         return redirect("/settings/imports", {
           headers: await setFlash(context.cloudflare.env, {
             tone: "positive",

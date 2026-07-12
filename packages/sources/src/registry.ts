@@ -9,9 +9,10 @@
  * treats as a non-retryable failure (straight to the DLQ) — a message for a
  * kind with no adapter can never succeed by retrying.
  *
- * `manual` currently resolves to the reference fixture adapter from #101 —
- * a stand-in with the right shape until the real manual-entry adapter ships
- * with the entry form (issue #138, Epic #8) and replaces it here.
+ * `manual` resolves to the real manual-entry adapter (#138, Epic #8),
+ * which replaced the #101 reference fixture adapter that used to hold the
+ * slot (the fixture adapter stays exported from `/testing` for the
+ * contract suite's meta-tests, unregistered).
  *
  * `registerAdapter` exists for tests (and future dynamic sources): worker
  * tests register extra fixture kinds to exercise resolve-by-sourceKind with
@@ -22,14 +23,13 @@
 
 import type { SourceKind } from "@wellregarded/core";
 
-import { fixtureAdapter } from "./contract/fixtureAdapter.js";
 import type { SourceAdapter } from "./contract/sourceAdapter.js";
 import { csvImportAdapter } from "./csv/adapter.js";
 import { googleReviewsAdapter } from "./google/adapter.js";
+import { manualEntryAdapter } from "./manual/adapter.js";
 
 const defaultAdapters: ReadonlyArray<SourceAdapter> = [
-  // TODO(#138): replace with the real manual-entry adapter.
-  fixtureAdapter,
+  manualEntryAdapter,
   googleReviewsAdapter,
   csvImportAdapter,
 ];

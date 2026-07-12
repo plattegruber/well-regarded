@@ -10,7 +10,7 @@
 
 import type { ApiKeyActor, Logger, StaffActor } from "@wellregarded/core";
 import type { Db } from "@wellregarded/db";
-import type { RawImportBucket } from "@wellregarded/sources";
+import type { RawArtifactBucket, RawImportBucket } from "@wellregarded/sources";
 
 /**
  * The bindings this worker's code actually consumes, typed structurally so
@@ -27,6 +27,20 @@ export interface ApiBindings {
    * `InMemoryRawArtifactBucket`; the real `R2Bucket` satisfies it.
    */
   RAW_IMPORTS: RawImportBucket;
+  /**
+   * R2: the pipeline's raw-artifact bucket (`wr-raw-artifacts-<env>`,
+   * issue #100). Two consumers here: manual entry (#138) stores the form
+   * payload BEFORE enqueueing its ingest message (store-before-enqueue),
+   * and the failures CSV (#137) reads batch artifacts back to reconstruct
+   * failed rows. Same structural typing rationale as RAW_IMPORTS.
+   */
+  RAW_ARTIFACTS: RawArtifactBucket;
+  /**
+   * Producer for `wr-ingest-<env>` — the pipeline spine's entry point.
+   * Manual entry (#138) enqueues one `IngestMessage` per submission. Only
+   * `send` is consumed; tests inject a recording fake.
+   */
+  INGEST_QUEUE: { send(body: unknown): Promise<void> };
   /**
    * KV for single-use OAuth state records (issue #118): the Google connect
    * flow stores `{ verifier, practiceId, staffId }` under the state nonce

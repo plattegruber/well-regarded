@@ -25,8 +25,11 @@ import {
   DLQ_FORWARD_KIND,
   RetryableError,
 } from "@wellregarded/core";
-import { type NormalizedSignal, putRawArtifact } from "@wellregarded/sources";
-import { fixtureArtifact } from "@wellregarded/sources/testing";
+import {
+  buildCsvImportBatchArtifact,
+  type NormalizedSignal,
+  putRawArtifact,
+} from "@wellregarded/sources";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleQueueBatch, type StageHandlers } from "../src/dispatch";
@@ -193,13 +196,32 @@ describe("normalize stage on a real workerd batch (issue #104)", () => {
     };
   }
 
-  it("acks after persisting the fixture artifact's signals and enqueueing dedupe messages (conflicts flagged)", async () => {
-    // Store-before-enqueue, for real: the fixture artifact goes into the
+  it("acks after persisting a batch artifact's signals and enqueueing dedupe messages (conflicts flagged)", async () => {
+    // A three-row CSV batch envelope, exactly as the import Workflow
+    // (#135) stores it — a registered adapter that yields several signals
+    // per artifact, so the conflict/created split below is observable.
+    const batchArtifact = buildCsvImportBatchArtifact({
+      practiceId: otherUuid,
+      draftId: uuid,
+      batchIndex: 0,
+      firstRowNumber: 1,
+      headers: ["Date", "Review"],
+      mapping: {
+        occurredAt: { column: "Date", dateFormat: "ISO" },
+        text: { column: "Review" },
+      },
+      rows: [
+        ["2026-04-01T10:00:00Z", "The hygiene team here is so careful."],
+        ["2026-04-02T11:00:00Z", "Front desk sorted my insurance out."],
+        ["2026-04-03T12:00:00Z", "Dr. Patel explained every step."],
+      ],
+    });
+    // Store-before-enqueue, for real: the artifact goes into the
     // Miniflare R2 simulator first, and the message carries the key.
     const { key } = await putRawArtifact(env.RAW_ARTIFACTS, {
       practiceId: otherUuid,
-      sourceKind: "manual",
-      content: JSON.stringify(fixtureArtifact),
+      sourceKind: "csv_import",
+      content: JSON.stringify(batchArtifact),
     });
     const persisted: NormalizedSignal[][] = [];
     const store: NormalizeStore = {
@@ -217,7 +239,7 @@ describe("normalize stage on a real workerd batch (issue #104)", () => {
     const message = {
       importRunId: uuid,
       rawArtifactKey: key,
-      sourceKind: "manual",
+      sourceKind: "csv_import",
       practiceId: otherUuid,
     };
 
@@ -234,12 +256,12 @@ describe("normalize stage on a real workerd batch (issue #104)", () => {
 
     expect(result.explicitAcks).toEqual(["ingest-1"]);
     expect(result.retryMessages).toEqual([]);
-    // The adapter saw the artifact's three entries…
+    // The adapter saw the artifact's three rows…
     expect(persisted).toHaveLength(1);
-    expect(persisted[0]).toHaveLength(fixtureArtifact.entries.length);
+    expect(persisted[0]).toHaveLength(batchArtifact.rows.length);
     // …and every outcome became a dedupe message, the conflict flagged as a
     // potential update for #106.
-    expect(dedupeSend).toHaveBeenCalledTimes(fixtureArtifact.entries.length);
+    expect(dedupeSend).toHaveBeenCalledTimes(batchArtifact.rows.length);
     expect(dedupeSend.mock.calls[0]?.[0]).toMatchObject({
       practiceId: otherUuid,
       importRunId: uuid,
