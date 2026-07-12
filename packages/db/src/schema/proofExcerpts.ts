@@ -32,6 +32,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
   vector,
 } from "drizzle-orm/pg-core";
@@ -103,5 +104,12 @@ export const proofExcerpts = pgTable(
     index("proof_excerpts_tsv_gin_idx").using("gin", table.tsv),
     index("proof_excerpts_practice_id_idx").on(table.practiceId),
     index("proof_excerpts_signal_id_idx").on(table.signalId),
+    // Supports the composite FK from `proofs (signal_id, excerpt_id)`
+    // (issue #96): Postgres needs a unique index over the referenced
+    // columns to enforce "the excerpt belongs to the same signal".
+    uniqueIndex("proof_excerpts_signal_id_id_uniq").on(
+      table.signalId,
+      table.id,
+    ),
   ],
 );

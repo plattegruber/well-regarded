@@ -43,6 +43,7 @@ import { importDrafts } from "../src/schema/importDrafts.js";
 import { importRuns } from "../src/schema/importRuns.js";
 import { patients } from "../src/schema/pii.js";
 import { proofExcerpts } from "../src/schema/proofExcerpts.js";
+import { placements, proofs } from "../src/schema/proofs.js";
 import { responses } from "../src/schema/responses.js";
 import { responseTemplates } from "../src/schema/responseTemplates.js";
 import { signals } from "../src/schema/signals.js";
@@ -95,6 +96,8 @@ type SourceConnectionInsert = typeof sourceConnections.$inferInsert;
 type DerivationInsert = typeof derivations.$inferInsert;
 type PatientInsert = typeof patients.$inferInsert;
 type ProofExcerptInsert = typeof proofExcerpts.$inferInsert;
+type ProofInsert = typeof proofs.$inferInsert;
+type PlacementInsert = typeof placements.$inferInsert;
 type ResponseInsert = typeof responses.$inferInsert;
 type ResponseTemplateInsert = typeof responseTemplates.$inferInsert;
 
@@ -409,6 +412,68 @@ export async function proofExcerpt(
     })
     .returning();
   return must(row, "proof excerpt");
+}
+
+/**
+ * Inserts a `proofs` row (issue #96) directly at any status — factories
+ * set up STATE; the sanctioned suggestion path (`suggestProof`) is what
+ * the tests exercise. Defaults to a whole-signal `suggested` proof;
+ * approved-state tests pass `status`, `displayText`, `approvedBy`/`At`.
+ */
+export async function proof(
+  db: Db,
+  overrides: Partial<ProofInsert> = {},
+): Promise<typeof proofs.$inferSelect> {
+  const { signalId, practiceId } = await resolveSignalScope(db, overrides);
+  const [row] = await db
+    .insert(proofs)
+    .values({
+      status: "suggested",
+      excerptId: null,
+      ...overrides,
+      signalId,
+      practiceId,
+    })
+    .returning();
+  return must(row, "proof");
+}
+
+/**
+ * Inserts a `placements` row (issue #96), creating an approved proof (and
+ * its signal chain) on demand. `practice_id` always mirrors the proof's —
+ * pass `proofId` alone and the scope is read off the proof row.
+ */
+export async function placement(
+  db: Db,
+  overrides: Partial<PlacementInsert> = {},
+): Promise<typeof placements.$inferSelect> {
+  let { proofId, practiceId } = overrides;
+  if (!proofId) {
+    const parent = await proof(db, {
+      status: "approved",
+      ...(practiceId ? { practiceId } : {}),
+    });
+    proofId = parent.id;
+    practiceId = parent.practiceId;
+  } else if (!practiceId) {
+    const [parent] = await db
+      .select({ practiceId: proofs.practiceId })
+      .from(proofs)
+      .where(eq(proofs.id, proofId));
+    if (!parent) throw new Error(`proof ${proofId} not found`);
+    practiceId = parent.practiceId;
+  }
+  const [row] = await db
+    .insert(placements)
+    .values({
+      channel: "website",
+      active: true,
+      ...overrides,
+      proofId,
+      practiceId,
+    })
+    .returning();
+  return must(row, "placement");
 }
 
 /**

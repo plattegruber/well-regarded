@@ -1,7 +1,8 @@
 /**
  * Route stage end-to-end (issue #108): the real dispatcher + the real
- * wired `route` handler (production `RouteStore`, interim audit-only
- * sinks) against a real Postgres via packages/db's template-clone harness.
+ * wired `route` handler (production `RouteStore`, the real proof sink
+ * from #96, the interim audit-only recovery sink) against a real Postgres
+ * via packages/db's template-clone harness.
  *
  * Covers, per branch: the audit entry (actor `system` / `pipeline:route`,
  * entity `signals`), the terminal `pipeline_status: 'processed'`, and the
@@ -32,7 +33,7 @@ import {
 } from "./support/integrationEnv";
 
 const t = setupTestDb();
-const { signals, auditLog } = schema;
+const { signals, auditLog, proofs } = schema;
 
 let env: IntegrationEnv;
 
@@ -166,7 +167,7 @@ describe("route branches write their audit + status + stats atomically", () => {
     expect(summary?.run.stats).toEqual({ route_review_inbox: 1 });
   });
 
-  it("proof candidate: proof_candidate audit + route_proof_candidate stat", async () => {
+  it("proof candidate: suggested proofs row + proof.suggested audit + route_proof_candidate stat (#96)", async () => {
     const { p, run, s } = await routableSignal();
     await derivation(t.db, {
       signalId: s.id,
@@ -182,14 +183,78 @@ describe("route branches write their audit + status + stats atomically", () => {
 
     await deliverRoute(routeBody(s, run.id));
 
-    const audits = await auditRowsFor(s.id);
-    expect(audits.map((row) => row.action)).toEqual(["signal.proof_candidate"]);
-    expect(audits[0]?.payload).toMatchObject({
+    // The real row: a whole-signal suggestion, display_text untouched.
+    const proofRows = await t.db
+      .select()
+      .from(proofs)
+      .where(eq(proofs.signalId, s.id));
+    expect(proofRows).toHaveLength(1);
+    expect(proofRows[0]).toMatchObject({
+      practiceId: p.id,
+      signalId: s.id,
+      excerptId: null,
+      displayText: null,
+      status: "suggested",
+      approvedBy: null,
+    });
+
+    // The audit rides the proofs entity now (not the signal), keyed on
+    // the new row's id, in the same routing transaction.
+    expect(await auditRowsFor(s.id)).toHaveLength(0);
+    const proofAudits = await auditRowsFor(proofRows[0]?.id ?? "");
+    expect(proofAudits).toHaveLength(1);
+    expect(proofAudits[0]).toMatchObject({
+      practiceId: p.id,
+      actorType: "system",
+      actorId: "pipeline:route",
+      action: "proof.suggested",
+      entityType: "proofs",
+    });
+    expect(proofAudits[0]?.payload).toMatchObject({
       sentiment: "positive",
+      suitabilityConfidence: 0.9,
       importRunId: run.id,
     });
+
+    expect(await pipelineStatusOf(s.id)).toBe("processed");
     const summary = await getImportRunSummary(t.db, p.id, run.id);
     expect(summary?.run.stats).toEqual({ route_proof_candidate: 1 });
+  });
+
+  it("proof candidate re-route: an existing non-archived proof is never duplicated", async () => {
+    // Re-classification sends a signal through route again (a NEW message,
+    // so the processed-status skip does not apply after the reset below).
+    const { p, run, s } = await routableSignal();
+    await derivation(t.db, {
+      signalId: s.id,
+      dimension: "sentiment",
+      value: "positive",
+    });
+    await derivation(t.db, {
+      signalId: s.id,
+      dimension: "publication_suitability",
+      value: "suitable",
+      confidence: 0.9,
+    });
+
+    await deliverRoute(routeBody(s, run.id));
+    await t.db
+      .update(signals)
+      .set({ pipelineStatus: "pending_route" })
+      .where(eq(signals.id, s.id));
+    await deliverRoute(routeBody(s, run.id));
+
+    const proofRows = await t.db
+      .select()
+      .from(proofs)
+      .where(eq(proofs.signalId, s.id));
+    expect(proofRows).toHaveLength(1);
+    // The candidate stat still counts per routing pass; only the row and
+    // its audit are idempotent.
+    const summary = await getImportRunSummary(t.db, p.id, run.id);
+    expect(summary?.run.stats).toEqual({ route_proof_candidate: 2 });
+    const proofAudits = await auditRowsFor(proofRows[0]?.id ?? "");
+    expect(proofAudits).toHaveLength(1);
   });
 
   it("quiet path: routed audit only, still processed, route_quiet stat", async () => {
@@ -232,9 +297,16 @@ describe("route branches write their audit + status + stats atomically", () => {
     const audits = await auditRowsFor(s.id);
     expect(audits.map((row) => row.action).sort()).toEqual([
       "signal.entered_review_inbox",
-      "signal.proof_candidate",
       "signal.routed_urgent",
     ]);
+    // The proof branch writes a real suggestion row (audited on the
+    // proofs entity) in the same transaction as the other branches.
+    const proofRows = await t.db
+      .select()
+      .from(proofs)
+      .where(eq(proofs.signalId, s.id));
+    expect(proofRows).toHaveLength(1);
+    expect(proofRows[0]?.status).toBe("suggested");
     const summary = await getImportRunSummary(t.db, p.id, run.id);
     expect(summary?.run.stats).toEqual({
       route_urgent: 1,
