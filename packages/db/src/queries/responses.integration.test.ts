@@ -21,6 +21,7 @@ import {
 } from "../../test/factories.js";
 import { setupTestDb } from "../../test/harness.js";
 import { auditLog } from "../schema/audit.js";
+import { responses } from "../schema/responses.js";
 import {
   countPendingApprovals,
   createResponseDraft,
@@ -29,6 +30,7 @@ import {
   listResponsesForSignal,
   listResponsesPendingApproval,
   transitionResponse,
+  upsertImportedResponse,
 } from "./responses.js";
 
 const ALL_PERMISSIONS = { draftResponse: true, approveResponse: true };
@@ -546,5 +548,206 @@ describe("listResponsesPendingApproval (Today section 6)", () => {
     });
     expect(capped.items).toHaveLength(1);
     expect(capped.total).toBe(2);
+  });
+});
+
+describe("upsertImportedResponse (#214)", () => {
+  const t3 = setupTestDb();
+  const importActor: Actor = { type: "system", id: "pipeline:normalize" };
+
+  async function importedRows(signalId: string) {
+    return t3.db
+      .select()
+      .from(responses)
+      .where(
+        and(
+          eq(responses.signalId, signalId),
+          eq(responses.origin, "source_import"),
+        ),
+      );
+  }
+
+  async function auditsFor(entityId: string) {
+    return t3.db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.entityType, "responses"),
+          eq(auditLog.entityId, entityId),
+        ),
+      )
+      .orderBy(desc(auditLog.createdAt));
+  }
+
+  function replyInput(practiceId: string, signalId: string) {
+    return {
+      practiceId,
+      signalId,
+      body: "Thanks for the kind words — see you in six months!",
+      publishedAt: new Date("2026-06-12T05:35:36.000Z"),
+      publishUpdateTime: "2026-06-12T05:35:36.000Z",
+      moderationState: "APPROVED" as const,
+      policyViolation: null,
+      actor: importActor,
+      auditPayload: { importRunId: "run-1" },
+    };
+  }
+
+  it("creates the imported row born published, authorless, moderation carried, audited as system", async () => {
+    const s = await signal(t3.db, {
+      sourceKind: "google",
+      visibility: "public",
+      sourceId: "accounts/1/locations/1/reviews/imp-1",
+      originalRating: "5.0",
+    });
+
+    const result = await t3.db.transaction((tx) =>
+      upsertImportedResponse(tx, replyInput(s.practiceId, s.id)),
+    );
+    expect(result.outcome).toBe("created");
+    expect(result.response).toMatchObject({
+      origin: "source_import",
+      status: "published",
+      authorId: null,
+      body: "Thanks for the kind words — see you in six months!",
+      moderationState: "APPROVED",
+      policyViolation: null,
+      publishUpdateTime: "2026-06-12T05:35:36.000Z",
+    });
+    expect(result.response?.publishedAt?.toISOString()).toBe(
+      "2026-06-12T05:35:36.000Z",
+    );
+
+    const audits = await auditsFor(result.response?.id ?? "");
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      action: "response.imported",
+      actorType: "system",
+      actorId: "pipeline:normalize",
+      practiceId: s.practiceId,
+    });
+    expect(audits[0]?.payload).toMatchObject({
+      signalId: s.id,
+      origin: "source_import",
+      moderationState: "APPROVED",
+      importRunId: "run-1",
+    });
+  });
+
+  it("is idempotent: a byte-identical re-poll writes nothing and audits nothing", async () => {
+    const s = await signal(t3.db, {
+      sourceKind: "google",
+      visibility: "public",
+      sourceId: "accounts/1/locations/1/reviews/imp-2",
+      originalRating: "4.0",
+    });
+    const input = replyInput(s.practiceId, s.id);
+
+    const first = await t3.db.transaction((tx) =>
+      upsertImportedResponse(tx, input),
+    );
+    const second = await t3.db.transaction((tx) =>
+      upsertImportedResponse(tx, input),
+    );
+    expect(first.outcome).toBe("created");
+    expect(second.outcome).toBe("unchanged");
+    expect(second.response?.id).toBe(first.response?.id);
+
+    expect(await importedRows(s.id)).toHaveLength(1);
+    expect(await auditsFor(first.response?.id ?? "")).toHaveLength(1);
+  });
+
+  it("an edited reply (or a moderation flip) updates the imported row in place, audited", async () => {
+    const s = await signal(t3.db, {
+      sourceKind: "google",
+      visibility: "public",
+      sourceId: "accounts/1/locations/1/reviews/imp-3",
+      originalRating: "2.0",
+    });
+    const created = await t3.db.transaction((tx) =>
+      upsertImportedResponse(tx, {
+        ...replyInput(s.practiceId, s.id),
+        moderationState: "PENDING",
+      }),
+    );
+
+    // Google moderated the reply and the owner rewrote it.
+    const updated = await t3.db.transaction((tx) =>
+      upsertImportedResponse(tx, {
+        ...replyInput(s.practiceId, s.id),
+        body: "We are sorry about the wait — please call us to make it right.",
+        publishedAt: new Date("2026-07-01T00:00:00.000Z"),
+        publishUpdateTime: "2026-07-01T00:00:00.000Z",
+        moderationState: "REJECTED",
+        policyViolation: "Contains personal information.",
+      }),
+    );
+    expect(updated.outcome).toBe("updated");
+    // In place: same row id, no second imported row, content tracked.
+    expect(updated.response?.id).toBe(created.response?.id);
+    expect(await importedRows(s.id)).toHaveLength(1);
+    expect(updated.response).toMatchObject({
+      status: "published",
+      body: "We are sorry about the wait — please call us to make it right.",
+      moderationState: "REJECTED",
+      policyViolation: "Contains personal information.",
+      publishUpdateTime: "2026-07-01T00:00:00.000Z",
+    });
+
+    const audits = await auditsFor(created.response?.id ?? "");
+    expect(audits.map((a) => a.action)).toEqual([
+      "response.import_updated",
+      "response.imported",
+    ]);
+    expect(audits[0]?.payload).toMatchObject({
+      moderationState: "REJECTED",
+      policyViolation: "Contains personal information.",
+    });
+  });
+
+  it("coexists with dashboard-origin rows: only its own source_import row is ever touched", async () => {
+    const author = await staffMember(t3.db);
+    const s = await signal(t3.db, {
+      practiceId: author.practiceId,
+      sourceKind: "google",
+      visibility: "public",
+      sourceId: "accounts/1/locations/1/reviews/imp-4",
+      originalRating: "3.0",
+    });
+    const draft = await response(t3.db, {
+      practiceId: author.practiceId,
+      signalId: s.id,
+      authorId: author.id,
+      status: "draft",
+      body: "A staff draft in progress.",
+    });
+
+    const imported = await t3.db.transaction((tx) =>
+      upsertImportedResponse(tx, replyInput(author.practiceId, s.id)),
+    );
+    expect(imported.outcome).toBe("created");
+    const again = await t3.db.transaction((tx) =>
+      upsertImportedResponse(tx, {
+        ...replyInput(author.practiceId, s.id),
+        body: "Edited at the source.",
+      }),
+    );
+    expect(again.outcome).toBe("updated");
+
+    // The dashboard draft is untouched; the signal has exactly one
+    // imported row (the partial unique index makes more impossible).
+    const all = await t3.db
+      .select()
+      .from(responses)
+      .where(eq(responses.signalId, s.id));
+    expect(all).toHaveLength(2);
+    const draftRow = all.find((r) => r.id === draft.id);
+    expect(draftRow).toMatchObject({
+      origin: "dashboard",
+      status: "draft",
+      body: "A staff draft in progress.",
+    });
+    expect(await importedRows(s.id)).toHaveLength(1);
   });
 });

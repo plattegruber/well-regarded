@@ -67,7 +67,8 @@ async function main(): Promise<void> {
         "(embeddings left NULL — backfill is Epic #9)",
     );
     console.log(
-      `  ${summary.importRuns} import run (the legacy CSV feedback export)`,
+      `  ${summary.importRuns} import run (the legacy CSV feedback export), ` +
+        `${summary.responses} imported Google owner replies (#214)`,
     );
   } finally {
     await sql.end();

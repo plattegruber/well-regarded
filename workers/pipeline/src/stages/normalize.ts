@@ -16,10 +16,12 @@
  *    only — see ./normalize/hints.ts), route patient hints through the PII
  *    seam in `packages/db`, insert `signals` rows idempotently
  *    (`ON CONFLICT DO NOTHING` on the `(practice_id, source_kind,
- *    source_id)` unique constraint), and update `import_runs` counts
- *    atomically with the inserts (#111 helpers). A mid-artifact failure
- *    rolls the whole artifact back and retries — safe, because the inserts
- *    are idempotent by the unique constraint.
+ *    source_id)` unique constraint), persist pre-existing source replies
+ *    as imported `responses` rows (#214 — see `persistImportedReplies`),
+ *    and update `import_runs` counts atomically with the inserts (#111
+ *    helpers). A mid-artifact failure rolls the whole artifact back and
+ *    retries — safe, because the inserts are idempotent by the unique
+ *    constraint and the reply upsert by content comparison.
  * 5. AFTER the transaction commits, enqueue one `DedupeMessage` per signal:
  *    new rows plain, conflicting rows flagged `reason: "conflict_reimport"`
  *    (a potential update; #106 decides whether content changed). A crash
@@ -57,6 +59,7 @@ import {
   type SignalInsert,
   schema,
   type Tx,
+  upsertImportedResponse,
 } from "@wellregarded/db";
 import {
   ArtifactNotFoundError,
@@ -243,10 +246,58 @@ export function createNormalizeStore(
         );
 
         await recordAttestedConsents(tx, message, pairs, outcomes);
+        await persistImportedReplies(tx, message, pairs, outcomes);
 
         return outcomes;
       }),
   };
+}
+
+/**
+ * The existing-reply seam (issue #214, Epic #10): a signal that arrived
+ * with `sourceMetadata.existingReply` (the GBP adapter's pre-existing
+ * owner-reply passthrough, #125) gets a `responses` row — `status =
+ * 'published'`, `origin = 'source_import'`, no staff author — in the same
+ * transaction as its insert, so response status, tier ordering, and
+ * response-rate metrics see the reply the moment the review lands.
+ *
+ * Unlike the consent seam above, CONFLICT outcomes are processed too: a
+ * re-poll delivers the review again, and the reply it carries may have
+ * been edited (or its moderation verdict flipped) at Google since the
+ * first ingest — `upsertImportedResponse` updates the imported row in
+ * place, reports `unchanged` on a byte-identical re-poll (no write, no
+ * audit), and the partial unique index makes duplicates structurally
+ * impossible. Audit actor is `system pipeline:normalize`.
+ */
+async function persistImportedReplies(
+  tx: Tx,
+  message: IngestMessage,
+  pairs: ReadonlyArray<{ signal: NormalizedSignal; row: SignalInsert }>,
+  outcomes: readonly NormalizedSignalOutcome[],
+): Promise<void> {
+  const bySourceId = new Map(
+    pairs
+      .filter((pair) => pair.signal.sourceId !== null)
+      .map((pair) => [pair.signal.sourceId as string, pair]),
+  );
+  for (const outcome of outcomes) {
+    if (outcome.sourceId === null) continue;
+    const reply = bySourceId.get(outcome.sourceId)?.signal.sourceMetadata
+      ?.existingReply;
+    if (reply === undefined) continue;
+    await upsertImportedResponse(tx, {
+      practiceId: message.practiceId,
+      signalId: outcome.signalId,
+      body: reply.comment,
+      publishedAt:
+        reply.updateTime !== undefined ? new Date(reply.updateTime) : null,
+      publishUpdateTime: reply.updateTime ?? null,
+      moderationState: reply.state ?? null,
+      policyViolation: reply.policyViolation ?? null,
+      actor: { type: "system", id: "pipeline:normalize" },
+      auditPayload: { importRunId: message.importRunId },
+    });
+  }
 }
 
 /**

@@ -44,9 +44,11 @@ import { grantConsent, revokeConsent } from "../queries/consents.js";
 import { upsertContactPoint } from "../queries/patients.js";
 import { consents } from "../schema/consents.js";
 import { derivations } from "../schema/derivations.js";
+import { importDrafts } from "../schema/importDrafts.js";
 import { importRuns } from "../schema/importRuns.js";
 import { contactPoints, patients } from "../schema/pii.js";
 import { proofExcerpts } from "../schema/proofExcerpts.js";
+import { responses } from "../schema/responses.js";
 import { signals } from "../schema/signals.js";
 import {
   locations,
@@ -71,6 +73,10 @@ import {
   PROVIDER_FIXTURES,
   STAFF_FIXTURES,
 } from "./fixtures/demoPractice.js";
+import {
+  demoGoogleArtifactKey,
+  demoGoogleReviewName,
+} from "./fixtures/googleArtifacts.js";
 import { SIGNAL_FIXTURES, type SignalFixture } from "./fixtures/signals.js";
 import { seededFloat, seededInt, seedId } from "./ids.js";
 
@@ -89,6 +95,8 @@ export interface SeedSummary {
   consents: number;
   proofExcerpts: number;
   importRuns: number;
+  /** Imported pre-existing Google owner replies (#214). */
+  responses: number;
 }
 
 export interface RunSeedOptions {
@@ -140,6 +148,11 @@ export async function runSeed(
       patientIds,
     );
     const excerptCount = await insertProofExcerpts(tx, practiceId, signalIds);
+    const responseCount = await insertImportedResponses(
+      tx,
+      practiceId,
+      signalIds,
+    );
 
     return {
       practiceId,
@@ -153,6 +166,7 @@ export async function runSeed(
       consents: consentCount,
       proofExcerpts: excerptCount,
       importRuns: importRunCount,
+      responses: responseCount,
     };
   });
 }
@@ -194,7 +208,13 @@ async function upsertPractice(tx: Tx): Promise<string> {
     .where(eq(proofExcerpts.practiceId, practiceId));
   await tx.delete(derivations).where(eq(derivations.practiceId, practiceId));
   await tx.delete(consents).where(eq(consents.practiceId, practiceId));
+  // Responses FK both signals and staff_members — delete before either.
+  await tx.delete(responses).where(eq(responses.practiceId, practiceId));
   await tx.delete(signals).where(eq(signals.practiceId, practiceId));
+  // Import drafts (CSV wizard state accumulated during dev, Epic #8) FK
+  // import_runs and staff_members — delete before both, or reseeding any
+  // database that has been used for imports fails on the FK.
+  await tx.delete(importDrafts).where(eq(importDrafts.practiceId, practiceId));
   await tx.delete(importRuns).where(eq(importRuns.practiceId, practiceId));
   await tx.delete(providers).where(eq(providers.practiceId, practiceId));
   await tx.delete(staffMembers).where(eq(staffMembers.practiceId, practiceId));
@@ -348,9 +368,13 @@ function provenance(fixture: SignalFixture): {
   switch (fixture.sourceKind) {
     case "google":
       return {
-        sourceId: `demo-google-${fixture.key}`,
+        // A REAL v4 review resource name (seed v3, #214): `source_id` IS
+        // the GBP resource name for the publish/reply flows, and the demo
+        // raw artifact's review `name` must match it byte-for-byte (see
+        // ./fixtures/googleArtifacts.ts).
+        sourceId: demoGoogleReviewName(fixture),
         sourceUrl: `https://search.google.com/local/reviews/demo/${fixture.key}`,
-        rawArtifactKey: `raw/google/demo/${fixture.key}.json`,
+        rawArtifactKey: demoGoogleArtifactKey(fixture),
         importRunId: null,
       };
     case "csv_import":
@@ -626,5 +650,48 @@ async function insertProofExcerpts(
     });
   }
   await tx.insert(proofExcerpts).values(rows);
+  return rows.length;
+}
+
+/**
+ * Imported pre-existing Google owner replies (issue #214): fixtures with
+ * an `existingReply` get the exact row the normalize seam /
+ * reply-import backfill would write — `origin = 'source_import'`,
+ * `status = 'published'`, no staff author, moderation state carried,
+ * `published_at` = the reply's Google updateTime. Direct insert (a plain
+ * table, per the composition rules) with deterministic ids; timestamps
+ * mirror the reply time so the #77 thread orders sensibly.
+ */
+async function insertImportedResponses(
+  tx: Tx,
+  practiceId: string,
+  signalIds: Record<string, string>,
+): Promise<number> {
+  type ResponseInsert = typeof responses.$inferInsert;
+  const rows: ResponseInsert[] = [];
+  for (const fixture of SIGNAL_FIXTURES) {
+    const reply = fixture.existingReply;
+    const signalId = signalIds[fixture.key];
+    if (reply === undefined || signalId === undefined) continue;
+    const repliedAt = daysBeforeAnchor(reply.updatedDaysAgo);
+    rows.push({
+      id: seedId(`response:${fixture.key}:imported`),
+      practiceId,
+      signalId,
+      authorId: null,
+      origin: "source_import",
+      status: "published",
+      body: reply.comment,
+      moderationState: reply.state,
+      policyViolation: reply.policyViolation ?? null,
+      publishedAt: repliedAt,
+      publishUpdateTime: repliedAt.toISOString(),
+      createdAt: repliedAt,
+      updatedAt: repliedAt,
+    });
+  }
+  if (rows.length > 0) {
+    await tx.insert(responses).values(rows);
+  }
   return rows.length;
 }

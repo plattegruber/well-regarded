@@ -52,8 +52,9 @@ function toSignalsColumns(
   // authorDisplayName/authorExternalId have no signals column yet — they ride
   // the wire contract for dedupe and future author storage. sourceMetadata
   // (#125) likewise has no column: dedupe threads its sourceUpdatedAt into
-  // signal_versions.source_updated_at; persisting existingReply is an
-  // Epic #3/#10 question.
+  // signal_versions.source_updated_at, and the normalize stage persists
+  // existingReply as an imported `responses` row (#214) — neither lands
+  // on `signals` itself.
 }
 
 describe("NormalizedSignal ↔ signals table drift guard", () => {

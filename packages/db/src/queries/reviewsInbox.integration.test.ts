@@ -7,9 +7,11 @@
  * `getReviewDetail` assembly + its four indistinguishable 404 paths.
  *
  * Tiers 4–5 (drafted/pending approval, responded) derive from `responses`
- * rows (#80). The corpus tests above run BEFORE any response rows exist
- * (documented fallback: `needs_response`); the final describe block seeds
- * rows and pins the real derivation — keep it last in the file.
+ * rows (#80). The seeded corpus carries ONLY the #214 imported replies
+ * (seed v3: fixtures with `existingReply` are `responded` from the first
+ * run; everything else resolves through the documented fallback,
+ * `needs_response`); the final describe block seeds dashboard-origin rows
+ * and pins the full derivation — keep it last in the file.
  */
 
 import { isNegativeReview, REVIEW_SOURCE_KINDS } from "@wellregarded/core";
@@ -52,6 +54,14 @@ const isReviewFixture = (fixture: Fixture) =>
 
 const REVIEW_FIXTURES = SIGNAL_FIXTURES.filter(isReviewFixture);
 
+/** Seeded reviews already replied at the source (#214): their imported
+ * `responses` rows make them `responded` from the first seed run. */
+const IMPORTED_REPLY_FIXTURES = REVIEW_FIXTURES.filter(
+  (f) => f.existingReply !== undefined,
+);
+const importedReplyIds = () =>
+  new Set(IMPORTED_REPLY_FIXTURES.map((f) => signalId(f.key)));
+
 /** Manual re-classification outranks the inferred sentiment (Epic #3). */
 const effectiveSentiment = (fixture: Fixture) =>
   fixture.manualSentiment ?? fixture.sentiment;
@@ -85,11 +95,17 @@ describe("listReviewInbox — the review predicate (integration)", () => {
     }
   });
 
-  it("resolves every review to needs_response while no responses exist", async () => {
-    // The documented fallback: no response recorded → needs_response.
+  it("resolves unresponded reviews to needs_response; #214 imported replies read responded", async () => {
+    // The documented fallback: no response recorded → needs_response. The
+    // seed's imported owner replies (existingReply fixtures) are the only
+    // responses rows at this point — they flip exactly those reviews.
+    expect(IMPORTED_REPLY_FIXTURES.length).toBeGreaterThan(0);
+    const responded = importedReplyIds();
     const items = await collectAllPages({ practiceId: DEMO_PRACTICE_ID });
     for (const item of items) {
-      expect(item.status).toBe("needs_response");
+      expect(item.status).toBe(
+        responded.has(item.id) ? "responded" : "needs_response",
+      );
     }
   });
 
@@ -168,7 +184,7 @@ describe("listReviewInbox — filters (integration)", () => {
     }
   });
 
-  it("filters by status honestly: only needs_response is non-empty today", async () => {
+  it("filters by status honestly: needs_response and the #214 imported replies are non-empty today", async () => {
     const needs = await listReviewInbox(t.db, {
       practiceId: DEMO_PRACTICE_ID,
       filters: { status: "needs_response" },
@@ -176,11 +192,14 @@ describe("listReviewInbox — filters (integration)", () => {
     });
     expect(needs.items.length).toBeGreaterThan(0);
 
-    for (const status of [
-      "drafted",
-      "pending_approval",
-      "responded",
-    ] as const) {
+    // Imported published replies count as responded (#214 requirement 3).
+    const responded = await collectAllPages({
+      practiceId: DEMO_PRACTICE_ID,
+      filters: { status: "responded" },
+    });
+    expect(new Set(responded.map((i) => i.id))).toEqual(importedReplyIds());
+
+    for (const status of ["drafted", "pending_approval"] as const) {
       const page = await listReviewInbox(t.db, {
         practiceId: DEMO_PRACTICE_ID,
         filters: { status },
@@ -205,10 +224,12 @@ describe("listReviewInbox — filters (integration)", () => {
 });
 
 describe("listReviewInbox — needs-attention-first ordering (integration)", () => {
-  it("orders the seeded corpus negative-oldest-first, then mixed, then rest-newest", async () => {
+  it("orders the seeded corpus negative-oldest-first, then mixed, then rest-newest, responded last", async () => {
     const items = await collectAllPages({ practiceId: DEMO_PRACTICE_ID });
 
     const tierOf = (item: ReviewInboxItem): number => {
+      // The #214 imported replies land in the responded tier (5).
+      if (item.status === "responded") return 5;
       const negative = isNegativeReview({
         rating: item.rating === null ? null : Number(item.rating),
         sentiment:
@@ -241,6 +262,11 @@ describe("listReviewInbox — needs-attention-first ordering (integration)", () 
         tier3[i - 1]!.occurredAt.getTime(),
       );
     }
+
+    // Tier 5 (responded — the imported replies), newest first: g14 (17d)
+    // before g16 (52d).
+    const tier5 = items.filter((i) => tierOf(i) === 5);
+    expect(tier5.map((i) => i.id)).toEqual([signalId("g14"), signalId("g16")]);
   });
 
   it("orders a hand-built fixture set exactly (tiers 1–3, both directions)", async () => {
@@ -383,17 +409,19 @@ describe("listReviewInbox — cursor pagination (integration)", () => {
 });
 
 describe("countReviewInboxStatuses (integration)", () => {
-  it("counts the whole corpus under needs_response today", async () => {
+  it("counts the corpus: needs_response plus the #214 imported replies as responded", async () => {
     const counts = await countReviewInboxStatuses(t.db, {
       practiceId: DEMO_PRACTICE_ID,
     });
     // + the unclassified factory review added above; assert via the list.
     const all = await collectAllPages({ practiceId: DEMO_PRACTICE_ID });
     expect(counts.total).toBe(all.length);
-    expect(counts.needs_response).toBe(all.length);
+    expect(counts.needs_response).toBe(
+      all.length - IMPORTED_REPLY_FIXTURES.length,
+    );
     expect(counts.drafted).toBe(0);
     expect(counts.pending_approval).toBe(0);
-    expect(counts.responded).toBe(0);
+    expect(counts.responded).toBe(IMPORTED_REPLY_FIXTURES.length);
   });
 
   it("respects the non-status filters", async () => {
@@ -551,17 +579,27 @@ describe("response-status derivation from responses rows (#80)", () => {
       practiceId: DEMO_PRACTICE_ID,
       filters: { status: "responded" },
     });
-    expect(responded.map((i) => i.id)).toEqual([target()]);
+    // Newest first within the responded tier: g01 (12d) leads the seeded
+    // #214 imports g14 (17d) and g16 (52d).
+    expect(responded.map((i) => i.id)).toEqual([
+      target(),
+      signalId("g14"),
+      signalId("g16"),
+    ]);
 
     const counts = await countReviewInboxStatuses(t.db, {
       practiceId: DEMO_PRACTICE_ID,
     });
-    expect(counts.responded).toBe(1);
+    expect(counts.responded).toBe(1 + IMPORTED_REPLY_FIXTURES.length);
   });
 
-  it("a responded review sorts into the last tier", async () => {
+  it("responded reviews sort into the last tier", async () => {
     const items = await collectAllPages({ practiceId: DEMO_PRACTICE_ID });
-    expect(items[items.length - 1]?.id).toBe(target());
+    expect(items.slice(-3).map((i) => i.id)).toEqual([
+      target(),
+      signalId("g14"),
+      signalId("g16"),
+    ]);
   });
 
   it("getReviewDetail assembles the populated thread, newest first", async () => {

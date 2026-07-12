@@ -12,6 +12,10 @@
  *   `EMBEDDING_BACKFILL` binding / `wr-embedding-backfill-<env>` workflow;
  * - `CsvImport` Workflow (issue #135) — the class behind the
  *   `CSV_IMPORT` binding / `wr-csv-import-<env>` workflow;
+ * - `ReplyImportBackfill` Workflow (issue #214) — the class behind the
+ *   `REPLY_IMPORT_BACKFILL` binding / `wr-reply-import-backfill-<env>`
+ *   workflow (imports pre-existing Google owner replies from stored raw
+ *   artifacts into `responses`);
  * - `scheduled`: the 6-hourly GBP poll tick (issue #123; src/scheduled.ts).
  *   Test locally with `wrangler dev --test-scheduled` and
  *   `curl "http://localhost:8789/cdn-cgi/handler/scheduled?cron=0+*%2F6+*+*+*"`;
@@ -29,6 +33,7 @@ import { handleScheduled } from "./scheduled";
 
 export { CsvImport } from "./csvImport.workflow";
 export { EmbeddingBackfill } from "./embeddingBackfill.workflow";
+export { ReplyImportBackfill } from "./replyImportBackfill.workflow";
 export { SyncLock } from "./sync-lock";
 
 export default {

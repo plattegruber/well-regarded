@@ -151,6 +151,10 @@ export {
   type TransitionResponseInput,
   type TransitionResponseResult,
   transitionResponse,
+  type UpsertImportedResponseInput,
+  type UpsertImportedResponseOutcome,
+  type UpsertImportedResponseResult,
+  upsertImportedResponse,
 } from "./queries/responses.js";
 export {
   countReviewInboxStatuses,
@@ -169,8 +173,10 @@ export {
 } from "./queries/reviewsInbox.js";
 export {
   getSignal,
+  googleSignalsForReplyImport,
   insertNormalizedSignals,
   type NormalizedSignalOutcome,
+  type ReplyImportCandidate,
   type Signal,
   type SignalInsert,
 } from "./queries/signals.js";

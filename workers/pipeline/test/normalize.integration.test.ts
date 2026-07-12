@@ -16,7 +16,11 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { resetEnvCache } from "@wellregarded/core";
-import { getImportRunSummary, schema } from "@wellregarded/db";
+import {
+  countReviewInboxStatuses,
+  getImportRunSummary,
+  schema,
+} from "@wellregarded/db";
 import {
   buildCsvImportBatchArtifact,
   buildManualEntryArtifact,
@@ -25,7 +29,7 @@ import {
   putRawArtifact,
 } from "@wellregarded/sources";
 import { InMemoryRawArtifactBucket } from "@wellregarded/sources/testing";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -43,7 +47,8 @@ import {
 } from "./support/integrationEnv";
 
 const t = setupTestDb();
-const { signals, patients, contactPoints, consents, auditLog } = schema;
+const { signals, patients, contactPoints, consents, auditLog, responses } =
+  schema;
 
 let bucket: InMemoryRawArtifactBucket;
 let env: IntegrationEnv;
@@ -572,6 +577,205 @@ describe("normalize end-to-end (google reviews adapter, #125)", () => {
     const summary = await getImportRunSummary(t.db, p.id, run.id);
     expect(summary?.errorCount).toBe(1);
     expect(summary?.errorSamples[0]?.message).toContain('adapter "google"');
+  });
+});
+
+describe("normalize persists pre-existing owner replies as imported responses (#214)", () => {
+  /** The recorded page again — it carries four replied reviews. */
+  async function loadRecordedPage(): Promise<{
+    reviews: Array<{
+      name: string;
+      reviewReply?: { comment: string; updateTime?: string };
+    }>;
+  }> {
+    return JSON.parse(
+      await readFile(
+        fileURLToPath(
+          new URL(
+            "../../../packages/sources/src/google/fixtures/reviews.list.page1.json",
+            import.meta.url,
+          ),
+        ),
+        "utf8",
+      ),
+    );
+  }
+
+  function envelope(practiceId: string, page: unknown) {
+    return {
+      kind: "gbp.reviews.page",
+      envelopeVersion: 1,
+      practiceId,
+      googleLocationName: "accounts/1/locations/1",
+      fetchedAt: "2026-07-01T00:00:00.000Z",
+      page,
+    };
+  }
+
+  async function fixtureRun() {
+    const p = await practice(t.db);
+    const run = await importRun(t.db, {
+      practiceId: p.id,
+      sourceKind: "google",
+    });
+    const page = await loadRecordedPage();
+    return { p, run, page };
+  }
+
+  async function deliver(practiceId: string, runId: string, page: unknown) {
+    const key = await storeArtifact(
+      practiceId,
+      "google",
+      envelope(practiceId, page),
+    );
+    const message = await deliverIngest({
+      importRunId: runId,
+      rawArtifactKey: key,
+      sourceKind: "google",
+      practiceId,
+    });
+    expect(message.ack).toHaveBeenCalledOnce();
+    return key;
+  }
+
+  async function importedResponses(practiceId: string) {
+    return t.db
+      .select({
+        response: responses,
+        sourceId: signals.sourceId,
+      })
+      .from(responses)
+      .innerJoin(signals, eq(signals.id, responses.signalId))
+      .where(
+        and(
+          eq(responses.practiceId, practiceId),
+          eq(responses.origin, "source_import"),
+        ),
+      );
+  }
+
+  async function importAudits(practiceId: string) {
+    const rows = await t.db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.practiceId, practiceId));
+    return rows.filter((row) => row.action.startsWith("response.import"));
+  }
+
+  it("each replied review lands one published source_import response in the artifact's transaction, audited, and the inbox reads responded", async () => {
+    const { p, run, page } = await fixtureRun();
+    const repliedNames = page.reviews
+      .filter((review) => review.reviewReply !== undefined)
+      .map((review) => review.name);
+    expect(repliedNames.length).toBeGreaterThan(0);
+
+    await deliver(p.id, run.id, page);
+
+    const imported = await importedResponses(p.id);
+    expect(new Set(imported.map((row) => row.sourceId))).toEqual(
+      new Set(repliedNames),
+    );
+    for (const row of imported) {
+      expect(row.response).toMatchObject({
+        origin: "source_import",
+        status: "published",
+        authorId: null,
+      });
+    }
+
+    // The REJECTED reply carries its full moderation state (#214 req 1);
+    // published_at is Google's reply updateTime.
+    const rejected = imported.find((row) =>
+      row.sourceId?.endsWith("/reviews/4"),
+    );
+    expect(rejected?.response).toMatchObject({
+      moderationState: "REJECTED",
+      policyViolation:
+        "Reply removed for policy violation: contains personal health information.",
+      publishUpdateTime: "2026-06-12T05:35:36.000Z",
+    });
+    expect(rejected?.response.publishedAt?.toISOString()).toBe(
+      "2026-06-12T05:35:36.000Z",
+    );
+    expect(rejected?.response.body).toContain(
+      "We apologize for the billing confusion.",
+    );
+
+    // Audited as the pipeline's system actor (#214 req 4).
+    const audits = await importAudits(p.id);
+    expect(audits).toHaveLength(repliedNames.length);
+    for (const entry of audits) {
+      expect(entry).toMatchObject({
+        action: "response.imported",
+        actorType: "system",
+        actorId: "pipeline:normalize",
+      });
+      expect(entry.payload).toMatchObject({ importRunId: run.id });
+    }
+
+    // Inbox integration (#214 req 3): the imported replies count as
+    // responded through the existing latest-response join — no new SQL.
+    const counts = await countReviewInboxStatuses(t.db, { practiceId: p.id });
+    expect(counts.responded).toBe(repliedNames.length);
+    expect(counts.needs_response).toBe(
+      page.reviews.length - repliedNames.length,
+    );
+  });
+
+  it("a re-poll is idempotent: no duplicate imported rows, no duplicate audits", async () => {
+    const { p, run, page } = await fixtureRun();
+    await deliver(p.id, run.id, page);
+    const before = await importedResponses(p.id);
+
+    await deliver(p.id, run.id, page);
+
+    const after = await importedResponses(p.id);
+    expect(after.map((row) => row.response.id).sort()).toEqual(
+      before.map((row) => row.response.id).sort(),
+    );
+    // Byte-identical replies re-poll silently: still only the original
+    // `response.imported` entries, nothing marked updated.
+    const audits = await importAudits(p.id);
+    expect(audits.map((a) => a.action)).toEqual(
+      before.map(() => "response.imported"),
+    );
+  });
+
+  it("a reply edited on Google updates the imported row in place on the next poll", async () => {
+    const { p, run, page } = await fixtureRun();
+    await deliver(p.id, run.id, page);
+    const before = await importedResponses(p.id);
+    const target = before.find((row) => row.sourceId?.endsWith("/reviews/4"));
+    expect(target).toBeDefined();
+
+    // The owner rewrote the rejected reply; Google re-moderates it.
+    const edited = structuredClone(page);
+    const editedReview = edited.reviews.find((review) =>
+      review.name.endsWith("/reviews/4"),
+    ) as { reviewReply?: Record<string, unknown> };
+    editedReview.reviewReply = {
+      comment: "We are sorry about the billing mix-up — please call us.",
+      updateTime: "2026-07-02T09:00:00.000Z",
+      reviewReplyState: "PENDING",
+    };
+    await deliver(p.id, run.id, edited);
+
+    const after = await importedResponses(p.id);
+    expect(after).toHaveLength(before.length);
+    const updated = after.find((row) => row.sourceId?.endsWith("/reviews/4"));
+    // Same row, tracked content — never a second imported row.
+    expect(updated?.response.id).toBe(target?.response.id);
+    expect(updated?.response).toMatchObject({
+      body: "We are sorry about the billing mix-up — please call us.",
+      moderationState: "PENDING",
+      policyViolation: null,
+      publishUpdateTime: "2026-07-02T09:00:00.000Z",
+    });
+
+    const audits = await importAudits(p.id);
+    expect(
+      audits.filter((a) => a.action === "response.import_updated"),
+    ).toHaveLength(1);
   });
 });
 
