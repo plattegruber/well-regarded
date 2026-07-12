@@ -17,7 +17,7 @@ export type PermissionCell = "allow" | "deny" | "scoped";
  * Every cell is written out explicitly (no defaults, no spreads): the
  * `Record<StaffRole, Record<Action, PermissionCell>>` type makes adding a
  * role or action a compile error until every new cell is decided, and the
- * exhaustive tests iterate the full 7 × 11 grid.
+ * exhaustive tests iterate the full role × action grid.
  *
  * Notes:
  * - `provider` cells marked `scoped` (view_private_feedback, view_reports)
@@ -37,6 +37,7 @@ export const PERMISSION_MATRIX: Record<
     view_private_feedback: "allow",
     assign_recovery: "allow",
     resolve_duplicates: "allow",
+    reclassify_signal: "allow",
     draft_response: "allow",
     approve_response: "allow",
     publish_public: "allow",
@@ -51,6 +52,7 @@ export const PERMISSION_MATRIX: Record<
     view_private_feedback: "allow",
     assign_recovery: "allow",
     resolve_duplicates: "allow",
+    reclassify_signal: "allow",
     draft_response: "allow",
     approve_response: "allow",
     publish_public: "allow",
@@ -65,6 +67,7 @@ export const PERMISSION_MATRIX: Record<
     view_private_feedback: "scoped",
     assign_recovery: "scoped",
     resolve_duplicates: "scoped",
+    reclassify_signal: "scoped",
     draft_response: "scoped",
     approve_response: "deny",
     publish_public: "deny",
@@ -79,6 +82,7 @@ export const PERMISSION_MATRIX: Record<
     view_private_feedback: "allow",
     assign_recovery: "deny",
     resolve_duplicates: "deny",
+    reclassify_signal: "deny",
     draft_response: "allow",
     approve_response: "deny",
     publish_public: "allow",
@@ -93,6 +97,7 @@ export const PERMISSION_MATRIX: Record<
     view_private_feedback: "scoped",
     assign_recovery: "deny",
     resolve_duplicates: "deny",
+    reclassify_signal: "deny",
     draft_response: "deny",
     approve_response: "deny",
     publish_public: "deny",
@@ -107,6 +112,7 @@ export const PERMISSION_MATRIX: Record<
     view_private_feedback: "allow",
     assign_recovery: "allow",
     resolve_duplicates: "allow",
+    reclassify_signal: "allow",
     draft_response: "allow",
     approve_response: "allow",
     publish_public: "allow",
@@ -121,6 +127,7 @@ export const PERMISSION_MATRIX: Record<
     view_private_feedback: "deny",
     assign_recovery: "deny",
     resolve_duplicates: "deny",
+    reclassify_signal: "deny",
     draft_response: "allow",
     approve_response: "deny",
     publish_public: "deny",

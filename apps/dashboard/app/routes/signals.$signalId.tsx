@@ -10,14 +10,21 @@ import {
   can,
   DERIVATION_DIMENSIONS,
   describeConsentState,
+  isDerivationValueForDimension,
   SUSPECTED_DUPLICATE_RESOLUTIONS,
 } from "@wellregarded/core";
-import { getSignalDetail, resolveSuspectedDuplicate } from "@wellregarded/db";
+import {
+  confirmDerivation,
+  getSignalDetail,
+  listSignalFilterOptions,
+  reclassifyDerivation,
+  resolveSuspectedDuplicate,
+  setSignalAssociation,
+} from "@wellregarded/db";
 import { data, Link, redirect } from "react-router";
 import { z } from "zod";
 
 import { Overline, PageHeader } from "~/components/shell/page-header";
-import { BasisBadge } from "~/components/signals/basis-badge";
 import {
   ConsentPanel,
   type ConsentPanelData,
@@ -36,6 +43,10 @@ import {
   SOURCE_KIND_LABELS,
   SOURCE_KIND_TITLES,
 } from "~/components/signals/labels";
+import {
+  AssociationRow,
+  DerivationRow,
+} from "~/components/signals/reclassify-controls";
 import { VisibilityBadge } from "~/components/signals/visibility-badge";
 import { Card } from "~/components/ui/card";
 import { RatingStars } from "~/components/ui/rating-stars";
@@ -63,12 +74,16 @@ export async function loader({ params, context }: Route.LoaderArgs) {
   return withRequestDb(context, async (db) => {
     // TODO(#59): requirePracticeContext is the auth seam — see its module doc.
     const ctx = await requirePracticeContext(db);
-    const detail = await getSignalDetail(db, {
-      practiceId: ctx.practiceId,
-      signalId: params.signalId,
-      viewer: ctx.viewer,
-      actor: ctx.auditActor,
-    });
+    const [detail, associationOptions] = await Promise.all([
+      getSignalDetail(db, {
+        practiceId: ctx.practiceId,
+        signalId: params.signalId,
+        viewer: ctx.viewer,
+        actor: ctx.auditActor,
+      }),
+      // Provider/location pickers for the association affordances (#93).
+      listSignalFilterOptions(db, ctx.practiceId),
+    ]);
     // Missing, cross-practice, and not-permitted all read the same: 404.
     if (!detail) {
       throw data(null, { status: 404 });
@@ -163,12 +178,32 @@ export async function loader({ params, context }: Route.LoaderArgs) {
           dimension,
           label: DIMENSION_LABELS[dimension],
           value: row ? judgmentValueLabel(String(row.value)) : null,
+          rawValue: row ? String(row.value) : null,
           basis: row?.basis ?? null,
           confidence: row?.confidence ?? null,
           rationale: row?.rationale ?? null,
           judgedOn: row ? formatDate(row.createdAt) : null,
         };
       }),
+      // Provider/location associations (#93): the FK's display name, the
+      // normalize-stage hint (or its manual resolution record), and the
+      // picker options.
+      associations: [
+        {
+          kind: "provider" as const,
+          label: "Provider",
+          name: detail.providerName,
+          hint: signal.providerHint,
+          options: associationOptions.providers,
+        },
+        {
+          kind: "location" as const,
+          label: "Location",
+          name: detail.locationName,
+          hint: signal.locationHint,
+          options: associationOptions.locations,
+        },
+      ],
       consent,
       excerpts: detail.excerpts.map((excerpt) => ({
         id: excerpt.id,
@@ -195,6 +230,9 @@ export async function loader({ params, context }: Route.LoaderArgs) {
       canResolveDuplicates: can(ctx.actor, "resolve_duplicates", {
         practiceId: ctx.practiceId,
       }),
+      canReclassify: can(ctx.actor, "reclassify_signal", {
+        practiceId: ctx.practiceId,
+      }),
     };
   });
 }
@@ -205,46 +243,151 @@ const resolveDuplicateSchema = z.object({
   resolution: z.enum(SUSPECTED_DUPLICATE_RESOLUTIONS),
 });
 
+const confirmDerivationSchema = z.object({
+  intent: z.literal("confirm-derivation"),
+  dimension: z.enum(DERIVATION_DIMENSIONS),
+});
+
+const reclassifyDerivationSchema = z.object({
+  intent: z.literal("reclassify-derivation"),
+  dimension: z.enum(DERIVATION_DIMENSIONS),
+  value: z.string(),
+});
+
+const setAssociationSchema = z.object({
+  intent: z.literal("set-association"),
+  kind: z.enum(["provider", "location"]),
+  /** A provider/location id, or the literal "none" for "none/unknown". */
+  entityId: z.union([z.literal("none"), z.string().uuid()]),
+});
+
+const actionSchema = z.discriminatedUnion("intent", [
+  resolveDuplicateSchema,
+  confirmDerivationSchema,
+  reclassifyDerivationSchema,
+  setAssociationSchema,
+]);
+
 export async function action({ request, params, context }: Route.ActionArgs) {
   if (!UUID_RE.test(params.signalId)) {
     throw data(null, { status: 404 });
   }
   return withRequestDb(context, async (db) => {
-    // 1. Permission check — in the action, always (the hidden affordance is
-    //    not a security boundary). TODO(#59): real actor via the auth seam.
+    // TODO(#59): real actor via the auth seam.
     const ctx = await requirePracticeContext(db);
-    if (!can(ctx.actor, "resolve_duplicates", { practiceId: ctx.practiceId })) {
-      throw data(null, { status: 403 });
-    }
 
-    // 2. Parse — validation failures are returned, never thrown.
-    const parsed = await parseForm(resolveDuplicateSchema, request);
+    // Parse first (the body can only be read once, and the required
+    // permission depends on the intent) — validation failures are
+    // returned, never thrown.
+    const parsed = await parseForm(actionSchema, request);
     if (!parsed.ok) {
       return data({ fieldErrors: parsed.fieldErrors }, { status: 422 });
     }
 
-    // 3. Mutate + audit in one transaction (resolveSuspectedDuplicate owns
-    //    both). `undefined` means the link was already resolved — a stale
-    //    double-click, not an error.
-    const resolved = await resolveSuspectedDuplicate(db, {
-      practiceId: ctx.practiceId,
-      duplicateId: parsed.data.duplicateId,
-      resolution: parsed.data.resolution,
-      actor: ctx.auditActor,
-    });
+    // Permission check — in the action, always (a hidden affordance is
+    // not a security boundary).
+    const required =
+      parsed.data.intent === "resolve-duplicate"
+        ? ("resolve_duplicates" as const)
+        : ("reclassify_signal" as const);
+    if (!can(ctx.actor, required, { practiceId: ctx.practiceId })) {
+      throw data(null, { status: 403 });
+    }
 
-    // 4 + 5. Flash, then redirect back to the detail page.
-    const message = !resolved
-      ? "This duplicate was already resolved"
-      : parsed.data.resolution === "same"
-        ? "Marked as the same event — both records kept"
-        : "Marked as different signals";
-    return redirect(`/signals/${params.signalId}`, {
-      headers: await setFlash(context.cloudflare.env, {
-        tone: resolved ? "positive" : "neutral",
-        message,
-      }),
-    });
+    // Mutate + audit in one transaction (each db helper owns both), then
+    // flash + redirect back to the detail page. `undefined` from a helper
+    // means a stale submit (already resolved, judgment changed, entity
+    // gone) — a quiet no-op, not an error.
+    const flash = async (ok: boolean, message: string, staleMessage: string) =>
+      redirect(`/signals/${params.signalId}`, {
+        headers: await setFlash(context.cloudflare.env, {
+          tone: ok ? "positive" : "neutral",
+          message: ok ? message : staleMessage,
+        }),
+      });
+
+    switch (parsed.data.intent) {
+      case "resolve-duplicate": {
+        const resolved = await resolveSuspectedDuplicate(db, {
+          practiceId: ctx.practiceId,
+          duplicateId: parsed.data.duplicateId,
+          resolution: parsed.data.resolution,
+          actor: ctx.auditActor,
+        });
+        return flash(
+          resolved !== undefined,
+          parsed.data.resolution === "same"
+            ? "Marked as the same event — both records kept"
+            : "Marked as different signals",
+          "This duplicate was already resolved",
+        );
+      }
+      case "confirm-derivation": {
+        // The one-click ✓: the confirmed value is re-read server-side so
+        // a racing re-classification can never be blessed unseen.
+        const confirmed = await confirmDerivation(db, {
+          practiceId: ctx.practiceId,
+          signalId: params.signalId,
+          dimension: parsed.data.dimension,
+          actor: ctx.auditActor,
+        });
+        return flash(
+          confirmed !== undefined,
+          `${DIMENSION_LABELS[parsed.data.dimension]} confirmed`,
+          "Nothing to confirm — the judgment changed",
+        );
+      }
+      case "reclassify-derivation": {
+        // The value must be in the dimension's canonical vocabulary —
+        // a user mistake (or tampering), so returned, never thrown.
+        if (
+          !isDerivationValueForDimension(
+            parsed.data.dimension,
+            parsed.data.value,
+          )
+        ) {
+          return data(
+            {
+              fieldErrors: {
+                value: [
+                  `Not a recognized ${DIMENSION_LABELS[parsed.data.dimension].toLowerCase()} value`,
+                ],
+              },
+            },
+            { status: 422 },
+          );
+        }
+        const row = await reclassifyDerivation(db, {
+          practiceId: ctx.practiceId,
+          signalId: params.signalId,
+          dimension: parsed.data.dimension,
+          value: parsed.data.value,
+          actor: ctx.auditActor,
+        });
+        return flash(
+          row !== undefined,
+          `${DIMENSION_LABELS[parsed.data.dimension]} recorded as staff-confirmed`,
+          "This signal is no longer available",
+        );
+      }
+      case "set-association": {
+        const updated = await setSignalAssociation(db, {
+          practiceId: ctx.practiceId,
+          signalId: params.signalId,
+          kind: parsed.data.kind,
+          entityId:
+            parsed.data.entityId === "none" ? null : parsed.data.entityId,
+          actor: ctx.auditActor,
+        });
+        return flash(
+          updated !== undefined,
+          parsed.data.kind === "provider"
+            ? "Provider association saved"
+            : "Location association saved",
+          "That signal or selection is no longer available",
+        );
+      }
+    }
   });
 }
 
@@ -368,38 +511,31 @@ export default function SignalDetail({ loaderData }: Route.ComponentProps) {
             </Card>
           )}
 
-          {/* Derivations — every judgment shows its provenance. */}
+          {/* Derivations — every judgment shows its provenance, and (#93)
+              staff with reclassify_signal can confirm or correct it. */}
           <Card title="Derivations" data-testid="derivations-panel">
             <div className="flex flex-col gap-3.5">
               {d.derivations.map((row) => (
-                <div
+                <DerivationRow
                   key={row.dimension}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1.5"
-                >
-                  <Overline className="w-44">{row.label}</Overline>
-                  {row.value === null ? (
-                    <span className="font-mono text-data text-gray-500">
-                      Not yet classified
-                    </span>
-                  ) : (
-                    <>
-                      <span className="font-mono text-data font-medium text-ink-900">
-                        {row.value}
-                      </span>
-                      {row.basis !== null && row.confidence !== null && (
-                        <BasisBadge
-                          basis={row.basis}
-                          confidence={row.confidence}
-                        />
-                      )}
-                    </>
-                  )}
-                  {row.rationale && (
-                    <p className="m-0 w-full text-small text-gray-500">
-                      {row.rationale}
-                    </p>
-                  )}
-                </div>
+                  row={row}
+                  canReclassify={d.canReclassify}
+                />
+              ))}
+            </div>
+          </Card>
+
+          {/* Associations (#93): who/where this signal is about — the FK
+              when resolved, the normalize-stage hint when not, with
+              confirm-or-correct affordances. */}
+          <Card title="Associations" data-testid="associations-panel">
+            <div className="flex flex-col gap-3.5">
+              {d.associations.map((row) => (
+                <AssociationRow
+                  key={row.kind}
+                  row={row}
+                  canReclassify={d.canReclassify}
+                />
               ))}
             </div>
           </Card>

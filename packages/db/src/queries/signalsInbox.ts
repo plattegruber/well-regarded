@@ -72,7 +72,12 @@ export interface SignalListFilters {
   urgency?: UrgencyFilter;
   locationId?: string;
   providerId?: string;
-  /** Only signals with a pending suspected-duplicate link (Epic #6). */
+  /**
+   * Only signals with a suspected-duplicate link — pending review or
+   * confirmed (Epic #6, #93). Also the escape hatch from the default
+   * canonical filtering: with this on, non-canonical confirmed
+   * duplicates (hidden from default listings) are included.
+   */
   suspectedDuplicate?: boolean;
   /**
    * Full-text query, parsed with `websearch_to_tsquery('english', ...)` —
@@ -257,6 +262,27 @@ export async function listSignals(
     WHERE sd.status = 'pending_review'
       AND (sd.signal_id_a = ${signals.id} OR sd.signal_id_b = ${signals.id})
   )`;
+  // Any link at all (pending or confirmed) — what the duplicate filter
+  // matches, so resolved pairs stay findable through it (#93).
+  const anyDuplicateExpr = sql<boolean>`EXISTS (
+    SELECT 1 FROM ${suspectedDuplicates} sd
+    WHERE sd.status IN ('pending_review', 'confirmed')
+      AND (sd.signal_id_a = ${signals.id} OR sd.signal_id_b = ${signals.id})
+  )`;
+  // Canonical semantics for confirmed duplicates (#93): both raw records
+  // are kept and the detail stays reachable, but default listings show
+  // only the canonical member of a confirmed pair — the OLDER signal
+  // (earliest occurred_at, then earliest ingestion, then id) wins. A
+  // signal is hidden when its confirmed counterpart precedes it.
+  const nonCanonicalDuplicateExpr = sql<boolean>`EXISTS (
+    SELECT 1 FROM ${suspectedDuplicates} sd
+    JOIN ${signals} canonical ON canonical.id =
+      CASE WHEN sd.signal_id_a = ${signals.id} THEN sd.signal_id_b ELSE sd.signal_id_a END
+    WHERE sd.status = 'confirmed'
+      AND (sd.signal_id_a = ${signals.id} OR sd.signal_id_b = ${signals.id})
+      AND (canonical.occurred_at, canonical.created_at, canonical.id)
+        < (${signals.occurredAt}, ${signals.createdAt}, ${signals.id})
+  )`;
 
   const conditions: SQL[] = [eq(signals.practiceId, practiceId)];
   // The private-feedback gate composes with (and can contradict) the
@@ -291,7 +317,11 @@ export async function listSignals(
     );
   }
   if (filters.suspectedDuplicate) {
-    conditions.push(pendingDuplicateExpr);
+    conditions.push(anyDuplicateExpr);
+  } else {
+    // Default listings exclude the non-canonical member of a confirmed
+    // pair; the duplicate filter above is the way to see it.
+    conditions.push(sql`NOT ${nonCanonicalDuplicateExpr}`);
   }
   if (searching) {
     conditions.push(

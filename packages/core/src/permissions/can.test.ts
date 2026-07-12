@@ -50,6 +50,15 @@ const EXPECTED: Record<Action, Record<StaffRole, PermissionCell>> = {
     multi_location_admin: "allow",
     external_partner: "deny",
   },
+  reclassify_signal: {
+    owner: "allow",
+    office_manager: "allow",
+    front_desk: "scoped",
+    marketing: "deny",
+    provider: "deny",
+    multi_location_admin: "allow",
+    external_partner: "deny",
+  },
   draft_response: {
     owner: "allow",
     office_manager: "allow",
@@ -146,7 +155,7 @@ function resource(locationId?: string | null): Resource {
 }
 
 describe("PERMISSION_MATRIX", () => {
-  it("covers every role and every action exactly once (7 × 11 grid)", () => {
+  it("covers every role and every action exactly once (7 × 13 grid)", () => {
     expect(Object.keys(PERMISSION_MATRIX).sort()).toEqual(
       [...STAFF_ROLES].sort(),
     );
@@ -157,7 +166,7 @@ describe("PERMISSION_MATRIX", () => {
     }
   });
 
-  it("matches the expected snapshot for all 77 cells", () => {
+  it("matches the expected snapshot for all 91 cells", () => {
     for (const action of ACTIONS) {
       for (const role of STAFF_ROLES) {
         expect(
@@ -170,7 +179,7 @@ describe("PERMISSION_MATRIX", () => {
 });
 
 describe("can()", () => {
-  it("resolves all 77 (role, action) pairs per the matrix for a same-practice, practice-wide check", () => {
+  it("resolves all 91 (role, action) pairs per the matrix for a same-practice, practice-wide check", () => {
     for (const action of ACTIONS) {
       for (const role of STAFF_ROLES) {
         // An unscoped actor on a practice-wide resource: `scoped` behaves
