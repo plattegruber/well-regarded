@@ -71,10 +71,17 @@ export {
   type ProofExcerpt,
 } from "./queries/hybridSearch.js";
 export {
+  type ConfirmImportDraftResult,
+  confirmImportDraft,
   getImportDraft,
   type ImportDraft,
   linkImportRunToDraft,
   markImportDraftSuperseded,
+  type SaveImportDraftConsentResult,
+  type SaveImportDraftMappingResult,
+  saveImportDraftConsent,
+  saveImportDraftMapping,
+  setImportDraftWizardStep,
 } from "./queries/importDrafts.js";
 export {
   appendImportRunError,

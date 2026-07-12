@@ -6,6 +6,7 @@ import {
   detectDateFormat,
   detectRatingScale,
   HEADER_HEURISTICS,
+  isSourceInfoHeader,
 } from "./detect.js";
 
 describe("detectDateFormat", () => {
@@ -126,6 +127,7 @@ describe("classifyHeader", () => {
     ["Location", "locationHint"],
     ["Office", "locationHint"],
     ["Branch", "locationHint"],
+    ["Practice", "locationHint"],
     ["Provider", "providerHint"],
     ["Doctor", "providerHint"],
     ["Dr. Seen", "providerHint"],
@@ -139,10 +141,23 @@ describe("classifyHeader", () => {
     ["Public", "visibility"],
     ["Consent", "consentHint"],
     ["Permission to share", "consentHint"],
+    ["Opt-In", "consentHint"],
+    // Source columns are an informational badge, never a mapping target
+    // (M1 imports are one source per file) — so classify says nothing.
+    ["Source", null],
+    ["Platform", null],
+    ["Channel", null],
     ["Order ID", null],
     ["", null],
   ] as const)("%s → %s", (header, expected) => {
     expect(classifyHeader(header)).toBe(expected);
+  });
+
+  it("patient + separate author column: each header suggests its own target", () => {
+    // The issue-#134 nuance — a file with BOTH gets patientName AND author
+    // suggestions; the human decides. Classification is per-header.
+    expect(classifyHeader("Patient")).toBe("patientName");
+    expect(classifyHeader("Author")).toBe("author");
   });
 
   it("PII wins over generic buckets: patient name is not an author", () => {
@@ -162,6 +177,21 @@ describe("classifyHeader", () => {
     for (const { pattern } of HEADER_HEURISTICS) {
       expect(pattern.source).toContain("\\b");
     }
+  });
+});
+
+describe("isSourceInfoHeader", () => {
+  it.each([
+    "Source",
+    "platform",
+    "Review_Channel",
+  ])("%s → informational badge", (header) => {
+    expect(isSourceInfoHeader(header)).toBe(true);
+  });
+
+  it("says nothing about ordinary headers", () => {
+    expect(isSourceInfoHeader("Review")).toBe(false);
+    expect(isSourceInfoHeader("")).toBe(false);
   });
 });
 

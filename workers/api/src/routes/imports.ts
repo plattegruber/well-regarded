@@ -27,28 +27,39 @@
  * offer. A single 50MB `Uint8Array` (never a string — UTF-16 would double
  * it) is well within the isolate's 128MB; the streamed counter above
  * guarantees that's the ceiling. Preview reads back only a 256KB ranged
- * window (see ../imports/csv.ts for the measured memory notes).
+ * window (see `csvPreview.ts` in @wellregarded/core — shared with the
+ * wizard, #134 — for the measured memory notes).
  */
 
 import {
+  type ColumnMapping,
   CSV_IMPORT_MAX_BYTES,
   columnMappingSchema,
   detectColumns,
+  PREVIEW_WINDOW_BYTES,
+  parseCsvPreview,
   type StaffActor,
+  sniffCsvBytes,
   unknownMappingColumns,
 } from "@wellregarded/core";
-import { audit, schema } from "@wellregarded/db";
-import { getRawImportHead, putRawImportArtifact } from "@wellregarded/sources";
-import { and, eq } from "drizzle-orm";
+import {
+  audit,
+  confirmImportDraft,
+  getImportDraft,
+  type ImportDraft,
+  saveImportDraftMapping,
+  schema,
+} from "@wellregarded/db";
+import {
+  getRawImportHead,
+  putRawImportArtifact,
+  type RawImportBucket,
+  validateCsvPreviewRows,
+} from "@wellregarded/sources";
 import { Hono } from "hono";
 import { z } from "zod";
 
 import type { AppEnv } from "../bindings";
-import {
-  PREVIEW_WINDOW_BYTES,
-  parseCsvPreview,
-  sniffCsvBytes,
-} from "../imports/csv";
 import { requirePermission } from "../middleware/staffAuth";
 
 const { importDrafts } = schema;
@@ -271,10 +282,72 @@ importRoutes.post("/csv", async (c) => {
 });
 
 /**
+ * Read back the head of a draft's stored object and parse the preview —
+ * the same ranged-window discipline as the upload path (never the whole,
+ * possibly 50MB, object).
+ */
+async function draftPreview(
+  bucket: RawImportBucket,
+  draft: ImportDraft,
+): Promise<ReturnType<typeof parseCsvPreview>> {
+  const head = await getRawImportHead(
+    bucket,
+    draft.r2Key,
+    PREVIEW_WINDOW_BYTES,
+  );
+  return parseCsvPreview(head.bytes, { truncated: head.truncated });
+}
+
+/**
+ * Fetch a draft with its preview + per-column detection — what the mapping
+ * wizard (#134) renders when it resumes a draft the upload response no
+ * longer has in hand. Same body shape as the upload response, plus the
+ * persisted wizard state (`mapping`, `attestationNote`, `wizardStep`).
+ */
+importRoutes.get("/csv/:draftId", async (c) => {
+  const draftId = z.uuid().safeParse(c.req.param("draftId"));
+  if (!draftId.success) return c.json({ error: "not_found" as const }, 404);
+
+  const actor = c.get("actor");
+  const draft = await getImportDraft(
+    c.get("db"),
+    actor.practiceId,
+    draftId.data,
+  );
+  if (!draft) return c.json({ error: "not_found" as const }, 404);
+
+  const preview = await draftPreview(c.env.RAW_IMPORTS, draft);
+  if (preview === null) {
+    // It parsed at upload time; losing that now is an us-problem, not a
+    // client mistake.
+    return c.json({ error: "preview_unavailable" as const }, 500);
+  }
+
+  return c.json({
+    importDraftId: draft.id,
+    status: draft.status,
+    originalFilename: draft.originalFilename,
+    byteSize: draft.byteSize,
+    headers: draft.headers,
+    mapping: draft.mapping,
+    attestationNote: draft.attestationNote,
+    wizardStep: draft.wizardStep,
+    previewRows: preview.previewRows,
+    detected: {
+      delimiter: preview.delimiter,
+      columns: detectColumns(draft.headers, preview.previewRows),
+    },
+  });
+});
+
+/**
  * Save the wizard's mapping onto a draft: schema-validate, check every
  * referenced column against the draft's STORED headers (a mapping naming
  * a column the file doesn't have is a 422, not a silent no-op at import
- * time), persist, audit. Only `status = draft` rows are editable.
+ * time), persist, audit. Only `status = draft` rows are editable. The
+ * mechanics live in `saveImportDraftMapping` (@wellregarded/db) — shared
+ * with the dashboard wizard's actions so the two front doors cannot
+ * drift.
  */
 importRoutes.put("/csv/:draftId/mapping", async (c) => {
   const draftId = z.uuid().safeParse(c.req.param("draftId"));
@@ -295,27 +368,90 @@ importRoutes.put("/csv/:draftId/mapping", async (c) => {
       400,
     );
   }
-  const mapping = parsed.data;
 
   const actor = c.get("actor");
-  const db = c.get("db");
+  const result = await saveImportDraftMapping(c.get("db"), {
+    practiceId: actor.practiceId,
+    actor: staffAuditActor(actor),
+    draftId: draftId.data,
+    mapping: parsed.data,
+  });
 
-  // Unknown ids and other practices' drafts are the same 404.
-  const [draft] = await db
-    .select()
-    .from(importDrafts)
-    .where(
-      and(
-        eq(importDrafts.id, draftId.data),
-        eq(importDrafts.practiceId, actor.practiceId),
-      ),
-    )
-    .limit(1);
+  switch (result.outcome) {
+    // Unknown ids and other practices' drafts are the same 404.
+    case "not_found":
+      return c.json({ error: "not_found" as const }, 404);
+    case "not_editable":
+      return c.json(
+        { error: "not_editable" as const, status: result.status },
+        409,
+      );
+    case "unknown_columns":
+      return c.json(
+        {
+          error: "unknown_columns" as const,
+          columns: result.columns,
+          message: "The mapping references columns this file does not have.",
+        },
+        422,
+      );
+    case "ok":
+      return c.json({
+        importDraftId: result.draft.id,
+        mapping: result.draft.mapping,
+        status: result.draft.status,
+      });
+  }
+});
+
+/**
+ * Validation preview (issue #134 step 2): run a mapping over the draft's
+ * preview rows and report, per failing row, what is wrong and how to fix
+ * it. Server-computed with `validateCsvPreviewRows` — a reshaping of
+ * `validateCsvRow`, the EXACT validator the import Workflow (#135) runs
+ * over the full file, so the preview cannot lie. The body may carry a candidate `{ mapping }` (the wizard validates
+ * what is on screen); with no body the draft's saved mapping is used.
+ */
+importRoutes.post("/csv/:draftId/validate", async (c) => {
+  const draftId = z.uuid().safeParse(c.req.param("draftId"));
+  if (!draftId.success) return c.json({ error: "not_found" as const }, 404);
+
+  const actor = c.get("actor");
+  const draft = await getImportDraft(
+    c.get("db"),
+    actor.practiceId,
+    draftId.data,
+  );
   if (!draft) return c.json({ error: "not_found" as const }, 404);
-  if (draft.status !== "draft") {
+
+  const body = await c.req.json().catch(() => null);
+  let mapping: ColumnMapping;
+  if (body !== null && typeof body === "object" && "mapping" in body) {
+    const parsed = columnMappingSchema.safeParse(
+      (body as { mapping: unknown }).mapping,
+    );
+    if (!parsed.success) {
+      return c.json(
+        {
+          error: "invalid_mapping" as const,
+          issues: parsed.error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
+        },
+        400,
+      );
+    }
+    mapping = parsed.data;
+  } else if (draft.mapping !== null) {
+    mapping = draft.mapping;
+  } else {
     return c.json(
-      { error: "not_editable" as const, status: draft.status },
-      409,
+      {
+        error: "mapping_missing" as const,
+        message: "Save a column mapping before validating.",
+      },
+      422,
     );
   }
 
@@ -331,21 +467,86 @@ importRoutes.put("/csv/:draftId/mapping", async (c) => {
     );
   }
 
-  await db.transaction(async (tx) => {
-    await tx
-      .update(importDrafts)
-      .set({ mapping, updatedAt: new Date() })
-      .where(eq(importDrafts.id, draft.id));
-    await audit(tx, {
-      practiceId: actor.practiceId,
-      actor: staffAuditActor(actor),
-      action: "import_draft.mapping_saved",
-      entityType: "import_drafts",
-      entityId: draft.id,
-      // Column names and targets only — mapping never holds cell values.
-      payload: { targets: Object.keys(mapping) },
-    });
+  const preview = await draftPreview(c.env.RAW_IMPORTS, draft);
+  if (preview === null) {
+    return c.json({ error: "preview_unavailable" as const }, 500);
+  }
+
+  return c.json({
+    importDraftId: draft.id,
+    ...validateCsvPreviewRows(mapping, draft.headers, preview.previewRows),
+  });
+});
+
+/**
+ * Confirm & start (issue #134 step 4 / req. 6): re-run the shared start
+ * guardrail server-side, flip the draft to `confirmed`, and create one
+ * `wr-csv-import` Workflow instance (#135, docs/csv-import.md §
+ * Triggering). A wizard (or API client) can never confirm a draft this
+ * endpoint would reject, because the guardrail is one function
+ * (`importStartIssues`).
+ *
+ * The Workflow create is deliberately AFTER the commit and non-fatal:
+ * `confirmed` is the durable state the Workflow consumes, so a failed
+ * create leaves a retriable draft (re-trigger via this endpoint's
+ * semantics or the Wrangler CLI), never a half-started one.
+ */
+importRoutes.post("/csv/:draftId/start", async (c) => {
+  const draftId = z.uuid().safeParse(c.req.param("draftId"));
+  if (!draftId.success) return c.json({ error: "not_found" as const }, 404);
+
+  const actor = c.get("actor");
+  const result = await confirmImportDraft(c.get("db"), {
+    practiceId: actor.practiceId,
+    actor: staffAuditActor(actor),
+    draftId: draftId.data,
   });
 
-  return c.json({ importDraftId: draft.id, mapping, status: draft.status });
+  switch (result.outcome) {
+    case "not_found":
+      return c.json({ error: "not_found" as const }, 404);
+    case "not_editable":
+      return c.json(
+        { error: "not_editable" as const, status: result.status },
+        409,
+      );
+    case "blocked":
+      return c.json(
+        { error: "not_ready" as const, issues: result.issues },
+        422,
+      );
+    case "ok": {
+      let workflowInstanceId: string | null = null;
+      const workflow = c.env.CSV_IMPORT;
+      if (workflow) {
+        try {
+          const instance = await workflow.create({
+            params: {
+              importDraftId: result.draft.id,
+              practiceId: actor.practiceId,
+              requestId: c.get("requestId"),
+            },
+          });
+          workflowInstanceId = instance.id;
+        } catch (error) {
+          // Non-fatal by design (see route doc): the draft is confirmed.
+          c.get("logger").error("csv-import workflow create failed", {
+            stage: "imports.start",
+            importDraftId: result.draft.id,
+            error,
+          });
+        }
+      } else {
+        c.get("logger").warn(
+          "CSV_IMPORT binding missing — draft confirmed, workflow not started",
+          { stage: "imports.start", importDraftId: result.draft.id },
+        );
+      }
+      return c.json({
+        importDraftId: result.draft.id,
+        status: result.draft.status,
+        workflowInstanceId,
+      });
+    }
+  }
 });

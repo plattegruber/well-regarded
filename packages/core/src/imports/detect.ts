@@ -17,6 +17,7 @@ import {
   type ImportTargetField,
   type RatingScale,
 } from "./columnMapping.js";
+import { parseImportDate } from "./parse.js";
 
 // ---------------------------------------------------------------------------
 // Date-format detection
@@ -32,71 +33,14 @@ export type DateFormatDetection =
   | { ambiguous: ImportDateFormat[] }
   | null;
 
-function isValidCalendarDate(
-  year: number,
-  month: number,
-  day: number,
-): boolean {
-  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
-}
-
-/** Date-only or `T`-separated datetime, optional seconds/fraction/offset. */
-const ISO_RE =
-  /^(\d{4})-(\d{2})-(\d{2})(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
-
-const SLASH_RE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
-
-/** Space-separated spreadsheet datetime, optional seconds. */
-const SPACE_DATETIME_RE =
-  /^(\d{4})-(\d{2})-(\d{2}) ([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
-
-/**
- * Bare integer Unix timestamps, bounded to 1995–2035. The bound is doing
- * real work: without it any 9–11 digit number (phone numbers, order ids)
- * would "parse", and a wrong silent match here poisons every row.
- */
-const EPOCH_MIN = Date.UTC(1995, 0, 1) / 1000;
-const EPOCH_MAX = Date.UTC(2035, 0, 1) / 1000;
-const EPOCH_RE = /^\d{9,11}$/;
-
-const DATE_FORMAT_MATCHERS: Record<ImportDateFormat, (v: string) => boolean> = {
-  ISO: (v) => {
-    const m = ISO_RE.exec(v);
-    if (!m) return false;
-    return isValidCalendarDate(Number(m[1]), Number(m[2]), Number(m[3]));
-  },
-  "MM/DD/YYYY": (v) => {
-    const m = SLASH_RE.exec(v);
-    if (!m) return false;
-    return isValidCalendarDate(Number(m[3]), Number(m[1]), Number(m[2]));
-  },
-  "DD/MM/YYYY": (v) => {
-    const m = SLASH_RE.exec(v);
-    if (!m) return false;
-    return isValidCalendarDate(Number(m[3]), Number(m[2]), Number(m[1]));
-  },
-  "YYYY-MM-DD HH:mm": (v) => {
-    const m = SPACE_DATETIME_RE.exec(v);
-    if (!m) return false;
-    return isValidCalendarDate(Number(m[1]), Number(m[2]), Number(m[3]));
-  },
-  epoch_seconds: (v) => {
-    if (!EPOCH_RE.test(v)) return false;
-    const seconds = Number(v);
-    return seconds >= EPOCH_MIN && seconds <= EPOCH_MAX;
-  },
-};
-
 /**
  * Which of the candidate formats parse EVERY non-empty sampled value.
  * One survivor → detected; several → ambiguous (typical for day ≤ 12
  * slash dates, where MM/DD and DD/MM both survive); zero → null.
+ *
+ * Matching delegates to {@link parseImportDate} — the same parser the
+ * validation preview (#134) and the import Workflow (#135) run, so a
+ * value that "detects" here can never fail to parse later.
  */
 export function detectDateFormat(
   values: readonly string[],
@@ -105,7 +49,7 @@ export function detectDateFormat(
   if (samples.length === 0) return null;
 
   const surviving = IMPORT_DATE_FORMATS.filter((format) =>
-    samples.every((value) => DATE_FORMAT_MATCHERS[format](value)),
+    samples.every((value) => parseImportDate(value, format) !== null),
   );
   if (surviving.length === 0) return null;
   const [first, ...rest] = surviving;
@@ -177,15 +121,30 @@ export const HEADER_HEURISTICS: ReadonlyArray<{
   { target: "author", pattern: /\b(author|reviewer|name)\b/ },
   {
     target: "locationHint",
-    pattern: /\b(location|office|branch|clinic|site)\b/,
+    pattern: /\b(location|office|branch|practice|clinic|site)\b/,
   },
   {
     target: "providerHint",
     pattern: /\b(provider|doctor|dentist|dr|clinician|physician|hygienist)\b/,
   },
   { target: "visibility", pattern: /\b(visibility|public|private)\b/ },
-  { target: "consentHint", pattern: /\b(consent|permission)\b/ },
+  // `opt` covers opt-in/opt-out/opted columns (separators normalize away).
+  { target: "consentHint", pattern: /\b(consent|permission|opt)\b/ },
 ];
+
+/**
+ * Headers that describe where a row CAME FROM (issue #134): M1 imports
+ * are one source per file, so a source/platform/channel column maps onto
+ * nothing — the wizard shows an informational badge instead of a target
+ * suggestion. Kept beside {@link HEADER_HEURISTICS} so the vocabulary
+ * lives in one place.
+ */
+export const SOURCE_INFO_HEADER_PATTERN = /\b(source|platform|channel)\b/;
+
+/** True when `header` names the row's origin (badge, not a mapping target). */
+export function isSourceInfoHeader(header: string): boolean {
+  return SOURCE_INFO_HEADER_PATTERN.test(normalizeHeader(header));
+}
 
 /** Lowercase, separators → spaces — so `Review_Date` matches like "review date". */
 function normalizeHeader(header: string): string {

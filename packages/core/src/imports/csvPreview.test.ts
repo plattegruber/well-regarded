@@ -5,7 +5,7 @@ import {
   PREVIEW_WINDOW_BYTES,
   parseCsvPreview,
   sniffCsvBytes,
-} from "./csv";
+} from "./csvPreview.js";
 
 const encoder = new TextEncoder();
 

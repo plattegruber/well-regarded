@@ -15,6 +15,7 @@ export * from "./contract/normalizedSignal.js";
 export * from "./contract/sourceAdapter.js";
 export * from "./csv/adapter.js";
 export * from "./csv/parse.js";
+export * from "./csv/previewValidation.js";
 export * from "./csv/schema.js";
 export * from "./csv/validateRow.js";
 export * from "./google/adapter.js";

@@ -42,6 +42,17 @@ export interface ApiBindings {
     ): Promise<void>;
     delete(key: string): Promise<void>;
   };
+  /**
+   * Cross-script Workflow binding to `wr-csv-import-<env>` (class
+   * `CsvImport` in workers/jobs, issue #135): the start endpoint (#134)
+   * creates one instance per confirmed draft. Optional — a local `wrangler
+   * dev` without the jobs worker still confirms drafts (the Workflow is
+   * triggerable later; see docs/csv-import.md § Triggering). Only `create`
+   * is consumed.
+   */
+  CSV_IMPORT?:
+    | { create(options?: { params?: unknown }): Promise<{ id: string }> }
+    | undefined;
   /** String vars/secrets, validated by `getEnv(c.env, apiEnvSchema)`. */
   [key: string]: unknown;
 }

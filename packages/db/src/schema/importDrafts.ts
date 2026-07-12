@@ -17,7 +17,11 @@
  * type only mirrors the inferred type.
  */
 
-import { type ColumnMapping, IMPORT_DRAFT_STATUSES } from "@wellregarded/core";
+import {
+  type ColumnMapping,
+  IMPORT_DRAFT_STATUSES,
+  type ImportWizardStep,
+} from "@wellregarded/core";
 import {
   index,
   integer,
@@ -60,6 +64,20 @@ export const importDrafts = pgTable(
      * first save. Always schema-validated before writing.
      */
     mapping: jsonb("mapping").$type<ColumnMapping>(),
+    /**
+     * Free-text note recorded by the wizard's consent step (#134) when the
+     * practice attests documented permission — where the consent lives
+     * (e.g. "signed intake forms 2021–2024"). Null until attested; the
+     * bulk consent CHOICE itself lives on `mapping.consentHint.constant`.
+     */
+    attestationNote: text("attestation_note"),
+    /**
+     * Furthest wizard step reached (#134) so a closed tab resumes where
+     * the office manager left off. Vocabulary owned by
+     * `IMPORT_WIZARD_STEPS` in `@wellregarded/core`; plain text (not a pg
+     * enum) because it is a UI bookmark, not a state machine.
+     */
+    wizardStep: text("wizard_step").$type<ImportWizardStep>(),
 
     status: importDraftStatusEnum("status").notNull().default("draft"),
 
