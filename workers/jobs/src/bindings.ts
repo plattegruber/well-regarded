@@ -67,6 +67,9 @@ export interface JobsBindings {
   EMBEDDING_BACKFILL?: WorkflowBinding | undefined;
   /** The `wr-csv-import` Workflow (class `CsvImport`, issue #135). */
   CSV_IMPORT?: WorkflowBinding | undefined;
+  /** The `wr-reply-import-backfill` Workflow (class `ReplyImportBackfill`,
+   * issue #214). */
+  REPLY_IMPORT_BACKFILL?: WorkflowBinding | undefined;
   /** String vars/secrets, validated by `getEnv(env, jobsEnvSchema)`. */
   [key: string]: unknown;
 }

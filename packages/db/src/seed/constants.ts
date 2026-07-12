@@ -15,8 +15,17 @@
  * creates the legacy CSV run (`DEMO_IMPORT_RUN_KEY`) that the `csv_import`
  * signals reference (the FK is real as of migration 0011), and every
  * seeded signal carries `status = 'processed'`.
+ *
+ * v3 (issue #214): Google signals carry REAL v4 review resource names as
+ * `source_id` (`accounts/demo/locations/{location}/reviews/{key}` — see
+ * `fixtures/googleArtifacts.ts`; the old `demo-google-{key}` ids would
+ * fail the GBP name pattern everywhere the publish/reply flows use them),
+ * and two reviews (`g14`, `g16`) now have pre-existing owner replies
+ * seeded as imported `responses` rows (`origin = 'source_import'`,
+ * `status = 'published'`) — they surface as "responded" in the review
+ * inbox.
  */
-export const SEED_VERSION = 2;
+export const SEED_VERSION = 3;
 
 /**
  * Fixed faker seed (issue #32 requirement 2). Narrative content is

@@ -120,6 +120,15 @@
       "name": "wr-csv-import-local",
       "binding": "CSV_IMPORT",
       "class_name": "CsvImport"
+    },
+    // The reply-import backfill Workflow (#214): re-reads stored GBP
+    // review pages and persists pre-existing owner replies as imported
+    // responses rows. Triggered via the Wrangler CLI (deployed) or the
+    // local debug route POST /__local/trigger/reply-import-backfill.
+    {
+      "name": "wr-reply-import-backfill-local",
+      "binding": "REPLY_IMPORT_BACKFILL",
+      "class_name": "ReplyImportBackfill"
     }
   ],
 
@@ -185,6 +194,15 @@
           "name": "wr-csv-import-preview",
           "binding": "CSV_IMPORT",
           "class_name": "CsvImport"
+        },
+        // The reply-import backfill Workflow (#214): re-reads stored GBP
+        // review pages and persists pre-existing owner replies as imported
+        // responses rows. Triggered via the Wrangler CLI (deployed) or the
+        // local debug route POST /__local/trigger/reply-import-backfill.
+        {
+          "name": "wr-reply-import-backfill-preview",
+          "binding": "REPLY_IMPORT_BACKFILL",
+          "class_name": "ReplyImportBackfill"
         }
       ],
       "durable_objects": {
@@ -234,6 +252,15 @@
           "name": "wr-csv-import-prod",
           "binding": "CSV_IMPORT",
           "class_name": "CsvImport"
+        },
+        // The reply-import backfill Workflow (#214): re-reads stored GBP
+        // review pages and persists pre-existing owner replies as imported
+        // responses rows. Triggered via the Wrangler CLI (deployed) or the
+        // local debug route POST /__local/trigger/reply-import-backfill.
+        {
+          "name": "wr-reply-import-backfill-prod",
+          "binding": "REPLY_IMPORT_BACKFILL",
+          "class_name": "ReplyImportBackfill"
         }
       ],
       "durable_objects": {

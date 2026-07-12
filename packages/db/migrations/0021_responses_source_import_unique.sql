@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "responses_signal_id_source_import_uniq" ON "responses" USING btree ("signal_id") WHERE "responses"."origin" = 'source_import';

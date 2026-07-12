@@ -8,7 +8,11 @@
  * `UPDATE … WHERE status = <from>` and the `audit_log` row in ONE
  * transaction. A 0-row guarded update means someone else acted first —
  * returned as a `conflict`, which route actions render as 409 ("someone
- * else acted on this"). Direct UPDATEs of `status` anywhere else are a bug.
+ * else acted on this"). Direct UPDATEs of `status` anywhere else are a bug,
+ * with ONE carve-out: `upsertImportedResponse` (issue #214) creates
+ * `origin = 'source_import'` rows born `published` — they mirror a reply
+ * that already exists at the source and never pass through the state
+ * machine (see its doc for the full contract).
  *
  * The publish consumer (workers/jobs) uses the same function for the
  * `approved → published|failed` edges, passing the GBP capability's audit
@@ -126,6 +130,181 @@ export async function listResponsesForSignal(
     )
     .orderBy(desc(responses.createdAt));
   return rows.map((row) => ({ ...row.response, authorName: row.authorName }));
+}
+
+// ---------------------------------------------------------------------------
+// Imported source replies (issue #214)
+// ---------------------------------------------------------------------------
+
+/**
+ * A pre-existing owner reply observed AT THE SOURCE (the GBP adapter's
+ * `sourceMetadata.existingReply` contract, #125), destined for a
+ * `responses` row with `origin = 'source_import'`.
+ */
+export interface UpsertImportedResponseInput {
+  practiceId: string;
+  signalId: string;
+  /** The reply text as the source reports it. */
+  body: string;
+  /** The source's reply `updateTime` (Google's canonical reference). */
+  publishedAt: Date | null;
+  /** Same instant, verbatim as the source serialized it. */
+  publishUpdateTime: string | null;
+  /** The source's moderation verdict on the reply, when it reports one. */
+  moderationState: ResponseModerationState | null;
+  /** Rejection reason, when the source gives one. */
+  policyViolation: string | null;
+  /** Audit actor — a `system` actor (`pipeline:normalize` / the backfill). */
+  actor: Actor;
+  /** Extra non-PII audit context (importRunId, backfill provenance …). */
+  auditPayload?: Record<string, unknown>;
+}
+
+export type UpsertImportedResponseOutcome = "created" | "updated" | "unchanged";
+
+export interface UpsertImportedResponseResult {
+  outcome: UpsertImportedResponseOutcome;
+  /** The imported row, when one was written (absent only on a lost
+   * insert race — the next re-poll reconciles it). */
+  response?: ReviewResponse;
+}
+
+/**
+ * Persist a pre-existing source reply as THE signal's imported response
+ * row (issue #214): `origin = 'source_import'`, `status = 'published'`
+ * (the reply already exists at the source — it never passes through the
+ * #80 approval machine), `author_id` NULL (no staff author exists).
+ *
+ * Upsert semantics — the row TRACKS the source, it does not version it:
+ *
+ * - no imported row yet → INSERT (`response.imported` audit). The partial
+ *   unique index `responses_signal_id_source_import_uniq` is the race
+ *   backstop: a concurrent insert loses silently and reports `unchanged`.
+ * - imported row exists, source content identical → `unchanged`; no
+ *   write, no audit — re-polls stay silent.
+ * - imported row exists, source content differs (reply edited on Google,
+ *   or its moderation verdict flipped) → guarded
+ *   `UPDATE … WHERE status = 'published'` in place
+ *   (`response.import_updated` audit). In-place rather than versioned on
+ *   purpose: `responses` has no version chain (the #77 thread renders
+ *   rows, not versions), and the imported row's one job is to mirror what
+ *   is live at the source. Dashboard-origin rows are never touched.
+ *
+ * This is the ONE sanctioned write path that sets `status = 'published'`
+ * without `transitionResponse`: imported rows are born published and stay
+ * there — `canTransition` has no edge into or out of them.
+ *
+ * Call inside the caller's transaction (the normalize stage's per-artifact
+ * transaction, or a backfill wrapper) so the row and its audit entry
+ * commit atomically with the rest of the work.
+ */
+export async function upsertImportedResponse(
+  db: Db | Tx,
+  input: UpsertImportedResponseInput,
+): Promise<UpsertImportedResponseResult> {
+  const [existing] = await db
+    .select()
+    .from(responses)
+    .where(
+      and(
+        eq(responses.signalId, input.signalId),
+        eq(responses.practiceId, input.practiceId),
+        eq(responses.origin, "source_import"),
+      ),
+    )
+    .limit(1);
+
+  if (existing === undefined) {
+    const [inserted] = await db
+      .insert(responses)
+      .values({
+        practiceId: input.practiceId,
+        signalId: input.signalId,
+        authorId: null,
+        origin: "source_import",
+        status: "published",
+        body: input.body,
+        moderationState: input.moderationState,
+        policyViolation: input.policyViolation,
+        publishedAt: input.publishedAt,
+        publishUpdateTime: input.publishUpdateTime,
+      })
+      // Conflict target = the partial unique index: a concurrent importer
+      // (normalize re-poll vs backfill) may have won the insert race.
+      .onConflictDoNothing({
+        target: responses.signalId,
+        where: sql`origin = 'source_import'`,
+      })
+      .returning();
+    if (inserted === undefined) {
+      return { outcome: "unchanged" };
+    }
+    await audit(db, {
+      practiceId: input.practiceId,
+      actor: input.actor,
+      action: "response.imported",
+      entityType: "responses",
+      entityId: inserted.id,
+      payload: importAuditPayload(input),
+    });
+    return { outcome: "created", response: inserted };
+  }
+
+  const unchanged =
+    existing.body === input.body &&
+    existing.moderationState === input.moderationState &&
+    existing.policyViolation === input.policyViolation &&
+    existing.publishUpdateTime === input.publishUpdateTime;
+  if (unchanged) {
+    return { outcome: "unchanged", response: existing };
+  }
+
+  const [updated] = await db
+    .update(responses)
+    .set({
+      body: input.body,
+      moderationState: input.moderationState,
+      policyViolation: input.policyViolation,
+      publishedAt: input.publishedAt,
+      publishUpdateTime: input.publishUpdateTime,
+      updatedAt: new Date(),
+    })
+    // Guarded like transitionResponse: imported rows live at `published`
+    // and nothing transitions them, so a 0-row update means an unexpected
+    // concurrent writer — report `unchanged` and let the next poll settle.
+    .where(
+      and(eq(responses.id, existing.id), eq(responses.status, "published")),
+    )
+    .returning();
+  if (updated === undefined) {
+    return { outcome: "unchanged" };
+  }
+  await audit(db, {
+    practiceId: input.practiceId,
+    actor: input.actor,
+    action: "response.import_updated",
+    entityType: "responses",
+    entityId: updated.id,
+    payload: importAuditPayload(input),
+  });
+  return { outcome: "updated", response: updated };
+}
+
+/** Shared audit payload for import writes — non-PII source state only
+ * (the reply text itself lives on the row, not in the log). */
+function importAuditPayload(
+  input: UpsertImportedResponseInput,
+): Record<string, unknown> {
+  return {
+    signalId: input.signalId,
+    origin: "source_import",
+    moderationState: input.moderationState,
+    publishUpdateTime: input.publishUpdateTime,
+    ...(input.policyViolation !== null
+      ? { policyViolation: input.policyViolation }
+      : {}),
+    ...input.auditPayload,
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,8 @@
  *
  * - 44 Google reviews (public), skewed like a real corpus: 31 five-star,
  *   7 four-star, 2 three-star, 2 two-star, 2 one-star. Two are
- *   `deleted_at_source`.
+ *   `deleted_at_source`. Two (`g14`, `g16`) carry pre-existing owner
+ *   replies (#214) — seeded as imported `responses` rows.
  * - 12 `csv_import` rows — a legacy feedback export (private), all
  *   stamped with the deterministic demo `import_run_id`.
  * - 12 `firstparty` post-visit survey responses (private).
@@ -61,6 +62,23 @@ export interface ExcerptFixture {
   topics: string[];
 }
 
+/**
+ * A pre-existing owner reply already live on Google (issue #214). Seeded
+ * as an imported `responses` row (`origin = 'source_import'`, `status =
+ * 'published'`, no staff author) and echoed as `reviewReply` in the demo
+ * raw artifact (`./googleArtifacts.ts`), so the reply-import backfill can
+ * be exercised against the seeded corpus.
+ */
+export interface ExistingReplyFixture {
+  comment: string;
+  /** Reply `updateTime` = anchor − this many days. */
+  updatedDaysAgo: number;
+  /** Google's moderation verdict on the reply. */
+  state: "PENDING" | "APPROVED" | "REJECTED";
+  /** Rejection reason, when `state` is REJECTED. */
+  policyViolation?: string;
+}
+
 export interface SignalFixture {
   /** Stable key — `seedId(\`signal:${key}\`)` is the row's primary key. */
   key: string;
@@ -91,6 +109,8 @@ export interface SignalFixture {
   publicationSuitability?: PublicationSuitability;
   consent?: ConsentFixture;
   excerpts?: ExcerptFixture[];
+  /** Google-only: an owner reply already live at the source (#214). */
+  existingReply?: ExistingReplyFixture;
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +319,14 @@ const GOOGLE_SIGNALS: SignalFixture[] = [
     location: "north",
     sentiment: "positive",
     responseRisk: "low",
+    // Replied on Google directly, recently — the reply is still in
+    // moderation (#214: imported as `source_import`, state carried).
+    existingReply: {
+      comment:
+        "Thank you! Our North office team loves seeing your grandmother — we'll pass this along to the front desk.",
+      updatedDaysAgo: 1,
+      state: "PENDING",
+    },
   },
   {
     key: "g15",
@@ -322,6 +350,15 @@ const GOOGLE_SIGNALS: SignalFixture[] = [
     location: "main_street",
     sentiment: "positive",
     responseRisk: "low",
+    // Replied on Google directly, before the practice joined Well
+    // Regarded (#214: the imported response makes this review
+    // "responded" in the inbox without any dashboard workflow run).
+    existingReply: {
+      comment:
+        "So glad it was painless! Thanks for trusting us with your fillings.",
+      updatedDaysAgo: 50,
+      state: "APPROVED",
+    },
   },
   {
     key: "g17",

@@ -8,7 +8,7 @@
  * `packages/db` so the worker never writes inline SQL).
  */
 
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../audit.js";
 import type { Db } from "../client.js";
@@ -31,6 +31,62 @@ export async function getSignal(
 }
 
 export type SignalInsert = typeof signals.$inferInsert;
+
+/** One row of the reply-import backfill scan (issue #214). */
+export interface ReplyImportCandidate {
+  id: string;
+  practiceId: string;
+  /** The GBP review resource name — matched against the re-normalized
+   * artifact's `sourceId`s. Non-null by the WHERE clause. */
+  sourceId: string;
+  /** The stored artifact to re-read. Non-null by the WHERE clause. */
+  rawArtifactKey: string;
+}
+
+/**
+ * Keyset batch of already-ingested Google signals whose raw artifacts the
+ * reply-import backfill (#214, workers/jobs) re-reads for pre-existing
+ * owner replies. Google-only on purpose (the only source reporting
+ * existing replies today), id-ordered so `afterId` guarantees forward
+ * progress — the same cursor pattern as `excerptsNeedingEmbedding` (#71).
+ *
+ * Deliberately does NOT exclude signals that already have an imported
+ * response: `upsertImportedResponse` is idempotent (`unchanged`) and the
+ * re-read also picks up replies EDITED at the source since ingest.
+ */
+export async function googleSignalsForReplyImport(
+  db: Db | Tx,
+  params: {
+    practiceId?: string | undefined;
+    afterId?: string | undefined;
+    limit: number;
+  },
+): Promise<ReplyImportCandidate[]> {
+  const conditions: SQL[] = [
+    eq(signals.sourceKind, "google"),
+    isNotNull(signals.sourceId),
+    isNotNull(signals.rawArtifactKey),
+  ];
+  if (params.practiceId !== undefined) {
+    conditions.push(eq(signals.practiceId, params.practiceId));
+  }
+  if (params.afterId !== undefined) {
+    conditions.push(gt(signals.id, params.afterId));
+  }
+  const rows = await db
+    .select({
+      id: signals.id,
+      practiceId: signals.practiceId,
+      sourceId: signals.sourceId,
+      rawArtifactKey: signals.rawArtifactKey,
+    })
+    .from(signals)
+    .where(and(...conditions))
+    .orderBy(asc(signals.id))
+    .limit(params.limit);
+  // Non-null by the WHERE clause; the cast records it for the caller.
+  return rows as ReplyImportCandidate[];
+}
 
 /** One outcome of `insertNormalizedSignals`, per surviving signal row. */
 export interface NormalizedSignalOutcome {

@@ -9,12 +9,14 @@ const TRIGGER_URL = "http://localhost:8789/__local/trigger/embedding-backfill";
 function makeEnv(environment = "local") {
   const create = vi.fn().mockResolvedValue({ id: "instance-1" });
   const createCsvImport = vi.fn().mockResolvedValue({ id: "instance-2" });
+  const createReplyImport = vi.fn().mockResolvedValue({ id: "instance-3" });
   const env = {
     ENVIRONMENT: environment,
     EMBEDDING_BACKFILL: { create },
     CSV_IMPORT: { create: createCsvImport },
+    REPLY_IMPORT_BACKFILL: { create: createReplyImport },
   } as unknown as JobsBindings;
-  return { env, create, createCsvImport };
+  return { env, create, createCsvImport, createReplyImport };
 }
 
 beforeEach(() => {
@@ -57,6 +59,25 @@ describe("handleLocalTrigger", () => {
       instanceId: "instance-2",
     });
     expect(createCsvImport).toHaveBeenCalledExactlyOnceWith({ params });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("triggers the reply-import backfill by its own slug (#214)", async () => {
+    const { env, create, createReplyImport } = makeEnv();
+    const params = { practiceId: "p-1", batchSize: 25 };
+    const response = await handleLocalTrigger(
+      new Request(
+        "http://localhost:8789/__local/trigger/reply-import-backfill",
+        { method: "POST", body: JSON.stringify(params) },
+      ),
+      env,
+    );
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({
+      triggered: "reply-import-backfill",
+      instanceId: "instance-3",
+    });
+    expect(createReplyImport).toHaveBeenCalledExactlyOnceWith({ params });
     expect(create).not.toHaveBeenCalled();
   });
 

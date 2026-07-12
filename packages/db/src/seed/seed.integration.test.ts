@@ -17,6 +17,7 @@ import { consents } from "../schema/consents.js";
 import { derivations } from "../schema/derivations.js";
 import { contactPoints, patients } from "../schema/pii.js";
 import { proofExcerpts } from "../schema/proofExcerpts.js";
+import { responses } from "../schema/responses.js";
 import { signals } from "../schema/signals.js";
 import {
   locations,
@@ -35,6 +36,7 @@ import {
   PROVIDER_FIXTURES,
   STAFF_FIXTURES,
 } from "./fixtures/demoPractice.js";
+import { demoGoogleReviewName } from "./fixtures/googleArtifacts.js";
 import { SIGNAL_FIXTURES } from "./fixtures/signals.js";
 import { seedId } from "./ids.js";
 import { DEMO_IMPORT_RUN_ID, runSeed, type SeedSummary } from "./run.js";
@@ -56,6 +58,9 @@ const EXPECTED_CONSENT_ROWS = SIGNAL_FIXTURES.reduce(
 const EXPECTED_EXCERPTS = SIGNAL_FIXTURES.reduce(
   (total, fixture) => total + (fixture.excerpts?.length ?? 0),
   0,
+);
+const REPLIED_FIXTURES = SIGNAL_FIXTURES.filter(
+  (fixture) => fixture.existingReply !== undefined,
 );
 
 async function tableCounts(summary: SeedSummary) {
@@ -120,6 +125,12 @@ async function tableCounts(summary: SeedSummary) {
         .from(proofExcerpts)
         .where(eq(proofExcerpts.practiceId, practiceId)),
     ),
+    responses: await one(
+      t.db
+        .select({ n: count() })
+        .from(responses)
+        .where(eq(responses.practiceId, practiceId)),
+    ),
   };
 }
 
@@ -147,6 +158,8 @@ describe("runSeed", () => {
     expect(counts.consents).toBe(EXPECTED_CONSENT_ROWS);
     expect(counts.excerpts).toBe(EXPECTED_EXCERPTS);
     expect(counts.derivations).toBe(first.derivations);
+    expect(counts.responses).toBe(REPLIED_FIXTURES.length);
+    expect(first.responses).toBe(REPLIED_FIXTURES.length);
 
     const byKind = await t.db
       .select({ kind: signals.sourceKind, n: count() })
@@ -286,6 +299,48 @@ describe("runSeed", () => {
         sql`${signals.practiceId} = ${first.practiceId} and ${signals.pipelineStatus} <> 'processed'`,
       );
     expect(pending?.n).toBe(0);
+
+    // --- Google provenance: real v4 resource names (seed v3, #214) ----------
+    const googleRows = await t.db
+      .select({ sourceId: signals.sourceId })
+      .from(signals)
+      .where(
+        sql`${signals.practiceId} = ${first.practiceId} and ${signals.sourceKind} = 'google'`,
+      );
+    for (const row of googleRows) {
+      expect(row.sourceId).toMatch(
+        /^accounts\/demo\/locations\/[^/]+\/reviews\/g\d+$/,
+      );
+    }
+
+    // --- Imported owner replies (#214): source_import rows, published -------
+    expect(REPLIED_FIXTURES.length).toBeGreaterThan(0);
+    const importedResponses = await t.db
+      .select()
+      .from(responses)
+      .where(eq(responses.practiceId, first.practiceId));
+    expect(importedResponses).toHaveLength(REPLIED_FIXTURES.length);
+    for (const fixture of REPLIED_FIXTURES) {
+      const row = importedResponses.find(
+        (r) => r.signalId === seedId(`signal:${fixture.key}`),
+      );
+      expect(row).toMatchObject({
+        origin: "source_import",
+        status: "published",
+        authorId: null,
+        body: fixture.existingReply?.comment,
+        moderationState: fixture.existingReply?.state,
+      });
+      expect(row?.publishedAt).not.toBeNull();
+      expect(row?.publishUpdateTime).toBe(row?.publishedAt?.toISOString());
+      // The fixture's review name is the row's signal — and matches the
+      // demo artifact builder byte-for-byte.
+      const [parent] = await t.db
+        .select({ sourceId: signals.sourceId })
+        .from(signals)
+        .where(eq(signals.id, row?.signalId ?? ""));
+      expect(parent?.sourceId).toBe(demoGoogleReviewName(fixture));
+    }
 
     // --- Proof excerpts: embeddings left NULL (Epic #9 backfills) -----------
     const [nullEmbeddings] = await t.db

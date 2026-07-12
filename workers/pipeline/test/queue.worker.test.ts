@@ -270,6 +270,83 @@ describe("normalize stage on a real workerd batch (issue #104)", () => {
     expect(dedupeSend.mock.calls[1]?.[0]).not.toHaveProperty("reason");
   });
 
+  it("delivers a google review's existingReply through the wire contract to the store (#214)", async () => {
+    // A one-review page with a pre-existing owner reply, wrapped exactly
+    // as the poller (#123) stores it. The store seam is where #214's
+    // persistence hooks in — this pins that the metadata actually arrives
+    // there through the real queue + R2 path (the Postgres write itself is
+    // covered in test/normalize.integration.test.ts).
+    const envelope = {
+      kind: "gbp.reviews.page",
+      envelopeVersion: 1,
+      practiceId: otherUuid,
+      googleLocationName: "accounts/1/locations/1",
+      fetchedAt: "2026-07-01T00:00:00.000Z",
+      page: {
+        reviews: [
+          {
+            name: "accounts/1/locations/1/reviews/replied-1",
+            reviewer: { displayName: "Maria Delgado" },
+            starRating: "TWO",
+            comment: "Billing was confusing.",
+            createTime: "2026-06-11T05:35:36.000Z",
+            updateTime: "2026-06-12T05:35:36.000Z",
+            reviewReply: {
+              comment: "We apologize — our manager has reached out.",
+              updateTime: "2026-06-12T05:35:36.000Z",
+              reviewReplyState: "APPROVED",
+            },
+          },
+        ],
+      },
+    };
+    const { key } = await putRawArtifact(env.RAW_ARTIFACTS, {
+      practiceId: otherUuid,
+      sourceKind: "google",
+      content: JSON.stringify(envelope),
+    });
+    const persisted: NormalizedSignal[][] = [];
+    const store: NormalizeStore = {
+      persistSignals: async (_message, signals) => {
+        persisted.push(signals);
+        return signals.map((signal) => ({
+          signalId: uuid,
+          sourceId: signal.sourceId,
+          outcome: "created" as const,
+        }));
+      },
+    };
+
+    const batch = createMessageBatch("wr-ingest", [
+      {
+        id: "ingest-replied",
+        timestamp,
+        attempts: 1,
+        body: {
+          importRunId: uuid,
+          rawArtifactKey: key,
+          sourceKind: "google",
+          practiceId: otherUuid,
+        },
+      },
+    ]);
+    const ctx = createExecutionContext();
+    await handleQueueBatch(
+      batch,
+      { ...env, DEDUPE_QUEUE: { send: vi.fn().mockResolvedValue(undefined) } },
+      handlersWithStore(store),
+    );
+    const result = await getQueueResult(batch, ctx);
+
+    expect(result.explicitAcks).toEqual(["ingest-replied"]);
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.[0]?.sourceMetadata?.existingReply).toEqual({
+      comment: "We apologize — our manager has reached out.",
+      updateTime: "2026-06-12T05:35:36.000Z",
+      state: "APPROVED",
+    });
+  });
+
   it("forwards a missing artifact to the ingest DLQ and acks (store-before-enqueue violation)", async () => {
     const dlqSend = vi.fn().mockResolvedValue(undefined);
     const batch = createMessageBatch("wr-ingest", [

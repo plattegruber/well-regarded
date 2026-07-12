@@ -6,8 +6,10 @@
  * worker's `/__local/enqueue/<stage>` pattern: hard-gated on
  * `ENVIRONMENT === "local"`, 404 everywhere else.
  *
- * Deployed environments trigger differently — the backfill via the
- * Wrangler CLI (docs/embedding-backfill.md); the CSV import via #134's
+ * Deployed environments trigger differently — the backfills (embedding
+ * #71, reply-import #214) via the Wrangler CLI (`npx wrangler workflows
+ * trigger wr-<name>-<env> '{...}'` — see docs/embedding-backfill.md for
+ * the pattern); the CSV import via #134's
  * `POST /imports/csv/:draftId/start` endpoint (docs/csv-import.md).
  */
 
@@ -21,6 +23,7 @@ const TRIGGER_PREFIX = "/__local/trigger/";
 const WORKFLOW_TRIGGERS: Record<string, keyof JobsBindings & string> = {
   "embedding-backfill": "EMBEDDING_BACKFILL",
   "csv-import": "CSV_IMPORT",
+  "reply-import-backfill": "REPLY_IMPORT_BACKFILL",
 };
 
 export async function handleLocalTrigger(

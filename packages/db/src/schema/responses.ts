@@ -34,6 +34,7 @@ import type {
   ResponseOrigin,
 } from "@wellregarded/core";
 import { RESPONSE_STATUSES } from "@wellregarded/core";
+import { sql } from "drizzle-orm";
 import {
   index,
   jsonb,
@@ -41,6 +42,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -112,5 +114,12 @@ export const responses = pgTable(
       table.practiceId,
       table.status,
     ),
+    // #214's structural idempotency guard: a signal has AT MOST ONE
+    // source-imported response row — re-polls and the backfill update it
+    // in place (`upsertImportedResponse`), they never stack duplicates.
+    // Dashboard-origin rows are untouched (multiple drafts stay legal).
+    uniqueIndex("responses_signal_id_source_import_uniq")
+      .on(table.signalId)
+      .where(sql`${table.origin} = 'source_import'`),
   ],
 );
