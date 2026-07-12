@@ -1,6 +1,6 @@
 {
-  "id": "b3e555ad-4c89-47fa-b234-f89b2ed9df20",
-  "prevId": "9be47346-3039-460d-815b-d7f6a1f7e363",
+  "id": "7dd11174-dc6a-4679-9b29-42f62f4fe25b",
+  "prevId": "b3e555ad-4c89-47fa-b234-f89b2ed9df20",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1319,11 +1319,30 @@
           "primaryKey": false,
           "notNull": true
         },
+        "start_offset": {
+          "name": "start_offset",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "topic_hint": {
+          "name": "topic_hint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "embedding": {
           "name": "embedding",
           "type": "vector(1024)",
           "primaryKey": false,
           "notNull": false
+        },
+        "embedding_model": {
+          "name": "embedding_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'@cf/baai/bge-m3'"
         },
         "tsv": {
           "name": "tsv",

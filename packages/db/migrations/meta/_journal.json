@@ -89,8 +89,15 @@
     {
       "idx": 13,
       "version": "7",
-      "when": 1783804384933,
-      "tag": "0013_proof_excerpts_offsets_and_embedding_model",
+      "when": 1783804232954,
+      "tag": "0013_dedupe_versions_suspected_duplicates_embeddings",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1783818083137,
+      "tag": "0014_proof_excerpts_offsets_and_embedding_model",
       "breakpoints": true
     }
   ]
