@@ -100,6 +100,10 @@ function env(overrides: Partial<TestEnv> = {}): TestEnv {
     GOOGLE_OAUTH_AUTH_URL: `${fakeBase}/o/oauth2/v2/auth`,
     GOOGLE_OAUTH_TOKEN_URL: `${fakeBase}/oauth/token`,
     GOOGLE_OAUTH_REVOKE_URL: `${fakeBase}/oauth/revoke`,
+    // The callback's post-connect discovery (#121) must hit the fake too —
+    // the schema defaults are the real Google hosts.
+    GOOGLE_ACCOUNT_MANAGEMENT_URL: fakeBase,
+    GOOGLE_BUSINESS_INFORMATION_URL: fakeBase,
     PII_ENCRYPTION_KEYS: TEST_PII_ENCRYPTION_KEYS,
     PII_HASH_KEY: TEST_PII_HASH_KEY,
     ...overrides,
@@ -171,7 +175,7 @@ describe("connect → callback (integration)", () => {
     const callback = await app.request(callbackPath, authed(token), env());
     expect(callback.status).toBe(302);
     expect(callback.headers.get("Location")).toBe(
-      "http://localhost:5173/settings?connected=google",
+      "http://localhost:5173/settings/integrations?connected=google",
     );
 
     const row = await connectionRow(p.id);
@@ -360,7 +364,9 @@ describe("token refresh lifecycle (integration)", () => {
     if (!second?.encryptedCredentials) throw new Error("expected a connection");
     expect(second.id).toBe(first.id);
     expect(second.status).toBe("active");
-    expect(second.metadata).toEqual(metadata);
+    // The #121 keys survive; the callback's post-connect discovery may add
+    // a fresh `googleLocations` snapshot alongside them.
+    expect(second.metadata).toMatchObject(metadata);
     expect(second.encryptedCredentials).not.toBe(first.encryptedCredentials);
     const credentials = JSON.parse(
       await decryptField(second.encryptedCredentials, TEST_KEYRING),

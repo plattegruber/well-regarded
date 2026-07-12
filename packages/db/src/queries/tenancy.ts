@@ -6,11 +6,11 @@
  * `getPracticeByClerkOrgId` when real auth lands.
  */
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import type { Tx } from "../audit.js";
 import type { Db } from "../client.js";
-import { practices, staffMembers } from "../schema/tenancy.js";
+import { locations, practices, staffMembers } from "../schema/tenancy.js";
 
 /** A `practices` row. */
 export type Practice = typeof practices.$inferSelect;
@@ -45,4 +45,22 @@ export async function getStaffMemberByRole(
     )
     .limit(1);
   return row;
+}
+
+/** A `locations` row. */
+export type Location = typeof locations.$inferSelect;
+
+/**
+ * All of a practice's locations, name-ordered — option lists (the #121
+ * mapping screen's map-to select) and validation reads.
+ */
+export async function listPracticeLocations(
+  db: Db | Tx,
+  practiceId: string,
+): Promise<Location[]> {
+  return db
+    .select()
+    .from(locations)
+    .where(eq(locations.practiceId, practiceId))
+    .orderBy(asc(locations.name));
 }

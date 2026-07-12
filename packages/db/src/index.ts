@@ -56,6 +56,15 @@ export {
   signalHasDerivations,
 } from "./queries/derivations.js";
 export {
+  type GoogleMappingDecision,
+  type GoogleMappingEntry,
+  type GoogleMappingIssue,
+  type GoogleMappingIssueCode,
+  type SaveGoogleLocationMappingsInput,
+  type SaveGoogleLocationMappingsResult,
+  saveGoogleLocationMappings,
+} from "./queries/googleLocationMappings.js";
+export {
   type HybridSearchParams,
   type HybridSearchResult,
   hybridSearch,
@@ -131,6 +140,7 @@ export {
   disconnectSourceConnection,
   getSourceConnection,
   markSourceConnectionNeedsReauth,
+  patchSourceConnectionMetadata,
   type SourceConnection,
   type UpsertSourceConnectionInput,
   upsertSourceConnection,
@@ -138,6 +148,8 @@ export {
 export {
   getPracticeByClerkOrgId,
   getStaffMemberByRole,
+  type Location,
+  listPracticeLocations,
   type Practice,
   type StaffMember,
 } from "./queries/tenancy.js";

@@ -57,9 +57,10 @@ GOOGLE_OAUTH_REVOKE_URL=http://localhost:8799/oauth/revoke
 # Override only behind a rewriting proxy; normally derived per request.
 # GOOGLE_OAUTH_REDIRECT_URL=http://localhost:8787/api/integrations/google/callback
 
-# Future Epic #7 issues (#121/#123/#156) add their data-plane base URLs the
+# Data-plane base URLs for location discovery (#121) — the fake serves
+# every Google host from one origin.
+GOOGLE_ACCOUNT_MANAGEMENT_URL=http://localhost:8799
+GOOGLE_BUSINESS_INFORMATION_URL=http://localhost:8799
+# Future Epic #7 issues (#123/#156) add their data-plane base URLs the
 # same way; until then these document the pattern:
-# GOOGLE_ACCOUNT_MGMT_BASE_URL=http://localhost:8799
-# GOOGLE_BUSINESS_INFO_BASE_URL=http://localhost:8799
-# GOOGLE_VERIFICATIONS_BASE_URL=http://localhost:8799
 # GOOGLE_MYBUSINESS_V4_BASE_URL=http://localhost:8799

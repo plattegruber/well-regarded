@@ -173,11 +173,12 @@ describe("settings route", () => {
       expect(html).toContain(escapeHtml(section.title));
       expect(html).toContain(escapeHtml(section.description));
     }
-    // Practice profile and Imports (#133) are live; the other five are
-    // placeholders.
+    // Practice profile, Imports (#133), and Integrations (#121) are live;
+    // the other four are placeholders.
     expect(html).toContain('href="/settings/practice"');
     expect(html).toContain('href="/settings/imports"');
-    expect((html.match(/Coming soon/g) ?? []).length).toBe(5);
+    expect(html).toContain('href="/settings/integrations"');
+    expect((html.match(/Coming soon/g) ?? []).length).toBe(4);
     expect(settingsMeta()).toContainEqual({
       title: "Settings · Well Regarded",
     });

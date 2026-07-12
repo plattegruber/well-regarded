@@ -17,7 +17,7 @@
  */
 
 import type { SourceConnectionKind } from "@wellregarded/core";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 
 import type { Tx } from "../audit.js";
 import type { Db } from "../client.js";
@@ -135,6 +135,32 @@ export async function disconnectSourceConnection(
         ne(sourceConnections.status, "disconnected"),
       ),
     )
+    .returning();
+  return row ?? null;
+}
+
+/**
+ * Shallow-merge keys into `metadata` atomically (`metadata || patch`, the
+ * jsonb concatenation operator — no read-modify-write race).
+ *
+ * The metadata object is SHARED between writers: #121 owns
+ * `googleLocations` + `locationMappings`, #123 owns its sync cursors.
+ * Every writer must go through this helper with only its own top-level
+ * keys — replacing the whole object clobbers the other writer's state.
+ * Returns null when the connection doesn't exist.
+ */
+export async function patchSourceConnectionMetadata(
+  db: Db | Tx,
+  connectionId: string,
+  patch: Record<string, unknown>,
+): Promise<SourceConnection | null> {
+  const [row] = await db
+    .update(sourceConnections)
+    .set({
+      metadata: sql`${sourceConnections.metadata} || ${JSON.stringify(patch)}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(eq(sourceConnections.id, connectionId))
     .returning();
   return row ?? null;
 }
