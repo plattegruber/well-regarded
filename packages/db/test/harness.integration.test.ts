@@ -38,7 +38,9 @@ describe("scope A: writes a marker row into its own database", () => {
 
   it("runs in a private test_ database, not the shared one", () => {
     seenDatabaseNames.push(t.databaseName);
-    expect(t.databaseName).toMatch(/^test_\d+_\d+$/);
+    // test_<created-epoch>_<pid>_<n> — the epoch is what the orphan sweep
+    // reads to spare live concurrent runs' databases (globalSetup.ts).
+    expect(t.databaseName).toMatch(/^test_\d{10,}_\d+_\d+$/);
   });
 
   it("clones from a template stamped with the migrations fingerprint", async () => {

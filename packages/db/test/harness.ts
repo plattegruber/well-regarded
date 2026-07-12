@@ -44,7 +44,14 @@ export interface TestDb {
   readonly db: Db;
   /** The raw postgres-js client underneath `db`. */
   readonly sql: Sql;
-  /** This file's database name (`test_<pid>_<n>`), for assertions. */
+  /**
+   * This file's database name (`test_<created-epoch>_<pid>_<n>`), for
+   * assertions. The leading epoch (seconds) is load-bearing: the orphan
+   * sweep in `./globalSetup.ts` uses it to distinguish a crashed run's
+   * leftovers from a live concurrent run's fresh databases — postgres-js
+   * connects lazily, so "no connections yet" never proves a database is
+   * abandoned.
+   */
   readonly databaseName: string;
 }
 
@@ -66,8 +73,10 @@ export function setupTestDb(): TestDb {
     faker.seed(1234);
 
     const databaseUrl = requireDatabaseUrl();
+    // Creation epoch first (see the TestDb doc), then pid + counter for
+    // uniqueness across workers and files.
     const databaseName = assertSafeIdentifier(
-      `test_${process.pid}_${++fileCounter}`,
+      `test_${Math.floor(Date.now() / 1000)}_${process.pid}_${++fileCounter}`,
     );
 
     await withMaintenance(databaseUrl, async (maintenance) => {

@@ -111,16 +111,39 @@ async function buildTemplate(
 }
 
 /**
+ * Minimum age before a `test_%` database counts as a crashed run's orphan.
+ * A whole integration run finishes in minutes; an hour is a wide margin.
+ */
+const ORPHAN_MIN_AGE_SECONDS = 60 * 60;
+
+/**
  * Drop leftover `test_%` databases from crashed runs so they never
- * accumulate. Plain DROP (no FORCE): a database still in use — e.g. a
- * concurrent integration run on the same server — fails with 55006 and is
- * skipped, never killed.
+ * accumulate. Two guards, both required:
+ *
+ * - **Age**: only databases whose name-embedded creation epoch
+ *   (`test_<created-epoch>_<pid>_<n>`, stamped by `setupTestDb()`) is at
+ *   least {@link ORPHAN_MIN_AGE_SECONDS} old are touched. "Not currently
+ *   connected" proves nothing — postgres-js connects lazily, so a
+ *   concurrent workspace's fresh clone (turbo runs several integration
+ *   suites against this server at once) sits connection-less between its
+ *   CREATE and its file's first query, and must never be reaped.
+ *   Unparseable `test_%` names are legacy leftovers and count as old.
+ * - **In-use skip**: plain DROP (no FORCE) — a database that does have a
+ *   connection fails with 55006 and is skipped, never killed.
  */
 async function sweepOrphans(maintenance: Maintenance): Promise<void> {
   const orphans = await maintenance`
     SELECT datname FROM pg_database WHERE datname LIKE ${"test\\_%"}
   `;
+  const nowSeconds = Math.floor(Date.now() / 1000);
   for (const { datname } of orphans) {
+    const createdEpoch = parseCreatedEpoch(datname);
+    if (
+      createdEpoch !== null &&
+      nowSeconds - createdEpoch < ORPHAN_MIN_AGE_SECONDS
+    ) {
+      continue; // Plausibly a live concurrent run's database — leave it.
+    }
     try {
       await maintenance.unsafe(
         `DROP DATABASE IF EXISTS "${assertSafeIdentifier(datname)}"`,
@@ -129,4 +152,13 @@ async function sweepOrphans(maintenance: Maintenance): Promise<void> {
       if ((error as { code?: string }).code !== OBJECT_IN_USE) throw error;
     }
   }
+}
+
+/** The creation epoch a harness database name carries; null when the name
+ * predates the timestamped scheme (treated as old — droppable). */
+function parseCreatedEpoch(datname: string): number | null {
+  const match = /^test_(\d{10,})_\d+_\d+$/.exec(datname);
+  if (!match?.[1]) return null;
+  const epoch = Number(match[1]);
+  return Number.isFinite(epoch) ? epoch : null;
 }
