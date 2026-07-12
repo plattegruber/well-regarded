@@ -453,6 +453,7 @@ describe("classify stage on a real workerd batch (issue #67)", () => {
                 "Still in severe pain three days after my extraction and nobody calls back.",
               originalRating: "1.0",
               retentionState: "active" as const,
+              classificationDeferredAt: null,
             }
           : undefined,
       hasJudgments: async () => false,
@@ -470,6 +471,8 @@ describe("classify stage on a real workerd batch (issue #67)", () => {
       setExcerptEmbeddings: async (updates) => {
         embeddingUpdates.push(...updates);
       },
+      markClassificationDeferred: async () => {},
+      clearClassificationDeferred: async () => {},
     };
     return { store, inserted, insertedExcerpts, embeddingUpdates };
   }
@@ -661,6 +664,7 @@ describe("route stage on a real workerd batch (issue #108)", () => {
         "sorted my insurance without me asking twice.",
       originalRating: "5.0",
       retentionState: "active",
+      classificationPending: false,
       pipelineStatus: "pending_route",
       ...overrides,
     };

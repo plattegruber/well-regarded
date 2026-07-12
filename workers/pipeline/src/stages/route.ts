@@ -92,6 +92,14 @@ export interface SignalForRouting {
   retentionState: RetentionState;
   /** `processed` = already routed — the idempotency key (see module doc). */
   pipelineStatus: SignalPipelineStatus;
+  /**
+   * True when classify deferred this signal (issue #75: kill switch or
+   * budget cap — `classification_deferred_at` is set). Absent derivations
+   * are then LEGITIMATE, not a classify contract violation: route with
+   * whatever exists (the deterministic keyword fallback may have written
+   * an urgency row, so recovery still opens) instead of dead-lettering.
+   */
+  classificationPending: boolean;
 }
 
 /**
@@ -423,7 +431,14 @@ export async function routeSignal(
   const hasDerivations = DERIVATION_DIMENSIONS.some(
     (dimension) => derivations[dimension] !== undefined,
   );
-  if (!hasDerivations && classifyShouldHaveJudged(signal)) {
+  if (
+    !hasDerivations &&
+    classifyShouldHaveJudged(signal) &&
+    // Issue #75: a deferred classification (kill switch / budget cap) is
+    // a sanctioned absence — route on what exists; the re-drive sweep
+    // classifies later. Only an UNMARKED absence is a contract violation.
+    !signal.classificationPending
+  ) {
     // Classify's contract violation, not a transient: the same message
     // would find the same absence forever. DLQ keeps it replayable once
     // the signal is (re)classified, and visible on the import run.
@@ -513,6 +528,7 @@ export function createRouteStore(db: Db): RouteStore {
         originalRating: row.originalRating,
         retentionState: row.retentionState,
         pipelineStatus: row.pipelineStatus,
+        classificationPending: row.classificationDeferredAt !== null,
       };
     },
     getCurrentDerivations: async (signalId) => {

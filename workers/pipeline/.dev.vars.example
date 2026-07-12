@@ -35,3 +35,12 @@ PII_HASH_KEY=JKTMICa0vU/Ori8626X0AqH4D+At4aJ3cPg5JQBKqwI=
 # model after a bad upgrade.
 # PIPELINE_MODEL=claude-haiku-4-5-20251001
 # DRAFTING_MODEL=claude-sonnet-5
+
+# AI kill switch + default monthly budget (issue #75). Optional — leave
+# unset for normal operation. AI_DISABLED=true (or 1) makes the classify
+# stage defer classification (signals flow through unclassified, marked
+# for re-drive; the urgent-keyword fallback keeps routing sighted).
+# AI_MONTHLY_BUDGET_CENTS is the per-practice default cap in cents; unset
+# means no cap. Per-practice overrides live in practice_settings.ai.
+# AI_DISABLED=true
+# AI_MONTHLY_BUDGET_CENTS=5000

@@ -15,6 +15,7 @@ const listFailedImports = vi.hoisted(() => vi.fn());
 const listRunningImports = vi.hoisted(() => vi.fn());
 const listFailedPublishes = vi.hoisted(() => vi.fn());
 const listResponsesPendingApproval = vi.hoisted(() => vi.fn());
+const practiceAiStatus = vi.hoisted(() => vi.fn());
 const requirePracticeContext = vi.hoisted(() => vi.fn());
 
 vi.mock("@wellregarded/db", () => ({
@@ -26,6 +27,13 @@ vi.mock("@wellregarded/db", () => ({
   listResponsesPendingApproval,
   listRunningImports,
   listUrgentSignals,
+  practiceAiStatus,
+}));
+vi.mock("~/lib/ai.server", () => ({
+  aiConfigEnv: () => ({
+    PIPELINE_MODEL: "claude-haiku-4-5-20251001",
+    DRAFTING_MODEL: "claude-sonnet-5",
+  }),
 }));
 vi.mock("~/lib/db.server", () => ({
   withRequestDb: (_context: unknown, fn: (db: unknown) => Promise<unknown>) =>
@@ -55,7 +63,7 @@ function practiceContext(role: StaffActor["role"]) {
 
 // biome-ignore lint/suspicious/noExplicitAny: route arg typing is generated per-route; the test erases it
 const args = {
-  context: {},
+  context: { cloudflare: { env: { ENVIRONMENT: "local" } } },
   params: {},
   request: new Request("http://x/today"),
 } as any;

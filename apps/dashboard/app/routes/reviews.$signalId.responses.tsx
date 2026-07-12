@@ -373,7 +373,11 @@ async function approve(
     response.body,
     { text: review.text, rating: review.rating, visibility: review.visibility },
     {
-      provider: getAiProvider(context.cloudflare.env, db),
+      // Gated (#75): kill switch / budget cap degrade the check to
+      // deterministic-only via the provider's AiRequestError.
+      provider: getAiProvider(context.cloudflare.env, db, {
+        practiceId: ctx.practiceId,
+      }),
       practiceId: ctx.practiceId,
       requestId: context.requestId,
     },

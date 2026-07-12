@@ -183,6 +183,21 @@ export const signals = pgTable(
     retentionState: retentionStateEnum("retention_state")
       .notNull()
       .default("active"),
+    /**
+     * AI-deferral marker (issue #75): set by the classify stage when the
+     * kill switch (`AI_DISABLED` / `practice_settings.ai.disabled`) or the
+     * monthly budget cap deferred classification — the signal keeps
+     * flowing (route still runs; the inbox shows it honestly as "not yet
+     * classified") and this timestamp is the re-drive set: once AI is
+     * re-enabled, sweep `classification_deferred_at IS NOT NULL` back
+     * through the classify queue (`listDeferredClassifications` in
+     * ../queries/signals.ts; classify clears the marker on a successful
+     * pass). NOT a pipeline status — the spine's position stays in
+     * `pipeline_status`; this only records that judgments are owed.
+     */
+    classificationDeferredAt: timestamp("classification_deferred_at", {
+      withTimezone: true,
+    }),
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

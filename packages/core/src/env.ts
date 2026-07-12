@@ -125,6 +125,18 @@ const aiEnvSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   PIPELINE_MODEL: z.string().min(1).default("claude-haiku-4-5-20251001"),
   DRAFTING_MODEL: z.string().min(1).default("claude-sonnet-5"),
+  /**
+   * Global AI kill switch (issue #75): `"true"`/`"1"` defers all
+   * classification (signals keep flowing, marked for later re-drive) and
+   * disables drafting. Per-practice `practice_settings.ai.disabled` ORs
+   * with this — see `resolveAiConfig` in `@wellregarded/ai`.
+   */
+  AI_DISABLED: z.string().optional(),
+  /**
+   * Deployment-default monthly AI budget per practice, in cents (issue
+   * #75). Unset = no cap. Per-practice `ai.monthlyBudgetCents` overrides.
+   */
+  AI_MONTHLY_BUDGET_CENTS: z.coerce.number().int().nonnegative().optional(),
 });
 
 /**

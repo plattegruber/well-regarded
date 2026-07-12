@@ -8,7 +8,17 @@
  * `packages/db` so the worker never writes inline SQL).
  */
 
-import { and, asc, eq, gt, inArray, isNotNull, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 
 import type { Tx } from "../audit.js";
 import type { Db } from "../client.js";
@@ -183,4 +193,75 @@ export async function insertNormalizedSignals(
     });
   }
   return outcomes;
+}
+
+// ---------------------------------------------------------------------------
+// AI-deferral marker (issue #75)
+// ---------------------------------------------------------------------------
+
+/**
+ * Record that the classify stage deferred this signal's classification
+ * (kill switch or exhausted budget). Idempotent: re-delivery keeps the
+ * FIRST deferral timestamp — "how long has this been owed" must not reset
+ * on queue retries.
+ */
+export async function markClassificationDeferred(
+  db: Db | Tx,
+  signalId: string,
+  deferredAt: Date = new Date(),
+): Promise<void> {
+  await db
+    .update(signals)
+    .set({ classificationDeferredAt: deferredAt, updatedAt: new Date() })
+    .where(
+      and(eq(signals.id, signalId), isNull(signals.classificationDeferredAt)),
+    );
+}
+
+/** Clear the marker — called by classify after a successful real pass. */
+export async function clearClassificationDeferred(
+  db: Db | Tx,
+  signalId: string,
+): Promise<void> {
+  await db
+    .update(signals)
+    .set({ classificationDeferredAt: null, updatedAt: new Date() })
+    .where(eq(signals.id, signalId));
+}
+
+/**
+ * The re-drive set (issue #75): signals whose classification was deferred,
+ * oldest deferral first, keyset-paginated — the same sweep shape as the
+ * embedding backfill (workers/jobs). Once AI is re-enabled, enqueue each
+ * as a ClassifyMessage (locally: `POST /__local/enqueue/classify`); the
+ * classify stage re-runs its normal passes and clears the marker.
+ */
+export async function listDeferredClassifications(
+  db: Db | Tx,
+  params: { practiceId?: string; afterId?: string; limit?: number },
+): Promise<
+  Array<{ id: string; practiceId: string; classificationDeferredAt: Date }>
+> {
+  const limit = params.limit ?? 100;
+  const conditions = [isNotNull(signals.classificationDeferredAt)];
+  if (params.practiceId) {
+    conditions.push(eq(signals.practiceId, params.practiceId));
+  }
+  if (params.afterId) {
+    conditions.push(sql`${signals.id} > ${params.afterId}`);
+  }
+  const rows = await db
+    .select({
+      id: signals.id,
+      practiceId: signals.practiceId,
+      classificationDeferredAt: signals.classificationDeferredAt,
+    })
+    .from(signals)
+    .where(and(...conditions))
+    .orderBy(signals.id)
+    .limit(limit);
+  return rows.filter(
+    (row): row is (typeof rows)[number] & { classificationDeferredAt: Date } =>
+      row.classificationDeferredAt !== null,
+  );
 }

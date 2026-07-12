@@ -16,6 +16,8 @@ import {
   listPracticeLocations,
   listReviewInbox,
   type ReviewInboxItem,
+  type ReviewResponseMetrics,
+  reviewResponseMetrics,
 } from "@wellregarded/db";
 import { Form, Link, useSearchParams } from "react-router";
 
@@ -24,6 +26,10 @@ import {
   REVIEW_STATUS_LABELS,
   REVIEW_STATUS_TONES,
 } from "~/components/reviews/labels";
+import {
+  type ReviewStatsData,
+  ReviewStatsStrip,
+} from "~/components/reviews/stats-strip";
 import { Overline, PageHeader } from "~/components/shell/page-header";
 import { JudgmentChip } from "~/components/signals/basis-badge";
 import {
@@ -82,6 +88,54 @@ export interface ReviewRow {
   // owner (#76 requirement 5) — the table does not exist yet.
 }
 
+/** "1.5d" / "14h" / "45m" — the median card's humane duration. */
+export function formatDuration(seconds: number): string {
+  if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))}m`;
+  if (seconds < 24 * 3600) return `${Math.round(seconds / 3600)}h`;
+  return `${(seconds / 86400).toFixed(1)}d`;
+}
+
+/**
+ * Metrics → display strings (#86). Server-side on purpose: the strip
+ * renders text, never raw floats. NO author names anywhere in this shape
+ * — response health is a quality signal, not a leaderboard (the rule is
+ * documented on the db helper).
+ */
+export function toStats(metrics: ReviewResponseMetrics): ReviewStatsData {
+  const { totals, months } = metrics;
+  const current = months[months.length - 1];
+  const previous = months[months.length - 2];
+  const unresponded = current?.unresponded ?? 0;
+  const delta =
+    previous === undefined ? null : unresponded - previous.unresponded;
+  return {
+    responseRate:
+      totals.responseRate === null
+        ? "—"
+        : `${Math.round(totals.responseRate * 100)}%`,
+    medianResponse:
+      totals.medianResponseSeconds === null
+        ? "—"
+        : formatDuration(totals.medianResponseSeconds),
+    unresponded: String(unresponded),
+    unrespondedDelta:
+      delta === null || delta === 0
+        ? delta === 0
+          ? "± 0 vs last month"
+          : null
+        : `${delta < 0 ? "↓" : "↑"} ${Math.abs(delta)} vs last month`,
+    // A shrinking backlog is the good direction.
+    unrespondedTone:
+      delta === null || delta === 0
+        ? "neutral"
+        : delta < 0
+          ? "positive"
+          : "negative",
+    trend: months.map((m) => ({ month: m.month, rate: m.responseRate })),
+    smallSample: totals.smallSample,
+  };
+}
+
 function toRow(item: ReviewInboxItem, now: Date): ReviewRow {
   const text = item.text ?? "No text recorded.";
   return {
@@ -116,7 +170,11 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   return withRequestDb(context, async (db) => {
     // TODO(#59): requirePracticeContext is the auth seam — see its module doc.
     const { practiceId } = await requirePracticeContext(db);
-    const [page, counts, locations] = await Promise.all([
+    // Metrics run in the same Promise.all as the inbox (#86) — three
+    // extra aggregate queries, fine at M1 volume. If they ever push the
+    // page past its ~200ms budget, defer them (React Router `defer`):
+    // inbox first, stats stream in.
+    const [page, counts, locations, metrics] = await Promise.all([
       listReviewInbox(db, {
         practiceId,
         filters: search.filters,
@@ -128,6 +186,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         filters: search.filters,
       }),
       listPracticeLocations(db, practiceId),
+      reviewResponseMetrics(db, { practiceId }),
     ]);
 
     const now = new Date();
@@ -141,6 +200,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       sort: search.sort,
       values: search.values,
       locations: locations.map((row) => ({ id: row.id, name: row.name })),
+      stats: toStats(metrics),
     };
   });
 }
@@ -460,6 +520,7 @@ export default function Reviews({ loaderData }: Route.ComponentProps) {
     sort,
     values,
     locations,
+    stats,
   } = loaderData;
   const [searchParams] = useSearchParams();
   // "No reviews ever" is a property of the corpus, not the current page:
@@ -479,6 +540,10 @@ export default function Reviews({ loaderData }: Route.ComponentProps) {
         <NoReviewsYet />
       ) : (
         <>
+          {/* Response-health strip (#86) — header area per the mock's
+              stat-strip style. TODO(epic-17): moves to /insights once
+              that surface exists (it is an empty state today). */}
+          <ReviewStatsStrip stats={stats} />
           <StatusTabs
             counts={counts}
             active={values.status}

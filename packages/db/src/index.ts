@@ -9,6 +9,11 @@ export {
   recordPipelineFailure,
 } from "./pipeline.js";
 export {
+  monthlyAiSpendCents,
+  type PracticeAiStatus,
+  practiceAiStatus,
+} from "./queries/aiBudget.js";
+export {
   type AiCall,
   createAiCallSink,
   logAiCall,
@@ -114,6 +119,12 @@ export {
   upsertContactPoint,
 } from "./queries/patients.js";
 export {
+  getPracticeAiSettings,
+  type PracticeSettings,
+  type UpdatePracticeAiSettingsInput,
+  updatePracticeAiSettings,
+} from "./queries/practiceSettings.js";
+export {
   type ExcerptNeedingEmbedding,
   type ExcerptsNeedingEmbeddingParams,
   excerptsNeedingEmbedding,
@@ -157,6 +168,14 @@ export {
   upsertImportedResponse,
 } from "./queries/responses.js";
 export {
+  type LocationMetrics,
+  METRICS_MONTHS,
+  METRICS_SMALL_SAMPLE,
+  type MonthMetrics,
+  type ReviewResponseMetrics,
+  reviewResponseMetrics,
+} from "./queries/reviewResponseMetrics.js";
+export {
   countReviewInboxStatuses,
   decodeReviewsCursor,
   getReviewDetail,
@@ -172,9 +191,12 @@ export {
   type ReviewResponseThreadEntry,
 } from "./queries/reviewsInbox.js";
 export {
+  clearClassificationDeferred,
   getSignal,
   googleSignalsForReplyImport,
   insertNormalizedSignals,
+  listDeferredClassifications,
+  markClassificationDeferred,
   type NormalizedSignalOutcome,
   type ReplyImportCandidate,
   type Signal,

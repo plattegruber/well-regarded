@@ -12,6 +12,8 @@ import {
   listResponsesPendingApproval,
   listRunningImports,
   listUrgentSignals,
+  type PracticeAiStatus,
+  practiceAiStatus,
   TODAY_SECTION_LIMIT,
   type TodaySection as TodaySectionRows,
 } from "@wellregarded/db";
@@ -24,6 +26,7 @@ import {
   TodaySection,
   type TodaySectionData,
 } from "~/components/today/today-card";
+import { aiConfigEnv } from "~/lib/ai.server";
 import { withRequestDb } from "~/lib/db.server";
 import { requirePracticeContext } from "~/lib/practice-context.server";
 import {
@@ -60,6 +63,35 @@ function more(
   return hidden > 0 ? { count: hidden, to } : null;
 }
 
+/**
+ * The AI budget alert card (#75): ≥ 80% of the monthly cap is a heads-up
+ * (caution); at 100% classification is deferring (negative) — both route
+ * to Settings → AI. Reads the same `practiceAiStatus` the classify gate
+ * and the settings banner use, so the three can never disagree.
+ */
+function aiBudgetCard(status: PracticeAiStatus): TodayCardData | null {
+  if (status.budget.level === "ok") return null;
+  const budgetCents = status.config.monthlyBudgetCents;
+  const spend =
+    budgetCents === null
+      ? ""
+      : `$${(status.spentCents / 100).toFixed(2)} of $${(budgetCents / 100).toFixed(2)} (estimated)`;
+  const exhausted = status.budget.level === "exhausted";
+  return {
+    id: "ai-budget",
+    tag: exhausted ? "AI budget reached" : "AI budget",
+    tone: exhausted ? "negative" : "caution",
+    title: exhausted
+      ? "Monthly AI budget reached — classification is paused"
+      : `AI spend has passed ${Math.floor(status.budget.ratio * 100)}% of this month's budget`,
+    meta: exhausted
+      ? `${spend} · urgent items still surface via the keyword fallback`
+      : spend,
+    cta: "Review AI settings",
+    to: "/settings/ai",
+  };
+}
+
 export async function loader({ context }: Route.LoaderArgs) {
   return withRequestDb(context, async (db) => {
     // TODO(#59): requirePracticeContext is the auth seam — see its module doc.
@@ -89,6 +121,7 @@ export async function loader({ context }: Route.LoaderArgs) {
       runningImports,
       failedPublishes,
       pendingApprovals,
+      aiStatus,
     ] = await Promise.all([
       canManageSettings
         ? listReauthConnections(db, ctx.practiceId)
@@ -117,7 +150,16 @@ export async function loader({ context }: Route.LoaderArgs) {
             excludeAuthorId: ctx.actor.staffId,
           })
         : Promise.resolve(emptySection<never>()),
+      // AI budget state (#75) — the alert card routes into Settings → AI,
+      // so it is gated like the other settings cards.
+      canManageSettings
+        ? practiceAiStatus(db, {
+            practiceId: ctx.practiceId,
+            env: aiConfigEnv(context.cloudflare.env),
+          })
+        : Promise.resolve(null),
     ]);
+    const budgetCard = aiStatus ? aiBudgetCard(aiStatus) : null;
 
     // THE ordering (#95 requirement 3) — sections render in exactly this
     // order, each capped at TODAY_SECTION_LIMIT cards + an accurate
@@ -125,6 +167,8 @@ export async function loader({ context }: Route.LoaderArgs) {
     //
     //   1. Connections needing re-auth — everything downstream silently
     //      degrades while a connection is broken.           (live)
+    //   1b. AI budget alert (#75): ≥ 80% heads-up / 100% hard-stop —
+    //      classification quality degrades while it stands. (live)
     //   2. Urgent unassigned recovery items (severity desc, oldest
     //      first). TODO(#122): `recovery_items` is Epic #15 and does not
     //      exist yet; until it lands this section surfaces the signals
@@ -156,6 +200,11 @@ export async function loader({ context }: Route.LoaderArgs) {
             to: "/settings/integrations",
           }),
         ),
+        more: null,
+      },
+      {
+        key: "ai-budget",
+        cards: budgetCard ? [budgetCard] : [],
         more: null,
       },
       {

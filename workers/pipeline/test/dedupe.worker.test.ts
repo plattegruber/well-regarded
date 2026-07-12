@@ -82,6 +82,7 @@ function signalRecord(
     visibility: "private",
     availability: "available",
     retentionState: "active",
+    classificationDeferredAt: null,
     createdAt: timestamp,
     updatedAt: timestamp,
     ...overrides,
